@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.agents/skills/
+*.zip
+.DS_Store
+.env
+.env.*
+!.env.example
+coverage/
+playwright-report/
+test-results/
