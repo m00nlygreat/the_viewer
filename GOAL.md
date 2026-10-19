@@ -635,7 +635,7 @@ PWA는 Chromium 자동화와 Safari 계열 검증에 더해 실제 Android·iOS�
 - 원격 저장소: [m00nlygreat/the_viewer](https://github.com/m00nlygreat/the_viewer)
 - 기본 브랜치: `main`
 - Pages 앱: [https://m00nlygreat.github.io/the_viewer/](https://m00nlygreat.github.io/the_viewer/)
-- 최신 커밋: `371644c` (`fix: keep new CSV documents free of parse warnings`)
+- 빈 CSV 진단 수정 커밋: `371644c` (`fix: keep new CSV documents free of parse warnings`)
 - 배포 방법: [.github/workflows/pages.yml](.github/workflows/pages.yml)에서 `dist/app`만 업로드한다.
 - Chrome 확장: MV3 폴더와 ZIP을 빌드하고 소스를 원격에 푸시한다. Chrome Web Store에는 게시하지 않는다.
 
