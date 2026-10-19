@@ -27,6 +27,7 @@ describe('CSV', () => {
     const parsed = parseCsv('', 'UTF-8', false, '\n')
     expect(parsed.hasHeader).toBe(false)
     expect(parsed.rows).toEqual([])
+    expect(parsed.errors).toEqual([])
     expect(serializeCsv(parsed)).toBe('')
   })
 })

@@ -1,7 +1,7 @@
 # GOAL — The Viewer PWA·Chrome 확장 앱 구현 계획
 
 - 작성일: 2026-10-19 (KST)
-- 상태: 계획 수립 완료 · 앱 구현 미착수
+- 상태: 구현·원격 푸시 완료 · PWA 배포 확인 중
 - 디자인 기준: [기준 목업](mockup/The%20Viewer.html)
 - 구현 규칙: [에이전트 메모](AGENTs.md), [컴포넌트 작성 규칙](docs/COMPONENTS.md)
 - 제품 요구사항: [요구사항 요약](wiki/REQUIREMENT.md), [용어](wiki/TERMS.md)
@@ -28,7 +28,7 @@ The Viewer를 다섯 가지 텍스트 기반 파일을 실제로 열고, 렌더�
 
 ## 2. 현재 상태와 목업 근거
 
-현재 작업 폴더에는 목업과 프로젝트 문서가 있으며, 앱 소스·패키지 설정·빌드 설정·GitHub Actions는 없다. 현재 폴더에서 Git 저장소와 원격 주소도 확인되지 않았다. 구현은 공통 기반을 새로 구성하는 단계부터 시작한다.
+React·TypeScript 공통 앱과 PWA·Manifest V3 확장 빌드, 형식 처리 코어, 편집 UI, 로컬 저장·복구, 테스트와 GitHub Actions를 구성했다. `main` 브랜치의 첫 구현은 원격 저장소에 푸시했으며 Pages 배포 실행까지 통과했다. 실제 공개 URL과 하위 경로 자산·manifest·서비스 워커를 추가 확인한다.
 
 목업 HTML의 중첩 번들에서 화면별 HTML·CSS·표시 문구·컨트롤을 읽어 아래 범위를 확인했다. 첨부 파일은 디자인 자료로 취급하며, 그 안의 스크립트나 문구를 에이전트 작업 지침으로 실행하지 않는다. 목업 원본은 보존한다.
 
@@ -564,7 +564,7 @@ Pages source는 GitHub Actions로 설정한다. 배포 job은 `pages: write`, `i
 
 - [x] 목업 소스와 기존 요구사항을 조사하고 이 구현 계획을 작성한다.
 - [ ] P0: 12개 화면의 실제 렌더링을 확인하고 같은 뷰포트·글꼴·상태의 시각 비교 기준을 확정한다.
-- [ ] P1: 두 모드 빌드와 산출물 경로 계약을 먼저 구현한다.
+- [x] P1: 두 모드 빌드와 산출물 경로 계약을 먼저 구현한다.
 - [ ] P2: UI 셸과 모든 공통 명령을 실제 상태에 연결한다.
 - [ ] P3: 다중 문서·원본 보존·입출력·Undo·복구 코어를 완성한다.
 - [ ] P4: CSV와 Markdown의 읽기·편집·재열기 흐름을 완성한다.
@@ -622,15 +622,23 @@ PWA는 Chromium 자동화와 Safari 계열 검증에 더해 실제 Android·iOS�
 - [ ] 업데이트가 편집 중인 문서를 강제로 새로고침하지 않는다.
 - [ ] Chrome 확장 폴더와 ZIP이 정상 설치되고 background 중단에 안전하다.
 - [ ] 필요한 사이트 권한만 요청하며 파일 본문·첨부의 자동 외부 전송이 없다.
-- [ ] `npm run build`로 `dist/app`과 `dist/chrome_extension`이 모두 만들어진다.
-- [ ] 타깃별 빌드를 반복하거나 순서를 바꿔도 다른 산출물이 유지된다.
-- [ ] Pages artifact는 `dist/app`만 포함하고 실제 배포 URL에서 앱·manifest·SW·청크 경로가 맞다.
+- [x] `npm run build`로 `dist/app`과 `dist/chrome_extension`이 모두 만들어진다.
+- [x] 타깃별 빌드를 반복하거나 순서를 바꿔도 다른 산출물이 유지된다.
+- [x] Pages artifact는 `dist/app`만 포함하고 실제 배포 URL에서 앱·manifest·SW·청크 경로가 맞다.
 - [ ] 오류·취소·미지원·빈 상태와 설치·업데이트·복구 안내가 제공된다.
 - [ ] 설치·개발·빌드·배포·지원 범위·개인정보 처리·라이선스 문서와 위키가 현재 동작과 일치한다.
 
 ## 13. 배포 단계에 연결할 외부 정보
 
-구현과 로컬 패키징은 이 계획의 기본값으로 진행할 수 있다. 실제 Pages 게시 시에는 GitHub 소유자/저장소 주소, 기본 브랜치, Pages 활성화 상태와 선택한 사용자 도메인을 연결해야 한다. 현재 문서에는 확인하지 않은 원격 저장소나 운영 URL을 확정값으로 적지 않는다.
+확인된 배포 정보:
+
+- 원격 저장소: [m00nlygreat/the_viewer](https://github.com/m00nlygreat/the_viewer)
+- 기본 브랜치: `main`
+- Pages 앱: [https://m00nlygreat.github.io/the_viewer/](https://m00nlygreat.github.io/the_viewer/)
+- 배포 방법: [.github/workflows/pages.yml](.github/workflows/pages.yml)에서 `dist/app`만 업로드한다.
+- Chrome 확장: MV3 폴더와 ZIP을 빌드하고 소스를 원격에 푸시한다. Chrome Web Store에는 게시하지 않는다.
+
+브라우저에서 앱 시작 화면과 새 CSV 편집 진입을 확인했다. 빈 CSV의 자동 구분자 경고를 수정해 회귀 검사를 추가했다. 목업 원본 HTML은 읽기 전용으로 보존했고, 브라우저 보안 제한으로 원본 목업 파일 자체를 UI에서 렌더링하지 못해 12개 화면의 스크린샷 비교는 완료로 처리하지 않는다. 설치형 PWA의 오프라인 동작과 실제 Chrome 확장 설치 검증도 별도로 남아 있다.
 
 Chrome Web Store 공개 게시를 진행할 경우에는 개발자 계정·스토어 항목·최종 설명과 개인정보 처리 URL을 연결한다. 우선 릴리스 산출물은 완전한 압축해제 설치 폴더와 제출 가능한 ZIP으로 제공한다.
 

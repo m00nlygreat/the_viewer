@@ -43,8 +43,9 @@ usage: "요구사항을 정리하거나 갱신할 때 함께 관리한다. 원�
 - 저장소 하위 경로와 루트 배포에 맞춰 자산·manifest·서비스 워커의 base를 일치시킨다.
 - 확장 폴더와 설치 가능한 ZIP을 별도로 제공한다.
 
-## 6. 게시 단계에 연결할 정보
+## 6. 배포 정보와 남은 확인
 
-- 실제 GitHub 저장소·기본 브랜치·Pages 설정·사용자 도메인.
-- Chrome Web Store에 공개할 경우 개발자 계정과 스토어 게시 정보.
-- 구현 계획의 세부 기본값은 구현 시 검증하며, 현재 앱 구현은 미착수 상태다.
+- 원격 저장소: [m00nlygreat/the_viewer](https://github.com/m00nlygreat/the_viewer), 기본 브랜치 `main`.
+- PWA: [GitHub Pages 배포](https://m00nlygreat.github.io/the_viewer/). Actions가 `dist/app`만 배포한다.
+- Chrome 확장: 폴더와 ZIP을 빌드해 원격에 푸시한다. Chrome Web Store 공개 게시 범위는 아니다.
+- 설치 후 오프라인 사용, 실제 확장 설치, 12개 목업 화면의 스크린샷 비교는 별도 검증으로 남아 있다.

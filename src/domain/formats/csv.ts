@@ -2,8 +2,9 @@ import Papa from 'papaparse'
 import type { CsvModel } from '../types'
 
 export function parseCsv(text: string, encoding: string, bom: boolean, newline: '\n' | '\r\n'): CsvModel {
+  if (text.length === 0) return { headers: [], headerRow: [], rows: [], hasHeader: false, delimiter: ',', newline, bom, encoding, errors: [] }
   const parsed = Papa.parse<string[]>(text, { delimiter: '', dynamicTyping: false, skipEmptyLines: false, quoteChar: '"', escapeChar: '"' })
-  const data = text ? [...(parsed.data ?? [])] : []
+  const data = [...(parsed.data ?? [])]
   if (/(?:\r\n|\r|\n)$/.test(text) && data.at(-1)?.every((value) => value === '')) data.pop()
   const headers = [...(data[0] ?? [])]
   const rows = data.slice(1).map((row) => [...row])
