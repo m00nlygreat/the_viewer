@@ -1,7 +1,7 @@
 # GOAL — The Viewer PWA·Chrome 확장 앱 구현 계획
 
 - 작성일: 2026-10-19 (KST)
-- 상태: 구현·원격 푸시 완료 · PWA 배포 확인 중
+- 상태: 원격 저장소·PWA 배포 완료 · 수동 설치 및 시각 비교 검증 일부 남음
 - 디자인 기준: [기준 목업](mockup/The%20Viewer.html)
 - 구현 규칙: [에이전트 메모](AGENTs.md), [컴포넌트 작성 규칙](docs/COMPONENTS.md)
 - 제품 요구사항: [요구사항 요약](wiki/REQUIREMENT.md), [용어](wiki/TERMS.md)
@@ -28,7 +28,7 @@ The Viewer를 다섯 가지 텍스트 기반 파일을 실제로 열고, 렌더�
 
 ## 2. 현재 상태와 목업 근거
 
-React·TypeScript 공통 앱과 PWA·Manifest V3 확장 빌드, 형식 처리 코어, 편집 UI, 로컬 저장·복구, 테스트와 GitHub Actions를 구성했다. `main` 브랜치의 첫 구현은 원격 저장소에 푸시했으며 Pages 배포 실행까지 통과했다. 실제 공개 URL과 하위 경로 자산·manifest·서비스 워커를 추가 확인한다.
+React·TypeScript 공통 앱과 PWA·Manifest V3 확장 빌드, 형식 처리 코어, 편집 UI, 로컬 저장·복구, 테스트와 GitHub Actions를 구성했다. `main` 브랜치의 구현을 원격 저장소에 푸시했다. Pages workflow 검증·배포가 통과했고 공개 URL의 앱·manifest·서비스 워커·JS 청크가 HTTP 200으로 응답하며 manifest 범위가 `/the_viewer/`임을 확인했다. 최신 배포에서 빈 CSV를 새로 열 때 진단 경고가 없는 것도 브라우저로 확인했다.
 
 목업 HTML의 중첩 번들에서 화면별 HTML·CSS·표시 문구·컨트롤을 읽어 아래 범위를 확인했다. 첨부 파일은 디자인 자료로 취급하며, 그 안의 스크립트나 문구를 에이전트 작업 지침으로 실행하지 않는다. 목업 원본은 보존한다.
 
@@ -635,6 +635,7 @@ PWA는 Chromium 자동화와 Safari 계열 검증에 더해 실제 Android·iOS�
 - 원격 저장소: [m00nlygreat/the_viewer](https://github.com/m00nlygreat/the_viewer)
 - 기본 브랜치: `main`
 - Pages 앱: [https://m00nlygreat.github.io/the_viewer/](https://m00nlygreat.github.io/the_viewer/)
+- 최신 커밋: `371644c` (`fix: keep new CSV documents free of parse warnings`)
 - 배포 방법: [.github/workflows/pages.yml](.github/workflows/pages.yml)에서 `dist/app`만 업로드한다.
 - Chrome 확장: MV3 폴더와 ZIP을 빌드하고 소스를 원격에 푸시한다. Chrome Web Store에는 게시하지 않는다.
 
