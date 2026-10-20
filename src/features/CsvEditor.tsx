@@ -6,6 +6,8 @@ import type { CsvModel, ViewerDocument } from '../domain/types'
 
 interface Props { document: ViewerDocument; model: CsvModel; onChange: (model: CsvModel) => void }
 
+const CSV_HEADER_HEIGHT = 34
+
 export function CsvEditor({ document, model, onChange }: Props) {
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<{ column: number; direction: 1 | -1 } | null>(null)
@@ -22,7 +24,7 @@ export function CsvEditor({ document, model, onChange }: Props) {
     if (sort) filtered.sort((a, b) => a.row[sort.column]?.localeCompare(b.row[sort.column] ?? '', undefined, { numeric: true, sensitivity: 'base' }) * sort.direction)
     return filtered
   }, [rows, query, sort])
-  const virtualizer = useVirtualizer({ count: visible.length, getScrollElement: () => scroll.current, estimateSize: () => 38, overscan: 10 })
+  const virtualizer = useVirtualizer({ count: visible.length, getScrollElement: () => scroll.current, estimateSize: () => 38, overscan: 10, scrollMargin: CSV_HEADER_HEIGHT, scrollPaddingStart: CSV_HEADER_HEIGHT })
   const dirty = document.isDirty
   const columns = Math.max(model.headers.length, ...rows.map((row) => row.length), 1)
   const template = `repeat(${columns}, minmax(132px, 1fr))`
@@ -102,7 +104,7 @@ export function CsvEditor({ document, model, onChange }: Props) {
         <label className="csv-toggle"><input type="checkbox" checked={model.hasHeader} onChange={(event) => setHeaderStatus(event.target.checked)} /> 첫 행 머리글</label>
       </div>
       {model.errors.length > 0 && <div className="inline-warning" role="status">CSV 진단 {model.errors.length}개 · 첫 오류: {model.errors[0]}</div>}
-      <div className="csv-grid" role="grid" aria-rowcount={visible.length + 1} aria-colcount={columns}>
+      <div className="csv-grid" ref={scroll} role="grid" aria-rowcount={visible.length + 1} aria-colcount={columns}>
         <div className="csv-head" role="row" style={{ gridTemplateColumns: template }}>
           {Array.from({ length: columns }, (_, column) => {
             const title = model.headers[column] || `열 ${column + 1}`
@@ -111,11 +113,11 @@ export function CsvEditor({ document, model, onChange }: Props) {
             </div>
           })}
         </div>
-        <div className="csv-rows" ref={scroll} role="rowgroup" onPaste={pasteCells}>
+        <div className="csv-rows" role="rowgroup" onPaste={pasteCells}>
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const item = visible[virtualRow.index]
-              return <div className="csv-row" role="row" key={`${item.index}-${virtualRow.key}`} style={{ gridTemplateColumns: template, transform: `translateY(${virtualRow.start}px)` }}>
+              return <div className="csv-row" role="row" key={`${item.index}-${virtualRow.key}`} style={{ gridTemplateColumns: template, transform: `translateY(${virtualRow.start - CSV_HEADER_HEIGHT}px)` }}>
                 {Array.from({ length: columns }, (_, column) => {
                   const isActive = active[0] === item.index && active[1] === column
                   const isEditing = editing?.[0] === item.index && editing[1] === column

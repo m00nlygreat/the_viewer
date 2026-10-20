@@ -259,14 +259,14 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .csv-select-label { display: flex; align-items: center; gap: 6px; color: var(--text-weak); font-size: 11px; }
 .csv-select-label select { height: 25px; padding: 0 20px 0 7px; font-size: 11px; }
 .csv-toggle { display: flex; align-items: center; gap: 5px; color: var(--text-weak); font-size: 11px; white-space: nowrap; }
-.csv-grid { min-width: 760px; flex: 1; display: flex; flex-direction: column; overflow: auto; }
+.csv-grid { min-width: 0; flex: 1; display: flex; flex-direction: column; overflow: auto; overscroll-behavior: contain; }
 .csv-head, .csv-row { min-width: 760px; display: grid; }
 .csv-head { min-height: 34px; flex: 0 0 34px; position: sticky; top: 0; z-index: 3; border-bottom: 1px solid var(--line); background: var(--sidebar); }
 .csv-heading { min-width: 0; height: 34px; padding: 0 12px; display: flex; align-items: center; gap: 5px; border-right: 1px solid var(--line); color: var(--text-muted); background: transparent; text-align: left; font-size: 12px; font-weight: 500; }
 .csv-heading > button { width: 100%; height: 100%; min-width: 0; padding: 0; display: flex; align-items: center; gap: 5px; overflow: hidden; border: 0; color: inherit; background: transparent; text-align: left; font: inherit; }
 .csv-heading > input { width: 100%; height: 24px; padding: 0 4px; }
 .csv-heading:hover { background: var(--selected); color: var(--text); }
-.csv-rows { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; }
+.csv-rows { min-width: 0; min-height: 0; flex: 1; overflow: visible; }
 .csv-row { position: absolute; left: 0; right: 0; height: 38px; border-bottom: 1px solid var(--row-line); }
 .csv-row:hover { background: color-mix(in srgb, var(--selected-row) 58%, transparent); }
 .csv-cell { min-width: 0; height: 38px; padding: 0 12px; display: flex; align-items: center; overflow: hidden; border-right: 1px solid color-mix(in srgb, var(--line) 68%, transparent); color: var(--body); white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
@@ -468,7 +468,7 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
   .search-box { width: 155px; max-width: 39vw; }
   .csv-select-label { display: none; }
   .csv-toggle { display: none; }
-  .csv-grid, .csv-head, .csv-row { min-width: 760px; }
+  .csv-head, .csv-row { min-width: 760px; }
   .csv-statusbar { gap: 8px; padding: 0 8px; font-size: 10px; }
   .email-main { padding: 22px 16px; }
   .email-subject-row h1 { font-size: 24px; }
