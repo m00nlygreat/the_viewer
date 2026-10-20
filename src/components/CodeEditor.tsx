@@ -31,7 +31,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
         }),
         EditorView.theme({
           '&': { height: '100%', color: 'var(--text)', backgroundColor: 'var(--panel)' },
-          '.cm-scroller': { fontFamily: 'var(--font-mono)', fontSize: '13px', lineHeight: '1.72', overflow: 'auto' },
+          '.cm-scroller': { fontFamily: 'var(--font-mono)', fontSize: '16px', lineHeight: '1.72', overflow: 'auto' },
           '.cm-content': { padding: '20px 22px', caretColor: 'var(--accent)' },
           '.cm-gutters': { backgroundColor: 'var(--panel)', color: 'var(--text-weak)', border: 'none', borderRight: '1px solid var(--line)' },
           '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--accent) 6%, transparent)' },

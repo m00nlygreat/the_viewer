@@ -42,7 +42,7 @@ export function EmailEditor({ document, model, onChange, onOpenAttachment, onDow
     FORBID_ATTR: ['style', 'srcset', 'background', 'action', 'formaction'],
     ALLOWED_URI_REGEXP: /^(?:blob:|data:image\/(?:png|gif|jpeg|webp);base64,)/i
   })
-  const frame = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:"><style>body{font:14px/1.75 system-ui,sans-serif;color:#d4d5d8;margin:16px;overflow-wrap:anywhere}a{color:#a4aaf7}</style></head><body>${safeHtml}</body></html>`
+  const frame = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:"><style>body{font:17px/1.75 system-ui,sans-serif;color:#d4d5d8;margin:16px;overflow-wrap:anywhere}a{color:#a4aaf7}</style></head><body>${safeHtml}</body></html>`
   const sender = model.from[0]
   const details = [
     ['보낸 사람', sender?.name || sender?.address || '—'], ['주소', sender?.address || '—'],
