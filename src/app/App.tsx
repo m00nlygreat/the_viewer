@@ -7,6 +7,7 @@ import {
 import { CommandMenu, type CommandItem } from '../components/CommandMenu'
 import { SettingsDialog } from '../components/SettingsDialog'
 import { useFocusTrap } from '../components/useFocusTrap'
+import { ViewerZoom } from '../components/ViewerZoom'
 import { FORMAT_MIME, FORMATS, getFormat, type CalendarModel, type ContactModel, type CsvModel, type DocumentModel, type EmailModel, type Format, type ThemePreference, type ViewerDocument } from '../domain/types'
 import { makeDocumentFromBytes } from '../domain/session'
 import { parseWithWorker } from '../domain/workerClient'
@@ -473,6 +474,7 @@ export function App({ platform }: Props) {
   const dirty = activeDocument?.isDirty ?? false
   const switchTab = (id: string) => { setActiveId(id); location.hash = `/file/${id}` }
   const modeLabel: Record<ViewerDocument['mode'], string> = { view: '보기', edit: '편집', source: '원본' }
+  const renderActiveDocument = (document: ViewerDocument) => renderDocument(document, (model) => changeModel(document.id, model), (text) => updateDocument(document.id, (item) => ({ ...item, text, sourceError: undefined }), true, text !== document.savedText), openAttachment, downloadAttachment, addAttachment, removeAttachment)
 
   return <div className="app-shell" data-platform={platform} onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <FilePicker ref={inputRef} onFiles={(files, format) => { void openFiles(files, format) }} onError={notify} />
@@ -515,7 +517,7 @@ export function App({ platform }: Props) {
         <div className="document-workspace" key={activeDocument.id}>
           {activeDocument.sourceError && activeDocument.mode === 'source' && <div className="source-diagnostic" role="alert"><span>원본 문법 오류 · 마지막으로 해석된 구조는 유지됩니다. 이 텍스트는 원문 파일로 내보낼 수 있습니다.</span><small>{activeDocument.sourceError}</small></div>}
           <Suspense fallback={<div className="editor-loading"><span className="spinner" />편집기를 준비하고 있습니다…</div>}>
-            {renderDocument(activeDocument, (model) => changeModel(activeDocument.id, model), (text) => updateDocument(activeDocument.id, (item) => ({ ...item, text, sourceError: undefined }), true, text !== activeDocument.savedText), openAttachment, downloadAttachment, addAttachment, removeAttachment)}
+            {activeDocument.mode === 'view' ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)}
           </Suspense>
         </div>
         {activeDocument.mode === 'source' && <div className="source-statusbar"><span>원본 텍스트 · UTF-8 출력</span><span>{activeDocument.text.split(/\r\n|\r|\n/).length}줄 · {activeDocument.text.length.toLocaleString()}자</span><div className="toolbar-spacer" />{activeDocument.sourceError ? <span className="error-label">문법 오류</span> : <span className="ready-label">유효한 문서</span>}</div>}
