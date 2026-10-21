@@ -437,7 +437,6 @@ export function App({ platform }: Props) {
   const commands = useMemo<CommandItem[]>(() => [
     ...documents.map((item) => ({ id: `switch-${item.id}`, title: `열린 파일 · ${safeFilename(item.name)}`, detail: `${labels[item.format]}${item.isDirty ? ' · 수정됨' : ''}`, section: '열린 파일', icon: 'open' as const, run: () => { setActiveId(item.id); location.hash = `/file/${item.id}` } })),
     { id: 'open', title: '파일 열기', detail: `지원 형식 ${fileAccept}`, section: '파일', icon: 'open', run: () => pickFiles() },
-    ...FORMATS.map((format) => ({ id: `open-${format}`, title: `${labels[format]} 파일 열기`, detail: `.${format}`, section: '파일', icon: 'open' as const, run: () => pickFiles(format) })),
     ...FORMATS.map((format) => ({ id: `new-${format}`, title: `새 ${labels[format]} 만들기`, detail: `Untitled.${format}`, section: '새 파일', icon: 'new' as const, run: () => { void createBlank(format) } })),
     ...(activeDocument ? [{ id: 'revert', title: '처음 연 파일로 되돌리기', detail: activeDocument.name, section: '문서', icon: 'new' as const, run: () => { void revertCurrent() } }] : []),
     { id: 'paste', title: '클립보드에서 열기', detail: '붙여넣은 텍스트를 새 문서로 엽니다.', section: '입력', icon: 'paste', run: () => { void handlePaste() } },
@@ -474,7 +473,7 @@ export function App({ platform }: Props) {
   const dirty = activeDocument?.isDirty ?? false
   const switchTab = (id: string) => { setActiveId(id); location.hash = `/file/${id}` }
   const modeLabel: Record<ViewerDocument['mode'], string> = { view: '보기', edit: '편집', source: '원본' }
-  const renderActiveDocument = (document: ViewerDocument) => renderDocument(document, (model) => changeModel(document.id, model), (text) => updateDocument(document.id, (item) => ({ ...item, text, sourceError: undefined }), true, text !== document.savedText), openAttachment, downloadAttachment, addAttachment, removeAttachment)
+  const renderActiveDocument = (document: ViewerDocument) => renderDocument(document, (model) => changeModel(document.id, model), (text) => updateDocument(document.id, (item) => ({ ...item, text, sourceError: undefined }), true, text !== document.savedText), openAttachment, downloadAttachment, addAttachment, removeAttachment, resolvedTheme)
 
   return <div className="app-shell" data-platform={platform} onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <FilePicker ref={inputRef} onFiles={(files, format) => { void openFiles(files, format) }} onError={notify} />
@@ -542,10 +541,10 @@ export function App({ platform }: Props) {
   </div>
 }
 
-function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel) => void, onText: (text: string) => void, onOpenAttachment: (index: number) => void, onDownloadAttachment: (index: number) => void, onAddAttachment: () => void, onRemoveAttachment: (index: number) => void) {
+function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel) => void, onText: (text: string) => void, onOpenAttachment: (index: number) => void, onDownloadAttachment: (index: number) => void, onAddAttachment: () => void, onRemoveAttachment: (index: number) => void, theme: 'light' | 'dark') {
   if (document.mode === 'source') return <SourceEditor value={document.text} onChange={onText} markdownMode={document.format === 'md'} label={`${document.name} 원본 편집기`} />
   switch (document.format) {
-    case 'csv': return <CsvEditor document={document} model={document.model as CsvModel} onChange={(model) => onModel(model)} />
+    case 'csv': return <CsvEditor document={document} model={document.model as CsvModel} onChange={(model) => onModel(model)} theme={theme} />
     case 'md': return <MarkdownEditor document={document} text={(document.model as { text: string }).text} onChange={(text) => onModel({ text })} />
     case 'eml': return <EmailEditor document={document} model={document.model as EmailModel} onChange={(model) => onModel(model)} onOpenAttachment={onOpenAttachment} onDownloadAttachment={onDownloadAttachment} onAddAttachments={onAddAttachment} onRemoveAttachment={onRemoveAttachment} />
     case 'ics': return <CalendarEditor document={document} model={document.model as CalendarModel} onChange={(model) => onModel(model)} />

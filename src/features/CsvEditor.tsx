@@ -1,66 +1,190 @@
-import { useMemo, useRef, useState } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
-import { ArrowDown, ArrowUp, Plus, Search, Trash2 } from 'lucide-react'
-import Papa from 'papaparse'
+import { useCallback, useEffect, useMemo, useState, type ComponentType } from 'react'
+import { Plus, Search, Trash2 } from 'lucide-react'
+import {
+  CompactSelection,
+  DataEditor,
+  GridCellKind,
+  emptyGridSelection,
+  getDefaultTheme,
+  type DataEditorProps,
+  type EditListItem,
+  type GridCell,
+  type GridColumn,
+  type GridSelection,
+  type Item,
+  type Theme as GridTheme,
+} from '@glideapps/glide-data-grid'
+import '@glideapps/glide-data-grid/dist/index.css'
 import type { CsvModel, ViewerDocument } from '../domain/types'
 
-interface Props { document: ViewerDocument; model: CsvModel; onChange: (model: CsvModel) => void }
+interface Props { document: ViewerDocument; model: CsvModel; onChange: (model: CsvModel) => void; theme: 'light' | 'dark' }
 
 const CSV_HEADER_HEIGHT = 34
+const CSV_ROW_HEIGHT = 38
 
-export function CsvEditor({ document, model, onChange }: Props) {
+function columnTitle(headers: readonly string[], column: number): string { return headers[column] || `열 ${column + 1}` }
+
+// Glide 6.0.4 alpha exposes fillHandle at runtime before including it in its public prop types.
+const SpreadsheetGrid = DataEditor as unknown as ComponentType<DataEditorProps & { fillHandle?: boolean }>
+
+export function CsvEditor({ document, model, onChange, theme }: Props) {
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<{ column: number; direction: 1 | -1 } | null>(null)
-  const [active, setActive] = useState<[number, number]>([0, 0])
-  const [editing, setEditing] = useState<[number, number] | null>(null)
-  const [editValue, setEditValue] = useState('')
+  const [gridSelection, setGridSelection] = useState<GridSelection>(emptyGridSelection)
   const [editingHeader, setEditingHeader] = useState<number | null>(null)
-  const discardEdit = useRef(false)
-  const restoreCellFocus = useRef(false)
-  const scroll = useRef<HTMLDivElement>(null)
+  const [headerDraft, setHeaderDraft] = useState('')
   const rows = model.rows
   const visible = useMemo(() => {
     const filtered = rows.map((row, index) => ({ row, index })).filter(({ row }) => !query || row.some((value) => value.toLocaleLowerCase().includes(query.toLocaleLowerCase())))
-    if (sort) filtered.sort((a, b) => a.row[sort.column]?.localeCompare(b.row[sort.column] ?? '', undefined, { numeric: true, sensitivity: 'base' }) * sort.direction)
+    if (sort) filtered.sort((a, b) => (a.row[sort.column] ?? '').localeCompare(b.row[sort.column] ?? '', undefined, { numeric: true, sensitivity: 'base' }) * sort.direction)
     return filtered
   }, [rows, query, sort])
-  const virtualizer = useVirtualizer({ count: visible.length, getScrollElement: () => scroll.current, estimateSize: () => 38, overscan: 10, scrollMargin: CSV_HEADER_HEIGHT, scrollPaddingStart: CSV_HEADER_HEIGHT })
-  const dirty = document.isDirty
-  const columns = Math.max(model.headers.length, ...rows.map((row) => row.length), 1)
-  const template = `repeat(${columns}, minmax(132px, 1fr))`
-  const focusCell = (column: number, visibleIndex: number) => {
-    const row = visible[visibleIndex]
-    if (!row) return
-    setActive([row.index, Math.max(0, Math.min(columns - 1, column))])
-    virtualizer.scrollToIndex(visibleIndex)
-    requestAnimationFrame(() => globalThis.document.getElementById(`csv-cell-${row.index}-${Math.max(0, Math.min(columns - 1, column))}`)?.focus())
-  }
-  const moveCell = (rowIndex: number, column: number, rowDelta: number, columnDelta: number, wrap: boolean) => {
-    if (!visible.length) return
-    const currentIndex = Math.max(0, visible.findIndex((item) => item.index === rowIndex))
-    let nextIndex = currentIndex + rowDelta
-    let nextColumn = column + columnDelta
-    if (wrap && nextColumn >= columns) { nextIndex += Math.floor(nextColumn / columns); nextColumn %= columns }
-    if (wrap && nextColumn < 0) { nextIndex += Math.floor(nextColumn / columns); nextColumn = (nextColumn % columns + columns) % columns }
-    nextIndex = Math.max(0, Math.min(visible.length - 1, nextIndex))
-    focusCell(nextColumn, nextIndex)
-  }
-  const commit = (rowIndex: number, column: number, value: string) => {
+  const columnsCount = Math.max(model.headers.length, ...rows.map((row) => row.length), 1)
+  const activeCell = gridSelection.current?.cell ?? [0, 0]
+  const activeColumn = Math.max(0, Math.min(columnsCount - 1, activeCell[0]))
+  const activeRow = Math.max(0, Math.min(Math.max(visible.length - 1, 0), activeCell[1]))
+  const activeSourceRow = visible[activeRow]?.index ?? activeRow
+  const selectedRange = gridSelection.current?.range
+
+  const gridColumns = useMemo<GridColumn[]>(() => Array.from({ length: columnsCount }, (_, column) => {
+    const title = columnTitle(model.headers, column)
+    const sortedTitle = sort?.column === column ? `${title} ${sort.direction === 1 ? '▲' : '▼'}` : title
+    return { title: sortedTitle, width: 164, grow: 1 }
+  }), [columnsCount, model.headers, sort])
+
+  const gridTheme = useMemo<GridTheme>(() => {
+    const light = theme === 'light'
+    return {
+      ...getDefaultTheme(),
+      accentColor: light ? '#4A52C4' : '#A4AAF7',
+      accentLight: light ? 'rgba(74, 82, 196, 0.16)' : 'rgba(164, 170, 247, 0.20)',
+      accentFg: light ? '#FCFCFD' : '#0B0B0C',
+      textDark: light ? '#1C1D21' : '#E6E6E8',
+      textMedium: light ? '#3D3E44' : '#C9CACE',
+      textLight: light ? '#62636A' : '#8A8B91',
+      textBubble: light ? '#1C1D21' : '#E6E6E8',
+      bgIconHeader: light ? '#F4F4F6' : '#0E0E10',
+      fgIconHeader: light ? '#62636A' : '#8A8B91',
+      textHeader: light ? '#62636A' : '#8A8B91',
+      textHeaderSelected: light ? '#1C1D21' : '#F2F2F3',
+      bgCell: light ? '#FCFCFD' : '#0B0B0C',
+      bgCellMedium: light ? '#F4F4F6' : '#0E0E10',
+      bgHeader: light ? '#F4F4F6' : '#0E0E10',
+      bgHeaderHasFocus: light ? '#E6E6EB' : '#1D1E21',
+      bgHeaderHovered: light ? '#E6E6EB' : '#1D1E21',
+      bgBubble: light ? '#E6E6EB' : '#1D1E21',
+      bgBubbleSelected: light ? '#D9DBF7' : '#353859',
+      bgSearchResult: light ? '#D9DBF7' : '#353859',
+      borderColor: light ? '#E4E4E8' : '#1E1F22',
+      horizontalBorderColor: light ? '#EEEEF1' : '#17181B',
+      headerBottomBorderColor: light ? '#E4E4E8' : '#1E1F22',
+      drilldownBorder: light ? '#4A52C4' : '#5B63D3',
+      linkColor: light ? '#4A52C4' : '#A4AAF7',
+      fontFamily: "'Geist Variable', 'Noto Sans KR Variable', sans-serif",
+      headerFontStyle: "500 12px 'Geist Variable', 'Noto Sans KR Variable', sans-serif",
+      baseFontStyle: "13px 'Geist Variable', 'Noto Sans KR Variable', sans-serif",
+      markerFontStyle: "11px 'Geist Mono Variable', 'Noto Sans Mono', monospace",
+      editorFontSize: '13px',
+    }
+  }, [theme])
+
+  const getCellContent = useCallback(([column, row]: Item): GridCell => {
+    const value = visible[row]?.row[column] ?? ''
+    return { kind: GridCellKind.Text, data: value, displayData: value, allowOverlay: true }
+  }, [visible])
+
+  const applyTextEdits = useCallback((edits: readonly { location: Item; value: string }[]) => {
+    if (edits.length === 0) return
+    const next = [...rows]
+    const changedRows = new Map<number, string[]>()
+    let changed = false
+    for (const { location: [column, viewRow], value } of edits) {
+      const sourceRow = visible[viewRow]?.index
+      if (sourceRow === undefined || column < 0 || column >= columnsCount) continue
+      let nextRow = changedRows.get(sourceRow)
+      if (!nextRow) {
+        nextRow = [...next[sourceRow]]
+        changedRows.set(sourceRow, nextRow)
+        next[sourceRow] = nextRow
+      }
+      while (nextRow.length <= column) nextRow.push('')
+      if (nextRow[column] !== value) { nextRow[column] = value; changed = true }
+    }
+    if (changed) onChange({ ...model, rows: next })
+  }, [columnsCount, model, onChange, rows, visible])
+
+  const applyGridEdits = useCallback((edits: readonly EditListItem[]) => {
+    applyTextEdits(edits.map(({ location, value }) => ({
+      location,
+      value: value.kind === GridCellKind.Text ? value.data : ('data' in value ? String(value.data ?? '') : ''),
+    })))
+    return true
+  }, [applyTextEdits])
+
+  const pasteValues = useCallback((target: Item, values: readonly (readonly string[])[]) => {
+    if (values.length === 0) return false
+    const [startColumn, startViewRow] = target
+    if (startColumn < 0 || startColumn >= columnsCount || startViewRow < 0) return false
     const next = rows.map((row) => [...row])
-    while (next[rowIndex].length <= column) next[rowIndex].push('')
-    next[rowIndex][column] = value
-    onChange({ ...model, rows: next })
-    setEditing(null)
+    let changed = false
+    values.forEach((line, rowOffset) => {
+      const viewRow = startViewRow + rowOffset
+      let sourceRow = visible[viewRow]?.index
+      if (sourceRow === undefined) {
+        sourceRow = next.length
+        next.push(Array(columnsCount).fill(''))
+      }
+      while (next[sourceRow].length < startColumn + line.length) next[sourceRow].push('')
+      line.forEach((value, columnOffset) => {
+        const column = startColumn + columnOffset
+        if (next[sourceRow][column] !== value) { next[sourceRow][column] = value; changed = true }
+      })
+    })
+    if (changed) onChange({ ...model, rows: next })
+    return false
+  }, [columnsCount, model, onChange, rows, visible])
+
+  const clearSelection = useCallback((selection: GridSelection) => {
+    const range = selection.current?.range
+    if (range) {
+      const edits: { location: Item; value: string }[] = []
+      for (let row = range.y; row < range.y + range.height; row++) {
+        for (let column = range.x; column < range.x + range.width; column++) edits.push({ location: [column, row], value: '' })
+      }
+      applyTextEdits(edits)
+    }
+    return true
+  }, [applyTextEdits])
+
+  useEffect(() => {
+    const cell = gridSelection.current?.cell
+    if (visible.length === 0) {
+      if (cell) setGridSelection(emptyGridSelection)
+      return
+    }
+    if (!cell || cell[0] >= columnsCount || cell[1] >= visible.length) {
+      const nextCell: Item = [0, 0]
+      setGridSelection({ current: { cell: nextCell, range: { x: 0, y: 0, width: 1, height: 1 }, rangeStack: [] }, columns: CompactSelection.empty(), rows: CompactSelection.empty() })
+    }
+  }, [columnsCount, gridSelection, visible.length])
+
+  const addRow = () => onChange({ ...model, rows: [...rows, Array(columnsCount).fill('')] })
+  const addColumn = () => onChange({
+    ...model,
+    headers: [...model.headers, `열 ${model.headers.length + 1}`],
+    headerRow: [...model.headerRow, ''],
+    rows: rows.map((row) => [...row, '']),
+  })
+  const removeActiveRow = () => {
+    const sourceRow = visible[activeRow]?.index
+    if (sourceRow !== undefined) onChange({ ...model, rows: rows.filter((_, index) => index !== sourceRow) })
   }
-  const beginEdit = (rowIndex: number, column: number, value: string) => { discardEdit.current = false; setEditValue(value); setEditing([rowIndex, column]) }
-  const finishEdit = (rowIndex: number, column: number) => {
-    if (discardEdit.current) { discardEdit.current = false; setEditing(null); return }
-    if (editing?.[0] === rowIndex && editing[1] === column) commit(rowIndex, column, editValue)
-  }
-  const addRow = () => onChange({ ...model, rows: [...rows, Array(columns).fill('')] })
-  const addColumn = () => onChange({ ...model, headers: [...model.headers, `열 ${model.headers.length + 1}`], rows: rows.map((row) => [...row, '']) })
-  const removeActiveRow = () => onChange({ ...model, rows: rows.filter((_, index) => index !== active[0]) })
-  const removeActiveColumn = () => onChange({ ...model, headers: model.headers.filter((_, index) => index !== active[1]), rows: rows.map((row) => row.filter((_, index) => index !== active[1])) })
+  const removeActiveColumn = () => onChange({
+    ...model,
+    headers: model.headers.filter((_, index) => index !== activeColumn),
+    headerRow: model.headerRow.filter((_, index) => index !== activeColumn),
+    rows: rows.map((row) => row.filter((_, index) => index !== activeColumn)),
+  })
   const setHeaderStatus = (checked: boolean) => {
     if (checked === model.hasHeader) return
     if (checked) {
@@ -71,25 +195,34 @@ export function CsvEditor({ document, model, onChange }: Props) {
       onChange({ ...model, headerRow, rows: [headerRow, ...model.rows], hasHeader: false })
     }
   }
-  const pasteCells = (event: React.ClipboardEvent) => {
-    const content = event.clipboardData.getData('text/plain')
-    if (!content.includes('\t') && !content.includes('\n')) return
-    event.preventDefault()
-    const parsed = Papa.parse<string[]>(content, { delimiter: '\t', skipEmptyLines: true }).data
-    const next = rows.map((row) => [...row])
-    parsed.forEach((line, rowOffset) => line.forEach((value, columnOffset) => {
-      const rowIndex = active[0] + rowOffset
-      while (next.length <= rowIndex) next.push(Array(columns).fill(''))
-      while (next[rowIndex].length <= active[1] + columnOffset) next[rowIndex].push('')
-      next[rowIndex][active[1] + columnOffset] = value
-    }))
-    onChange({ ...model, rows: next })
+  const sortColumn = (column: number) => setSort((current) => current?.column === column ? { column, direction: current.direction === 1 ? -1 : 1 } : { column, direction: 1 })
+  const handleHeaderClick = (column: number, event: Parameters<NonNullable<DataEditorProps['onHeaderClicked']>>[1]) => {
+    if (event.isDoubleClick && model.hasHeader) {
+      setEditingHeader(column)
+      setHeaderDraft(model.headers[column] ?? '')
+      return
+    }
+    if (!event.isDoubleClick) sortColumn(column)
   }
+  const commitHeader = () => {
+    if (editingHeader === null) return
+    const headers = [...model.headers]
+    headers[editingHeader] = headerDraft
+    onChange({ ...model, headers })
+    setEditingHeader(null)
+  }
+  const gridSelectionChanged = (selection: GridSelection) => setGridSelection(selection)
+  const selectedRows = selectedRange?.height ?? 1
+  const selectedColumns = selectedRange?.width ?? 1
 
   return (
     <section className="csv-workspace" aria-label={`${document.name} 표`}>
       <div className="csv-toolbar">
         <label className="search-box"><Search size={14} /><input aria-label="표 검색" placeholder="검색" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+        {editingHeader !== null && <input className="csv-header-editor" autoFocus aria-label="열 이름 변경" value={headerDraft} onChange={(event) => setHeaderDraft(event.target.value)} onBlur={commitHeader} onKeyDown={(event) => {
+          if (event.key === 'Enter') { event.preventDefault(); (event.target as HTMLInputElement).blur() }
+          if (event.key === 'Escape') { event.preventDefault(); setEditingHeader(null) }
+        }} />}
         <div className="toolbar-separator" />
         <button className="toolbar-button" onClick={addRow}><Plus size={14} /> 행 추가</button>
         <button className="toolbar-button" onClick={addColumn}><Plus size={14} /> 열</button>
@@ -104,49 +237,42 @@ export function CsvEditor({ document, model, onChange }: Props) {
         <label className="csv-toggle"><input type="checkbox" checked={model.hasHeader} onChange={(event) => setHeaderStatus(event.target.checked)} /> 첫 행 머리글</label>
       </div>
       {model.errors.length > 0 && <div className="inline-warning" role="status">CSV 진단 {model.errors.length}개 · 첫 오류: {model.errors[0]}</div>}
-      <div className="csv-grid" ref={scroll} role="grid" aria-rowcount={visible.length + 1} aria-colcount={columns}>
-        <div className="csv-head" role="row" style={{ gridTemplateColumns: template }}>
-          {Array.from({ length: columns }, (_, column) => {
-            const title = model.headers[column] || `열 ${column + 1}`
-            return <div className="csv-heading" role="columnheader" key={column}>
-              {model.hasHeader && editingHeader === column ? <input autoFocus aria-label={`${title} 머리글 이름`} value={model.headers[column] ?? ''} onChange={(event) => { const headers = [...model.headers]; headers[column] = event.target.value; onChange({ ...model, headers }) }} onBlur={() => setEditingHeader(null)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === 'Escape') setEditingHeader(null) }} /> : <button onDoubleClick={() => { if (model.hasHeader) setEditingHeader(column) }} onClick={() => setSort(sort?.column === column ? { column, direction: sort.direction === 1 ? -1 : 1 } : { column, direction: 1 })}><span>{title}</span>{sort?.column === column && (sort.direction === 1 ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}</button>}
-            </div>
-          })}
-        </div>
-        <div className="csv-rows" role="rowgroup" onPaste={pasteCells}>
-          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-            {virtualizer.getVirtualItems().map((virtualRow) => {
-              const item = visible[virtualRow.index]
-              return <div className="csv-row" role="row" key={`${item.index}-${virtualRow.key}`} style={{ gridTemplateColumns: template, transform: `translateY(${virtualRow.start - CSV_HEADER_HEIGHT}px)` }}>
-                {Array.from({ length: columns }, (_, column) => {
-                  const isActive = active[0] === item.index && active[1] === column
-                  const isEditing = editing?.[0] === item.index && editing[1] === column
-                  return <div id={`csv-cell-${item.index}-${column}`} role="gridcell" tabIndex={isActive ? 0 : -1} aria-selected={isActive} className={`csv-cell${isActive ? ' active' : ''}${dirty && isActive ? ' changed' : ''}`} key={column}
-                    onFocus={() => setActive([item.index, column])} onClick={() => setActive([item.index, column])} onDoubleClick={() => { setActive([item.index, column]); beginEdit(item.index, column, item.row[column] ?? '') }}
-                    onKeyDown={(event) => {
-                      if (event.target !== event.currentTarget) return
-                      if (event.key === 'Enter' || event.key === 'F2') { event.preventDefault(); beginEdit(item.index, column, item.row[column] ?? '') }
-                      if (event.key === 'Tab') { event.preventDefault(); moveCell(item.index, column, 0, event.shiftKey ? -1 : 1, true) }
-                      else if (event.key === 'ArrowRight') { event.preventDefault(); moveCell(item.index, column, 0, 1, false) }
-                      else if (event.key === 'ArrowLeft') { event.preventDefault(); moveCell(item.index, column, 0, -1, false) }
-                      else if (event.key === 'ArrowDown') { event.preventDefault(); moveCell(item.index, column, 1, 0, false) }
-                      else if (event.key === 'ArrowUp') { event.preventDefault(); moveCell(item.index, column, -1, 0, false) }
-                    }}>
-                    {isEditing ? <input autoFocus aria-label={`${titleFor(model, column)} 편집`} value={editValue} onChange={(event) => setEditValue(event.target.value)} onBlur={() => { finishEdit(item.index, column); if (restoreCellFocus.current) { restoreCellFocus.current = false; requestAnimationFrame(() => globalThis.document.getElementById(`csv-cell-${item.index}-${column}`)?.focus()) } }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); restoreCellFocus.current = true; (event.target as HTMLInputElement).blur() } if (event.key === 'Escape') { discardEdit.current = true; restoreCellFocus.current = true; (event.target as HTMLInputElement).blur() } }} /> : <span>{item.row[column] ?? ''}</span>}
-                  </div>
-                })}
-              </div>
-            })}
-            {visible.length === 0 && <div className="csv-empty">검색 결과가 없습니다.</div>}
-          </div>
-        </div>
+      <div className="csv-grid">
+        <SpreadsheetGrid
+          className="csv-data-grid"
+          columns={gridColumns}
+          rows={visible.length}
+          getCellContent={getCellContent}
+          getCellsForSelection={true}
+          gridSelection={gridSelection}
+          onGridSelectionChange={gridSelectionChanged}
+          onCellsEdited={applyGridEdits}
+          onPaste={pasteValues}
+          onDelete={clearSelection}
+          onHeaderClicked={handleHeaderClick}
+          trailingRowOptions={{ tint: true, hint: '새 행' }}
+          onRowAppended={async () => { addRow(); return 'bottom' as const }}
+          fillHandle={true}
+          rangeSelect="rect"
+          rowSelect="none"
+          columnSelect="none"
+          rowMarkers="number"
+          rowHeight={CSV_ROW_HEIGHT}
+          headerHeight={CSV_HEADER_HEIGHT}
+          minColumnWidth={132}
+          maxColumnWidth={640}
+          width="100%"
+          height="100%"
+          theme={gridTheme}
+        />
+        {visible.length === 0 && query && <div className="csv-empty-overlay">검색 결과가 없습니다.</div>}
       </div>
       <div className="csv-statusbar">
-        <span>{visible.length.toLocaleString()} / {rows.length.toLocaleString()}행</span><span>{columns}열</span><span>{model.delimiter === '\t' ? 'TAB' : model.delimiter === ';' ? 'SEMICOLON' : 'CSV'}</span><span>{model.encoding}{model.bom ? ' · BOM' : ''}</span>
-        <div className="toolbar-spacer" /><span>{model.headers[active[1]] || `열 ${active[1] + 1}`} · 행 {active[0] + 1}</span>
+        <span>{visible.length.toLocaleString()} / {rows.length.toLocaleString()}행</span><span>{columnsCount}열</span><span>{model.delimiter === '\t' ? 'TAB' : model.delimiter === ';' ? 'SEMICOLON' : 'CSV'}</span><span>{model.encoding}{model.bom ? ' · BOM' : ''}</span>
+        <div className="toolbar-spacer" />
+        <span>{columnTitle(model.headers, activeColumn)} · 행 {activeSourceRow + 1}</span>
+        {(selectedRows > 1 || selectedColumns > 1) && <span>{selectedRows} × {selectedColumns} 선택</span>}
       </div>
     </section>
   )
 }
-
-function titleFor(model: CsvModel, column: number): string { return model.headers[column] || `열 ${column + 1}` }
