@@ -455,6 +455,8 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
   .command-item { height: 42px; }
   .command-footer { gap: 8px; }
   .csv-toolbar { min-height: 44px; padding: 0 8px; gap: 3px; }
+  .csv-autofit-button { padding: 0 6px; }
+  .csv-autofit-button span { display: none; }
   .search-box { width: 155px; max-width: 39vw; }
   .csv-select-label { display: none; }
   .csv-toggle { display: none; }

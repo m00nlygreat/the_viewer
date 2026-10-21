@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentType } from 'react'
-import { Plus, Search, Trash2 } from 'lucide-react'
+import { Columns3, Plus, Search, Trash2 } from 'lucide-react'
 import {
   CompactSelection,
   DataEditor,
@@ -21,8 +21,53 @@ interface Props { document: ViewerDocument; model: CsvModel; onChange: (model: C
 
 const CSV_HEADER_HEIGHT = 34
 const CSV_ROW_HEIGHT = 38
+const CSV_MIN_COLUMN_WIDTH = 80
+const CSV_DEFAULT_COLUMN_WIDTH = 164
+const CSV_MAX_COLUMN_WIDTH = 640
+const CSV_COLUMN_PADDING = 32
+const CSV_FONT_FAMILY = "'Geist Variable', 'Noto Sans KR Variable', sans-serif"
+const CSV_BASE_FONT_STYLE = '13px'
+const CSV_HEADER_FONT_STYLE = '500 12px'
+const CSV_CELL_FONT = `${CSV_BASE_FONT_STYLE} ${CSV_FONT_FAMILY}`
+const CSV_HEADER_FONT = `${CSV_HEADER_FONT_STYLE} ${CSV_FONT_FAMILY}`
+
+function approximateTextWidth(text: string): number {
+  return Array.from(text).reduce((width, character) => width + ((character.codePointAt(0) ?? 0) > 0x2e7f ? 13 : 7), 0)
+}
 
 function columnTitle(headers: readonly string[], column: number): string { return headers[column] || `열 ${column + 1}` }
+
+function autoFitColumnWidths(headers: readonly string[], rows: readonly (readonly string[])[], columnsCount: number, sort: { column: number; direction: 1 | -1 } | null): number[] {
+  const canvas = typeof document === 'undefined' ? null : document.createElement('canvas')
+  const context = canvas?.getContext('2d') ?? null
+  const widths = Array.from({ length: columnsCount }, () => CSV_MIN_COLUMN_WIDTH)
+  if (!context) {
+    for (let column = 0; column < columnsCount; column++) {
+      let contentWidth = approximateTextWidth(columnTitle(headers, column))
+      for (const row of rows) {
+        contentWidth = Math.max(contentWidth, approximateTextWidth(row[column] ?? ''))
+        if (contentWidth + CSV_COLUMN_PADDING >= CSV_MAX_COLUMN_WIDTH) break
+      }
+      widths[column] = Math.min(CSV_MAX_COLUMN_WIDTH, Math.max(CSV_MIN_COLUMN_WIDTH, Math.ceil(contentWidth + CSV_COLUMN_PADDING)))
+    }
+    return widths
+  }
+
+  for (let column = 0; column < columnsCount; column++) {
+    const title = columnTitle(headers, column)
+    const header = sort?.column === column ? `${title} ${sort.direction === 1 ? '▲' : '▼'}` : title
+    context.font = CSV_HEADER_FONT
+    let contentWidth = context.measureText(header).width
+    context.font = CSV_CELL_FONT
+    for (const row of rows) {
+      const value = row[column] ?? ''
+      if (value) contentWidth = Math.max(contentWidth, context.measureText(value).width)
+      if (contentWidth + CSV_COLUMN_PADDING >= CSV_MAX_COLUMN_WIDTH) break
+    }
+    widths[column] = Math.min(CSV_MAX_COLUMN_WIDTH, Math.max(CSV_MIN_COLUMN_WIDTH, Math.ceil(contentWidth + CSV_COLUMN_PADDING)))
+  }
+  return widths
+}
 
 // Glide 6.0.4 alpha exposes fillHandle at runtime before including it in its public prop types.
 const SpreadsheetGrid = DataEditor as unknown as ComponentType<DataEditorProps & { fillHandle?: boolean }>
@@ -34,12 +79,13 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
   const [editingHeader, setEditingHeader] = useState<number | null>(null)
   const [headerDraft, setHeaderDraft] = useState('')
   const rows = model.rows
+  const columnsCount = Math.max(model.headers.length, ...rows.map((row) => row.length), 1)
+  const [columnWidths, setColumnWidths] = useState<number[]>(() => autoFitColumnWidths(model.headers, rows, columnsCount, null))
   const visible = useMemo(() => {
     const filtered = rows.map((row, index) => ({ row, index })).filter(({ row }) => !query || row.some((value) => value.toLocaleLowerCase().includes(query.toLocaleLowerCase())))
     if (sort) filtered.sort((a, b) => (a.row[sort.column] ?? '').localeCompare(b.row[sort.column] ?? '', undefined, { numeric: true, sensitivity: 'base' }) * sort.direction)
     return filtered
   }, [rows, query, sort])
-  const columnsCount = Math.max(model.headers.length, ...rows.map((row) => row.length), 1)
   const activeCell = gridSelection.current?.cell ?? [0, 0]
   const activeColumn = Math.max(0, Math.min(columnsCount - 1, activeCell[0]))
   const activeRow = Math.max(0, Math.min(Math.max(visible.length - 1, 0), activeCell[1]))
@@ -49,8 +95,8 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
   const gridColumns = useMemo<GridColumn[]>(() => Array.from({ length: columnsCount }, (_, column) => {
     const title = columnTitle(model.headers, column)
     const sortedTitle = sort?.column === column ? `${title} ${sort.direction === 1 ? '▲' : '▼'}` : title
-    return { title: sortedTitle, width: 164, grow: 1 }
-  }), [columnsCount, model.headers, sort])
+    return { title: sortedTitle, width: columnWidths[column] ?? CSV_DEFAULT_COLUMN_WIDTH }
+  }), [columnWidths, columnsCount, model.headers, sort])
 
   const gridTheme = useMemo<GridTheme>(() => {
     const light = theme === 'light'
@@ -80,9 +126,9 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
       headerBottomBorderColor: light ? '#E4E4E8' : '#1E1F22',
       drilldownBorder: light ? '#4A52C4' : '#5B63D3',
       linkColor: light ? '#4A52C4' : '#A4AAF7',
-      fontFamily: "'Geist Variable', 'Noto Sans KR Variable', sans-serif",
-      headerFontStyle: "500 12px 'Geist Variable', 'Noto Sans KR Variable', sans-serif",
-      baseFontStyle: "13px 'Geist Variable', 'Noto Sans KR Variable', sans-serif",
+      fontFamily: CSV_FONT_FAMILY,
+      headerFontStyle: CSV_HEADER_FONT_STYLE,
+      baseFontStyle: CSV_BASE_FONT_STYLE,
       markerFontStyle: "11px 'Geist Mono Variable', 'Noto Sans Mono', monospace",
       editorFontSize: '13px',
     }
@@ -140,7 +186,11 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
         if (next[sourceRow][column] !== value) { next[sourceRow][column] = value; changed = true }
       })
     })
-    if (changed) onChange({ ...model, rows: next })
+    if (changed) {
+      const nextColumnCount = Math.max(columnsCount, ...next.map((row) => row.length), 1)
+      if (nextColumnCount > columnsCount) setColumnWidths((current) => [...current, ...Array(nextColumnCount - current.length).fill(CSV_DEFAULT_COLUMN_WIDTH)])
+      onChange({ ...model, rows: next })
+    }
     return false
   }, [columnsCount, model, onChange, rows, visible])
 
@@ -169,22 +219,28 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
   }, [columnsCount, gridSelection, visible.length])
 
   const addRow = () => onChange({ ...model, rows: [...rows, Array(columnsCount).fill('')] })
-  const addColumn = () => onChange({
-    ...model,
-    headers: [...model.headers, `열 ${model.headers.length + 1}`],
-    headerRow: [...model.headerRow, ''],
-    rows: rows.map((row) => [...row, '']),
-  })
+  const addColumn = () => {
+    setColumnWidths((current) => [...current, CSV_DEFAULT_COLUMN_WIDTH])
+    onChange({
+      ...model,
+      headers: [...model.headers, `열 ${model.headers.length + 1}`],
+      headerRow: [...model.headerRow, ''],
+      rows: rows.map((row) => [...row, '']),
+    })
+  }
   const removeActiveRow = () => {
     const sourceRow = visible[activeRow]?.index
     if (sourceRow !== undefined) onChange({ ...model, rows: rows.filter((_, index) => index !== sourceRow) })
   }
-  const removeActiveColumn = () => onChange({
-    ...model,
-    headers: model.headers.filter((_, index) => index !== activeColumn),
-    headerRow: model.headerRow.filter((_, index) => index !== activeColumn),
-    rows: rows.map((row) => row.filter((_, index) => index !== activeColumn)),
-  })
+  const removeActiveColumn = () => {
+    setColumnWidths((current) => current.filter((_, index) => index !== activeColumn))
+    onChange({
+      ...model,
+      headers: model.headers.filter((_, index) => index !== activeColumn),
+      headerRow: model.headerRow.filter((_, index) => index !== activeColumn),
+      rows: rows.map((row) => row.filter((_, index) => index !== activeColumn)),
+    })
+  }
   const setHeaderStatus = (checked: boolean) => {
     if (checked === model.hasHeader) return
     if (checked) {
@@ -211,6 +267,14 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
     onChange({ ...model, headers })
     setEditingHeader(null)
   }
+  const autoFitColumns = () => setColumnWidths(autoFitColumnWidths(model.headers, rows, columnsCount, sort))
+  const resizeColumn = (_column: GridColumn, newSize: number, columnIndex: number) => {
+    setColumnWidths((current) => {
+      const next = [...current]
+      next[columnIndex] = Math.min(CSV_MAX_COLUMN_WIDTH, Math.max(CSV_MIN_COLUMN_WIDTH, newSize))
+      return next
+    })
+  }
   const gridSelectionChanged = (selection: GridSelection) => setGridSelection(selection)
   const selectedRows = selectedRange?.height ?? 1
   const selectedColumns = selectedRange?.width ?? 1
@@ -226,6 +290,7 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
         <div className="toolbar-separator" />
         <button className="toolbar-button" onClick={addRow}><Plus size={14} /> 행 추가</button>
         <button className="toolbar-button" onClick={addColumn}><Plus size={14} /> 열</button>
+        <button className="toolbar-button csv-autofit-button" aria-label="열 너비 자동 맞춤" title="열 너비 자동 맞춤" onClick={autoFitColumns}><Columns3 size={14} /><span>너비 맞춤</span></button>
         <button className="toolbar-button icon-only" aria-label="선택한 행 삭제" title="선택한 행 삭제" onClick={removeActiveRow}><Trash2 size={14} /></button>
         <button className="toolbar-button icon-only" aria-label="선택한 열 삭제" title="선택한 열 삭제" onClick={removeActiveColumn}><Trash2 size={14} /></button>
         <div className="toolbar-spacer" />
@@ -246,6 +311,7 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
           getCellsForSelection={true}
           gridSelection={gridSelection}
           onGridSelectionChange={gridSelectionChanged}
+          onColumnResize={resizeColumn}
           onCellsEdited={applyGridEdits}
           onPaste={pasteValues}
           onDelete={clearSelection}
@@ -259,8 +325,8 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
           rowMarkers="number"
           rowHeight={CSV_ROW_HEIGHT}
           headerHeight={CSV_HEADER_HEIGHT}
-          minColumnWidth={132}
-          maxColumnWidth={640}
+          minColumnWidth={CSV_MIN_COLUMN_WIDTH}
+          maxColumnWidth={CSV_MAX_COLUMN_WIDTH}
           width="100%"
           height="100%"
           theme={gridTheme}
