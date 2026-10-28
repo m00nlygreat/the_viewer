@@ -10,6 +10,7 @@ usage: "중요한 결정, 새 사실, 범위 변경, 설계 방향 변경이 생
 ## 2026-10-28
 
 - Chrome 확장은 파일 감지·읽기·중계 전용으로 줄이고 PWA가 보기·편집·내보내기·복구를 맡도록 구조를 바꾼다. 파일 본문은 확장 IndexedDB의 10분 티켓으로 저장하고 PWA가 프로토콜 v1 청크 메시지로 요청한다. PWA 저장 후 티켓을 지우며, 기존 확장 작업은 원본을 남긴 채 문서별로 복원한다.
+- 파일 전달 중 화면을 가리는 진행 다이얼로그를 제거하고, 실패할 때만 비모달 상태와 재시도를 제공한다.
 - 배포는 PWA를 먼저 Pages에 올린 뒤 실제 Chrome 연결과 수신을 확인하고, 수동 Pages workflow로 확장 ZIP을 추가한다. 오프라인 전달은 PWA 서비스 워커 캐시가 준비된 뒤 가능하다.
 - EML·CSV·Markdown·ICS·VCF의 HTTP(S) 최상위 GET 응답을 기본 자동 열기로 제공하며, 설치 시 HTTP(S) 전체 사이트 접근 권한을 요청한다. 응답 MIME·URL 파일명·응답 파일명을 함께 확인하고 HTML 응답은 건드리지 않는다. 응답 확인 뒤 본문을 다시 GET하므로 서버에서 두 번 처리될 수 있음을 안내한다.
 - [Tourmaline 확장 구현](https://github.com/m00nlygreat/tourmaline-chrome/blob/e5c92609e92298b3ab0368f44581ce2c20bef13c/src/extension/manifest.json)을 확인해 일반 MV3 확장에서도 Chrome으로 연 로컬 파일을 처리할 수 있음을 확인했다. 로컬 지원 파일의 `file://` 탐색을 DNR로 뷰어에 전달한다. Chrome의 파일 URL 접근 승인이 한 번 필요하며, 새 탭 강제 교체는 사용하지 않는다.

@@ -498,10 +498,5 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
   .mode-switch button { min-width: 34px; padding: 0 4px; }
   .topbar-actions > .icon-button { width: 27px; }
 }
-.relay-transfer-dialog { width: min(430px, calc(100vw - 32px)); border: 1px solid var(--border, #303136); border-radius: 18px; padding: 28px; background: var(--surface, #191a1c); box-shadow: 0 24px 80px #0007; }
-.relay-transfer-dialog h2 { margin: 18px 0 8px; font-size: 19px; }
-.relay-transfer-dialog p { margin: 0; color: var(--muted, #a2a3a8); line-height: 1.6; overflow-wrap: anywhere; }
-.relay-transfer-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 11px; background: var(--surface-raised, #25262a); }
-.relay-transfer-progress { height: 5px; overflow: hidden; margin-top: 18px; border-radius: 99px; background: var(--surface-raised, #303136); }
-.relay-transfer-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent, #b4f2d4); transition: width .15s ease; }
-.relay-transfer-dialog .dialog-actions { margin-top: 20px; }
+.relay-error-banner { left: 16px; right: auto; }
+.relay-error-banner .subtle-button { flex: 0 0 auto; }

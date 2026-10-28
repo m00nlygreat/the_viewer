@@ -16,7 +16,7 @@ import { clearAllData, clearDocuments, loadDocuments, loadTheme, readSetting, re
 import { FilePicker, type FilePickerHandle } from '../platform/FilePicker'
 import type { PickedFile } from '../platform/fileTypes'
 import { downloadLocalFile, readClipboardText, readDroppedFiles, receiveLaunchedFiles, saveLocalFile, shareLocalFile } from '../platform/browserFiles'
-import { commitExtensionFile, parseRelayRoute, receiveExtensionFile, RelayTransferError, restoreLegacySnapshot, type ReceivedExtensionFile, type RelayProgress, type RelayRoute } from '../platform/pwa/extensionRelay'
+import { commitExtensionFile, parseRelayRoute, receiveExtensionFile, RelayTransferError, restoreLegacySnapshot, type ReceivedExtensionFile, type RelayRoute } from '../platform/pwa/extensionRelay'
 
 const CsvEditor = lazy(() => import('../features/CsvEditor').then((module) => ({ default: module.CsvEditor })))
 const MarkdownEditor = lazy(() => import('../features/MarkdownEditor').then((module) => ({ default: module.MarkdownEditor })))
@@ -28,7 +28,7 @@ const SourceEditor = lazy(() => import('../components/SourceEditor'))
 interface HistoryEntry { model: DocumentModel; text: string; sourceError?: string; isDirty: boolean }
 interface Notice { id: number; tone: 'success' | 'error' | 'info'; message: string }
 interface BeforeInstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
-interface RelayStatus { busy: boolean; progress: RelayProgress; error: string }
+interface RelayStatus { busy: boolean; error: string }
 
 const fileAccept = FORMATS.map((format) => `.${format}`).join(',')
 const labels = { eml: '이메일', csv: '표', md: '문서', ics: '일정', vcf: '연락처' } satisfies Record<Format, string>
@@ -54,7 +54,7 @@ export function App() {
   const [updateReady, setUpdateReady] = useState(false)
   const [offlineReady, setOfflineReady] = useState(false)
   const [relayRoute, setRelayRoute] = useState<RelayRoute | null>(() => parseRelayRoute(window.location.hash))
-  const [relayStatus, setRelayStatus] = useState<RelayStatus | null>(() => parseRelayRoute(window.location.hash) ? { busy: true, progress: { receivedBytes: 0, totalBytes: 0 }, error: '' } : null)
+  const [relayStatus, setRelayStatus] = useState<RelayStatus | null>(() => parseRelayRoute(window.location.hash) ? { busy: true, error: '' } : null)
   const inputRef = useRef<FilePickerHandle>(null)
   const attachmentInputRef = useRef<FilePickerHandle>(null)
   const attachmentTarget = useRef('')
@@ -190,7 +190,7 @@ export function App() {
   const runRelay = useCallback(async (route: RelayRoute) => {
     if (relayRuns.current.has(route.ticketId)) return
     relayRuns.current.add(route.ticketId)
-    setRelayStatus({ busy: true, progress: { receivedBytes: 0, totalBytes: 0 }, error: '' })
+    setRelayStatus({ busy: true, error: '' })
     let imported: ViewerDocument | null = null
     const finish = (item: ViewerDocument) => {
       setActiveId(item.id)
@@ -207,8 +207,7 @@ export function App() {
         if (!received) {
           received = await receiveExtensionFile({
             extensionId: route.extensionId,
-            ticketId: route.ticketId,
-            onProgress: (progress) => setRelayStatus({ busy: true, progress, error: '' })
+            ticketId: route.ticketId
           })
           receivedRelayFiles.current.set(route.ticketId, received)
         }
@@ -232,7 +231,7 @@ export function App() {
         finish(imported)
         notify('저장된 작업을 확인했습니다.', 'success')
       } else {
-        setRelayStatus({ busy: false, progress: { receivedBytes: 0, totalBytes: 0 }, error: error instanceof Error ? error.message : '파일 전달에 실패했습니다.' })
+        setRelayStatus({ busy: false, error: error instanceof Error ? error.message : '파일 전달에 실패했습니다.' })
       }
     } finally { relayRuns.current.delete(route.ticketId) }
   }, [notify, recoveryEnabled])
@@ -566,13 +565,13 @@ export function App() {
       </nav>}
       {working && <div className="loading-overlay" role="status"><span className="spinner" />파일을 읽고 있습니다…</div>}
       {offlineReady && <div className="status-banner"><Check size={15} />오프라인에서 사용할 파일을 준비했습니다.<button className="icon-button" aria-label="알림 닫기" onClick={() => setOfflineReady(false)}><X size={14} /></button></div>}
-      {updateReady && !relayStatus?.busy && <div className="status-banner update-banner"><span>새 버전을 사용할 수 있습니다. 업데이트는 사용자가 선택할 때 적용됩니다.</span><button className="subtle-button" onClick={() => window.dispatchEvent(new Event('viewer:apply-update'))}>업데이트</button><button className="icon-button" aria-label="업데이트 알림 닫기" onClick={() => setUpdateReady(false)}><X size={14} /></button></div>}
+      {updateReady && !relayRoute && <div className="status-banner update-banner"><span>새 버전을 사용할 수 있습니다. 업데이트는 사용자가 선택할 때 적용됩니다.</span><button className="subtle-button" onClick={() => window.dispatchEvent(new Event('viewer:apply-update'))}>업데이트</button><button className="icon-button" aria-label="업데이트 알림 닫기" onClick={() => setUpdateReady(false)}><X size={14} /></button></div>}
     </main>
 
     {showCommand && <CommandMenu commands={commands} onClose={() => setShowCommand(false)} />}
     {showSettings && <SettingsDialog theme={theme} onThemeChange={changeTheme} recoveryEnabled={recoveryEnabled} onRecoveryChange={(enabled) => { void changeRecovery(enabled) }} onClearData={() => { void clearData() }} onClose={() => setShowSettings(false)} onInstall={() => { void installApp() }} canInstall={Boolean(installPrompt)} />}
     {showPaste && <PasteDialog text={pasteText} format={pasteFormat} onTextChange={setPasteText} onFormatChange={setPasteFormat} onClose={() => setShowPaste(false)} onOpen={() => { void createFromPaste() }} />}
-    {relayRoute && relayStatus && <RelayTransferDialog busy={relayStatus.busy} progress={relayStatus.progress} error={relayStatus.error} onRetry={() => { void runRelay(relayRoute) }} />}
+    {relayRoute && relayStatus && !relayStatus.busy && <div className="status-banner relay-error-banner" role="status" aria-live="polite"><span>{relayStatus.error}</span><button className="subtle-button" onClick={() => { void runRelay(relayRoute) }}>다시 시도</button></div>}
     <div className="toast-stack" aria-live="polite" aria-atomic="false">{notices.map((notice) => <div className={`toast ${notice.tone}`} key={notice.id}><span>{notice.message}</span><button aria-label="알림 닫기" onClick={() => setNotices((items) => items.filter((item) => item.id !== notice.id))}><X size={13} /></button></div>)}</div>
   </div>
 }
@@ -605,18 +604,6 @@ function PasteDialog({ text, format, onTextChange, onFormatChange, onClose, onOp
     <label className="form-field"><span>파일 형식</span><select value={format} onChange={(event) => onFormatChange(event.target.value as Format)}>{FORMATS.map((item) => <option value={item} key={item}>{labels[item]} (.{item})</option>)}</select></label>
     <textarea autoFocus aria-label="붙여넣을 텍스트" value={text} onChange={(event) => onTextChange(event.target.value)} onPaste={(event) => { const pasted = event.clipboardData.getData('text/plain'); if (pasted) onTextChange(pasted) }} placeholder="여기에 텍스트를 붙여넣으세요." rows={13} />
     <div className="dialog-actions"><button className="secondary-button" onClick={onClose}>취소</button><button className="primary-button" disabled={!text} onClick={onOpen}><FilePlus2 size={14} /> 문서 열기</button></div>
-  </section></div>
-}
-
-function RelayTransferDialog({ busy, progress, error, onRetry }: { busy: boolean; progress: RelayProgress; error: string; onRetry: () => void }) {
-  const percent = progress.totalBytes ? Math.round(progress.receivedBytes / progress.totalBytes * 100) : 0
-  const dialog = useFocusTrap<HTMLElement>()
-  return <div className="overlay"><section ref={dialog} className="relay-transfer-dialog" role="dialog" aria-modal="true" aria-labelledby="relay-transfer-title" aria-live="polite">
-    <div className="relay-transfer-icon"><span className="spinner" /></div>
-    <h2 id="relay-transfer-title">{busy ? '확장에서 파일을 받는 중' : '파일 전달을 마치지 못했습니다'}</h2>
-    <p>{busy ? progress.totalBytes ? `${percent}% · ${(progress.receivedBytes / 1024 / 1024).toFixed(1)} / ${(progress.totalBytes / 1024 / 1024).toFixed(1)} MiB` : '확장 연결을 확인하고 있습니다.' : error}</p>
-    {progress.totalBytes > 0 && <div className="relay-transfer-progress" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${percent}%` }} /></div>}
-    {!busy && <div className="dialog-actions"><button className="primary-button" onClick={onRetry}>다시 시도</button></div>}
   </section></div>
 }
 
