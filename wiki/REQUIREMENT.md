@@ -17,7 +17,8 @@ usage: "요구사항을 정리하거나 갱신할 때 함께 관리한다. 원�
 
 ## 3. 주요 기능
 
-- 공통 React UI와 파일 처리 코어를 공유하는 Chrome 확장 프로그램과 GitHub Pages 배포 PWA로 제공한다.
+- Chrome 확장은 파일 감지·읽기·중계를 담당하고, GitHub Pages PWA는 보기·편집·내보내기·작업 복구를 담당한다.
+- 확장과 PWA는 프로토콜 v1의 브라우저 내부 포트 메시지와 192 KiB Base64 조각으로 파일을 전달한다. 서버에는 파일 본문을 올리지 않는다.
 - 데스크톱과 모바일 화면에 대응한다.
 - `.eml`, `.csv`, `.md`, `.ics`, `.vcf`의 보기·편집·원본·내보내기를 제공한다.
 - 파일 선택·다중 드롭·붙여넣기, 열린 파일 전환, 명령 검색, 실행 취소·되돌리기, 로컬 작업 복구를 제공한다.
@@ -25,7 +26,9 @@ usage: "요구사항을 정리하거나 갱신할 때 함께 관리한다. 원�
 - CSV 표 검색·필터·정렬·셀 범위 편집·복사/붙여넣기·채우기와 열 너비 자동 맞춤(파일을 열 때 적용), EML 본문·헤더·첨부, Markdown 서식, ICS 반복·시간대, VCF 반복 필드·다중 연락처를 처리한다.
 - 지원하는 이메일 첨부는 새 작업 문서로 열고, 다른 첨부는 내려받는다.
 - PWA 설치·오프라인 편집·업데이트를 지원한다. OS 파일 연결·공유 수신은 지원 환경에서 제공하고 일반 파일 선택을 함께 유지한다.
-- Chrome 확장은 전용 탭·도구모음·링크 메뉴로 진입하며, URL 파일 접근에는 대상 사이트의 선택적 권한을 사용한다.
+- 확장 도구모음과 링크 메뉴는 작은 중계 페이지를 연다. HTTP(S) 링크를 가져오기 전 대상 사이트를 확인하고, 파일 자동 열기 규칙과 파일 URL 접근 안내를 유지한다.
+- 확장 티켓은 확장 전용 IndexedDB에 최대 10분 보관한다. PWA가 복원·저장한 뒤 티켓을 완료하며, 연결·파싱·저장 실패는 재시도할 수 있다.
+- 기존 확장에 저장된 작업은 편집 상태와 첨부 관계를 포함해 문서별로 이전한다. PWA 저장 확인 전 기존 저장 데이터를 삭제하지 않는다.
 
 ## 4. 공통 UX 원칙
 
@@ -39,8 +42,8 @@ usage: "요구사항을 정리하거나 갱신할 때 함께 관리한다. 원�
 
 ## 5. 빌드·배포
 
-- PWA는 `./dist/app`, Chrome 확장은 `./dist/chrome_extension`으로 빌드한다.
-- GitHub Pages는 Actions로 `./dist/app`의 내용만 배포한다.
+- PWA는 `./dist/app`, 중계 전용 Chrome 확장은 `./dist/chrome_extension`, ZIP은 버전별 `./dist/the-viewer-chrome-v<version>.zip`으로 빌드한다.
+- GitHub Pages 기본 배포는 `./dist/app`의 내용만 올린다. 실제 PWA 연결을 확인한 뒤 수동 workflow로 최신 앱과 확장 ZIP을 함께 배포한다.
 - 두 타깃의 빌드가 서로의 산출물을 삭제하지 않아야 한다.
 - 저장소 하위 경로와 루트 배포에 맞춰 자산·manifest·서비스 워커의 base를 일치시킨다.
 - 확장 폴더와 설치 가능한 ZIP을 별도로 제공한다.
@@ -49,5 +52,5 @@ usage: "요구사항을 정리하거나 갱신할 때 함께 관리한다. 원�
 
 - 원격 저장소: [m00nlygreat/the_viewer](https://github.com/m00nlygreat/the_viewer), 기본 브랜치 `main`.
 - PWA: [GitHub Pages 배포](https://m00nlygreat.github.io/the_viewer/). Actions가 `dist/app`만 배포한다.
-- Chrome 확장: 폴더와 ZIP을 빌드해 원격에 푸시한다. Chrome Web Store 공개 게시 범위는 아니다.
-- 설치 후 오프라인 사용, 실제 확장 설치, 12개 목업 화면의 스크린샷 비교는 별도 검증으로 남아 있다.
+- Chrome 확장 ZIP은 [다운로드 페이지](https://m00nlygreat.github.io/the_viewer/downloads/the-viewer-chrome-latest.zip)에서 제공한다. Chrome Web Store 게시 범위는 아니다.
+- 실제 Chrome 연결·파일 전달을 확인한 다음 ZIP 배포를 실행한다. PWA 최초 연결에는 네트워크가 필요하고, 서비스 워커 캐시 준비 뒤에는 로컬 파일 전달을 오프라인에서 사용할 수 있다.

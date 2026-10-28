@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Check, ChevronDown, CircleHelp, ClipboardPaste, Command, FilePlus2, FileText,
+  Check, ChevronDown, ClipboardPaste, Command, FilePlus2, FileText,
   FolderOpen, LogOut, MoreHorizontal, Moon, Redo2, Settings2, Share2,
   Sun, Undo2, Upload, X
 } from 'lucide-react'
@@ -13,8 +13,10 @@ import { makeDocumentFromBytes } from '../domain/session'
 import { parseWithWorker } from '../domain/workerClient'
 import { serializeDocument } from '../domain/serialize'
 import { clearAllData, clearDocuments, loadDocuments, loadTheme, readSetting, removeDocument, saveDocument, takeShareTicket, writeSetting } from '../platform/storage'
-import { FilePicker, type FilePickerHandle, type PickedFile } from '../platform/FilePicker'
+import { FilePicker, type FilePickerHandle } from '../platform/FilePicker'
+import type { PickedFile } from '../platform/fileTypes'
 import { downloadLocalFile, readClipboardText, readDroppedFiles, receiveLaunchedFiles, saveLocalFile, shareLocalFile } from '../platform/browserFiles'
+import { commitExtensionFile, parseRelayRoute, receiveExtensionFile, RelayTransferError, restoreLegacySnapshot, type ReceivedExtensionFile, type RelayProgress, type RelayRoute } from '../platform/pwa/extensionRelay'
 
 const CsvEditor = lazy(() => import('../features/CsvEditor').then((module) => ({ default: module.CsvEditor })))
 const MarkdownEditor = lazy(() => import('../features/MarkdownEditor').then((module) => ({ default: module.MarkdownEditor })))
@@ -23,16 +25,15 @@ const CalendarEditor = lazy(() => import('../features/CalendarEditor').then((mod
 const ContactsEditor = lazy(() => import('../features/ContactsEditor').then((module) => ({ default: module.ContactsEditor })))
 const SourceEditor = lazy(() => import('../components/SourceEditor'))
 
-interface Props { platform: 'pwa' | 'extension' }
 interface HistoryEntry { model: DocumentModel; text: string; sourceError?: string; isDirty: boolean }
 interface Notice { id: number; tone: 'success' | 'error' | 'info'; message: string }
 interface BeforeInstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
-interface RemoteTicket { id: string; url: string }
+interface RelayStatus { busy: boolean; progress: RelayProgress; error: string }
 
 const fileAccept = FORMATS.map((format) => `.${format}`).join(',')
 const labels = { eml: '이메일', csv: '표', md: '문서', ics: '일정', vcf: '연락처' } satisfies Record<Format, string>
 
-export function App({ platform }: Props) {
+export function App() {
   const [documents, setDocuments] = useState<ViewerDocument[]>([])
   const documentsRef = useRef(documents)
   documentsRef.current = documents
@@ -52,8 +53,8 @@ export function App({ platform }: Props) {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPrompt | null>(null)
   const [updateReady, setUpdateReady] = useState(false)
   const [offlineReady, setOfflineReady] = useState(false)
-  const [remoteTicket, setRemoteTicket] = useState<RemoteTicket | null>(null)
-  const [remoteWorking, setRemoteWorking] = useState(false)
+  const [relayRoute, setRelayRoute] = useState<RelayRoute | null>(() => parseRelayRoute(window.location.hash))
+  const [relayStatus, setRelayStatus] = useState<RelayStatus | null>(() => parseRelayRoute(window.location.hash) ? { busy: true, progress: { receivedBytes: 0, totalBytes: 0 }, error: '' } : null)
   const inputRef = useRef<FilePickerHandle>(null)
   const attachmentInputRef = useRef<FilePickerHandle>(null)
   const attachmentTarget = useRef('')
@@ -61,6 +62,8 @@ export function App({ platform }: Props) {
   const sourceParseTimer = useRef<number | undefined>(undefined)
   const sourceRequest = useRef(0)
   const noticeTimer = useRef(new Map<number, number>())
+  const relayRuns = useRef(new Set<string>())
+  const receivedRelayFiles = useRef(new Map<string, ReceivedExtensionFile>())
   const activeDocument = documents.find((document) => document.id === activeId) ?? null
   const resolvedTheme = theme === 'system' ? (systemLight ? 'light' : 'dark') : theme
 
@@ -120,11 +123,11 @@ export function App({ platform }: Props) {
   }, [documents, loaded, recoveryEnabled, notify])
 
   useEffect(() => {
-    if (loaded && documents.length === 0 && !sessionStorage.getItem('viewer-command-shown')) {
+    if (loaded && !relayRoute && documents.length === 0 && !sessionStorage.getItem('viewer-command-shown')) {
       setShowCommand(true)
       sessionStorage.setItem('viewer-command-shown', '1')
     }
-  }, [loaded, documents.length])
+  }, [loaded, documents.length, relayRoute])
 
   useEffect(() => {
     const onInstall = (event: Event) => { event.preventDefault(); setInstallPrompt(event as BeforeInstallPrompt) }
@@ -156,37 +159,87 @@ export function App({ platform }: Props) {
     return () => window.clearTimeout(sourceParseTimer.current)
   }, [activeDocument?.id, activeDocument?.mode, activeDocument?.text, activeDocument?.format, activeDocument?.mimeType, activeDocument?.name])
 
-  useEffect(() => {
-    if (!loaded || platform !== 'extension' || typeof chrome === 'undefined') return
-    const match = location.hash.match(/^#\/?link\/([0-9a-f-]+)$/i)
-    if (!match) return
-    const id = match[1]
-    void import('../platform/extension/links').then(({ readRemoteLinkTicket }) => readRemoteLinkTicket(id)).then((url) => {
-      if (!url) { notify('링크 열기 요청이 만료되었습니다. 다시 선택하세요.', 'error'); return }
-      setRemoteTicket({ id, url })
-    }).catch(() => notify('링크 요청을 읽지 못했습니다.', 'error'))
-  }, [loaded, platform, notify])
-
-  const openFiles = useCallback(async (files: PickedFile[], forcedFormat?: Format) => {
-    if (!files.length) return
+  const openFiles = useCallback(async (files: PickedFile[], forcedFormat?: Format): Promise<{ opened: ViewerDocument[]; errors: string[] }> => {
+    if (!files.length) return { opened: [], errors: [] }
     setWorking(true)
+    const opened: ViewerDocument[] = []
+    const errors: string[] = []
     let first: ViewerDocument | null = null
     for (const file of files) {
       try {
         const document = await makeDocumentFromBytes(file.name, file.type, file.bytes, undefined)
         if (forcedFormat && document.format !== forcedFormat) throw new Error(`선택한 형식 ${forcedFormat.toUpperCase()}과 파일 내용이 다릅니다.`)
         setDocuments((items) => [document, ...items.filter((item) => item.id !== document.id)])
+        opened.push(document)
         if (!first) first = document
-      } catch (error) { notify(`${file.name}: ${error instanceof Error ? error.message : '파일을 열지 못했습니다.'}`, 'error') }
+      } catch (error) {
+        const message = `${file.name}: ${error instanceof Error ? error.message : '파일을 열지 못했습니다.'}`
+        errors.push(message)
+        notify(message, 'error')
+      }
     }
     if (first) { setActiveId(first.id); setShowCommand(false); setTimeout(() => { location.hash = `/file/${first!.id}` }, 0) }
     setWorking(false)
+    return { opened, errors }
   }, [notify])
 
   useEffect(() => {
-    if (platform !== 'pwa') return
     receiveLaunchedFiles((files) => { void openFiles(files) })
-  }, [platform, openFiles])
+  }, [openFiles])
+
+  const runRelay = useCallback(async (route: RelayRoute) => {
+    if (relayRuns.current.has(route.ticketId)) return
+    relayRuns.current.add(route.ticketId)
+    setRelayStatus({ busy: true, progress: { receivedBytes: 0, totalBytes: 0 }, error: '' })
+    let imported: ViewerDocument | null = null
+    const finish = (item: ViewerDocument) => {
+      setActiveId(item.id)
+      setShowCommand(false)
+      history.replaceState(null, '', `#/file/${item.id}`)
+      receivedRelayFiles.current.delete(route.ticketId)
+      setRelayRoute(null)
+      setRelayStatus(null)
+    }
+    try {
+      imported = documentsRef.current.find((item) => item.relayTicketId === route.ticketId) ?? null
+      if (!imported) {
+        let received = receivedRelayFiles.current.get(route.ticketId)
+        if (!received) {
+          received = await receiveExtensionFile({
+            extensionId: route.extensionId,
+            ticketId: route.ticketId,
+            onProgress: (progress) => setRelayStatus({ busy: true, progress, error: '' })
+          })
+          receivedRelayFiles.current.set(route.ticketId, received)
+        }
+        if (received.kind === 'workspace-snapshot') {
+          imported = { ...restoreLegacySnapshot(received.file.bytes), relayTicketId: route.ticketId }
+        } else {
+          const document = await makeDocumentFromBytes(received.file.name, received.file.type, received.file.bytes)
+          if (document.format !== received.kind) throw new Error('전달된 파일 형식 정보와 실제 파일 내용이 다릅니다.')
+          imported = { ...document, id: route.ticketId, relayTicketId: route.ticketId }
+        }
+        if (recoveryEnabled) await saveDocument(imported)
+        documentsRef.current = [imported, ...documentsRef.current.filter((item) => item.id !== imported!.id)]
+        setDocuments((items) => [imported!, ...items.filter((item) => item.id !== imported!.id)])
+      }
+      setActiveId(imported.id)
+      await commitExtensionFile({ extensionId: route.extensionId, ticketId: route.ticketId })
+      finish(imported)
+      notify('파일을 전달받았습니다.', 'success')
+    } catch (error) {
+      if (imported && error instanceof RelayTransferError && (error.code === 'INVALID_TICKET' || error.code === 'EXPIRED')) {
+        finish(imported)
+        notify('저장된 작업을 확인했습니다.', 'success')
+      } else {
+        setRelayStatus({ busy: false, progress: { receivedBytes: 0, totalBytes: 0 }, error: error instanceof Error ? error.message : '파일 전달에 실패했습니다.' })
+      }
+    } finally { relayRuns.current.delete(route.ticketId) }
+  }, [notify, recoveryEnabled])
+
+  useEffect(() => {
+    if (loaded && relayRoute) void runRelay(relayRoute)
+  }, [loaded, relayRoute, runRelay])
 
   useEffect(() => {
     const match = location.hash.match(/^#\/?share\/([0-9a-f-]+)$/i)
@@ -417,23 +470,6 @@ export function App({ platform }: Props) {
     }
   }, [activeDocument, notify, outputPayload])
 
-  const runRemoteTicket = useCallback(async () => {
-    if (!remoteTicket || typeof chrome === 'undefined') return
-    setRemoteWorking(true)
-    try {
-      const { fetchRemoteLinkFile, deleteRemoteLinkTicket } = await import('../platform/extension/links')
-      const file = await fetchRemoteLinkFile(remoteTicket.url)
-      const item = await makeDocumentFromBytes(file.name, file.type, file.bytes)
-      setDocuments((items) => [item, ...items])
-      setActiveId(item.id)
-      location.hash = `/file/${item.id}`
-      setRemoteTicket(null)
-      await deleteRemoteLinkTicket(remoteTicket.id)
-      notify('링크 파일을 열었습니다.', 'success')
-    } catch (error) { notify(error instanceof Error ? error.message : '링크 파일을 가져오지 못했습니다.', 'error') }
-    finally { setRemoteWorking(false) }
-  }, [remoteTicket, notify])
-
   const commands = useMemo<CommandItem[]>(() => [
     ...documents.map((item) => ({ id: `switch-${item.id}`, title: `열린 파일 · ${safeFilename(item.name)}`, detail: `${labels[item.format]}${item.isDirty ? ' · 수정됨' : ''}`, section: '열린 파일', icon: 'open' as const, run: () => { setActiveId(item.id); location.hash = `/file/${item.id}` } })),
     { id: 'open', title: '파일 열기', detail: `지원 형식 ${fileAccept}`, section: '파일', icon: 'open', run: () => pickFiles() },
@@ -475,7 +511,7 @@ export function App({ platform }: Props) {
   const modeLabel: Record<ViewerDocument['mode'], string> = { view: '보기', edit: '편집', source: '원본' }
   const renderActiveDocument = (document: ViewerDocument) => renderDocument(document, (model) => changeModel(document.id, model), (text) => updateDocument(document.id, (item) => ({ ...item, text, sourceError: undefined }), true, text !== document.savedText), openAttachment, downloadAttachment, addAttachment, removeAttachment, resolvedTheme)
 
-  return <div className="app-shell" data-platform={platform} onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
+  return <div className="app-shell" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <FilePicker ref={inputRef} onFiles={(files, format) => { void openFiles(files, format) }} onError={notify} />
     <FilePicker ref={attachmentInputRef} onFiles={(files) => { void receiveAttachments(files) }} onError={notify} />
     <aside className="sidebar">
@@ -530,13 +566,13 @@ export function App({ platform }: Props) {
       </nav>}
       {working && <div className="loading-overlay" role="status"><span className="spinner" />파일을 읽고 있습니다…</div>}
       {offlineReady && <div className="status-banner"><Check size={15} />오프라인에서 사용할 파일을 준비했습니다.<button className="icon-button" aria-label="알림 닫기" onClick={() => setOfflineReady(false)}><X size={14} /></button></div>}
-      {updateReady && <div className="status-banner update-banner"><span>새 버전을 사용할 수 있습니다. 열린 작업은 로컬에 보관됩니다.</span><button className="subtle-button" onClick={() => window.dispatchEvent(new Event('viewer:apply-update'))}>업데이트</button><button className="icon-button" aria-label="업데이트 알림 닫기" onClick={() => setUpdateReady(false)}><X size={14} /></button></div>}
+      {updateReady && !relayStatus?.busy && <div className="status-banner update-banner"><span>새 버전을 사용할 수 있습니다. 업데이트는 사용자가 선택할 때 적용됩니다.</span><button className="subtle-button" onClick={() => window.dispatchEvent(new Event('viewer:apply-update'))}>업데이트</button><button className="icon-button" aria-label="업데이트 알림 닫기" onClick={() => setUpdateReady(false)}><X size={14} /></button></div>}
     </main>
 
-    {showCommand && <CommandMenu commands={commands} onClose={() => setShowCommand(false)} platform={platform} />}
-    {showSettings && <SettingsDialog theme={theme} onThemeChange={changeTheme} recoveryEnabled={recoveryEnabled} onRecoveryChange={(enabled) => { void changeRecovery(enabled) }} onClearData={() => { void clearData() }} onClose={() => setShowSettings(false)} onInstall={() => { void installApp() }} canInstall={Boolean(installPrompt)} platform={platform} />}
+    {showCommand && <CommandMenu commands={commands} onClose={() => setShowCommand(false)} />}
+    {showSettings && <SettingsDialog theme={theme} onThemeChange={changeTheme} recoveryEnabled={recoveryEnabled} onRecoveryChange={(enabled) => { void changeRecovery(enabled) }} onClearData={() => { void clearData() }} onClose={() => setShowSettings(false)} onInstall={() => { void installApp() }} canInstall={Boolean(installPrompt)} />}
     {showPaste && <PasteDialog text={pasteText} format={pasteFormat} onTextChange={setPasteText} onFormatChange={setPasteFormat} onClose={() => setShowPaste(false)} onOpen={() => { void createFromPaste() }} />}
-    {remoteTicket && <RemoteLinkDialog url={remoteTicket.url} working={remoteWorking} onOpen={() => { void runRemoteTicket() }} onClose={() => { setRemoteTicket(null); void import('../platform/extension/links').then(({ deleteRemoteLinkTicket }) => deleteRemoteLinkTicket(remoteTicket.id)) }} />}
+    {relayRoute && relayStatus && <RelayTransferDialog busy={relayStatus.busy} progress={relayStatus.progress} error={relayStatus.error} onRetry={() => { void runRelay(relayRoute) }} />}
     <div className="toast-stack" aria-live="polite" aria-atomic="false">{notices.map((notice) => <div className={`toast ${notice.tone}`} key={notice.id}><span>{notice.message}</span><button aria-label="알림 닫기" onClick={() => setNotices((items) => items.filter((item) => item.id !== notice.id))}><X size={13} /></button></div>)}</div>
   </div>
 }
@@ -572,12 +608,15 @@ function PasteDialog({ text, format, onTextChange, onFormatChange, onClose, onOp
   </section></div>
 }
 
-function RemoteLinkDialog({ url, working, onOpen, onClose }: { url: string; working: boolean; onOpen: () => void; onClose: () => void }) {
-  const parsed = new URL(url)
+function RelayTransferDialog({ busy, progress, error, onRetry }: { busy: boolean; progress: RelayProgress; error: string; onRetry: () => void }) {
+  const percent = progress.totalBytes ? Math.round(progress.receivedBytes / progress.totalBytes * 100) : 0
   const dialog = useFocusTrap<HTMLElement>()
-  return <div className="overlay"><section ref={dialog} className="remote-dialog" role="dialog" aria-modal="true" aria-labelledby="remote-title">
-    <div className="remote-icon"><CircleHelp size={20} /></div><h2 id="remote-title">링크 파일을 열까요?</h2><p>대상 사이트에 HTTPS 파일 요청을 보냅니다. 로그인 정보와 쿠키는 보내지 않습니다.</p><div className="remote-origin"><strong>{parsed.hostname}</strong><code>{safeFilename(decodeURIComponent(parsed.pathname.split('/').pop() || '파일'))}</code></div><p className="remote-permission-note">Chrome에서 이 사이트에 대한 일회성 권한을 요청할 수 있습니다.</p>
-    <div className="dialog-actions"><button className="secondary-button" disabled={working} onClick={onClose}>취소</button><button className="primary-button" disabled={working} onClick={onOpen}>{working ? <span className="spinner small" /> : <FolderOpen size={14} />}{working ? '파일 가져오는 중…' : '사이트에서 열기'}</button></div>
+  return <div className="overlay"><section ref={dialog} className="relay-transfer-dialog" role="dialog" aria-modal="true" aria-labelledby="relay-transfer-title" aria-live="polite">
+    <div className="relay-transfer-icon"><span className="spinner" /></div>
+    <h2 id="relay-transfer-title">{busy ? '확장에서 파일을 받는 중' : '파일 전달을 마치지 못했습니다'}</h2>
+    <p>{busy ? progress.totalBytes ? `${percent}% · ${(progress.receivedBytes / 1024 / 1024).toFixed(1)} / ${(progress.totalBytes / 1024 / 1024).toFixed(1)} MiB` : '확장 연결을 확인하고 있습니다.' : error}</p>
+    {progress.totalBytes > 0 && <div className="relay-transfer-progress" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${percent}%` }} /></div>}
+    {!busy && <div className="dialog-actions"><button className="primary-button" onClick={onRetry}>다시 시도</button></div>}
   </section></div>
 }
 

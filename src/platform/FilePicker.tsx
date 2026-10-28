@@ -1,7 +1,7 @@
 import { forwardRef, useImperativeHandle, useRef } from 'react'
-import type { Format } from '../domain/types'
+import type { Format, PickedFile } from './fileTypes'
 
-export interface PickedFile { name: string; type: string; bytes: Uint8Array }
+export type { PickedFile } from './fileTypes'
 export interface FilePickerHandle { open: (format?: Format, accept?: string) => void }
 interface Props { multiple?: boolean; onFiles: (files: PickedFile[], format?: Format) => void; onError?: (message: string) => void }
 

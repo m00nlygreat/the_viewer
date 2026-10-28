@@ -1,5 +1,6 @@
-export const FORMATS = ['eml', 'csv', 'md', 'ics', 'vcf'] as const
-export type Format = typeof FORMATS[number]
+import type { Format } from '../platform/fileTypes'
+export { FORMATS, FORMAT_MIME, FORMAT_MIME_ALIASES, GENERIC_FILE_MIME_TYPES, FORMAT_LABEL, getFormat } from '../platform/fileTypes'
+export type { Format } from '../platform/fileTypes'
 export type EditorMode = 'view' | 'edit' | 'source'
 export type ThemePreference = 'system' | 'light' | 'dark'
 
@@ -91,24 +92,5 @@ export interface ViewerDocument {
   openedAt: number
   lastEditedAt: number
   parentId?: string
-}
-
-export const FORMAT_MIME: Record<Format, string> = {
-  eml: 'message/rfc822', csv: 'text/csv', md: 'text/markdown', ics: 'text/calendar', vcf: 'text/vcard'
-}
-
-export const FORMAT_LABEL: Record<Format, string> = {
-  eml: '이메일', csv: '표', md: '문서', ics: '일정', vcf: '연락처'
-}
-
-export function getFormat(name: string, mimeType = ''): Format | null {
-  const ext = name.toLowerCase().split('.').pop()
-  if (FORMATS.includes(ext as Format)) return ext as Format
-  const mime = mimeType.toLowerCase().split(';')[0].trim()
-  if (mime === 'message/rfc822') return 'eml'
-  if (mime === 'text/csv') return 'csv'
-  if (mime === 'text/markdown') return 'md'
-  if (mime === 'text/calendar') return 'ics'
-  if (mime === 'text/vcard' || mime === 'text/x-vcard') return 'vcf'
-  return null
+  relayTicketId?: string
 }

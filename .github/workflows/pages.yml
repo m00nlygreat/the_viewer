@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run package:extension
+      - run: npm run verify:build
       - name: Verify target outputs
         run: |
           test -f dist/app/index.html

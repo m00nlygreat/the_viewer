@@ -3,10 +3,10 @@ import { Command, FilePlus2, FileUp, Search, Settings2, ClipboardPaste, Palette 
 import { useFocusTrap } from './useFocusTrap'
 
 export interface CommandItem { id: string; title: string; detail?: string; section: string; icon: 'open' | 'new' | 'settings' | 'paste' | 'theme'; run: () => void }
-interface Props { commands: CommandItem[]; onClose: () => void; platform: 'pwa' | 'extension' }
+interface Props { commands: CommandItem[]; onClose: () => void }
 const icons = { open: FileUp, new: FilePlus2, settings: Settings2, paste: ClipboardPaste, theme: Palette }
 
-export function CommandMenu({ commands, onClose, platform }: Props) {
+export function CommandMenu({ commands, onClose }: Props) {
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const input = useRef<HTMLInputElement>(null)
@@ -32,7 +32,7 @@ export function CommandMenu({ commands, onClose, platform }: Props) {
           {filtered.map((item, index) => item.section === group ? (() => {
             const Icon = icons[item.icon]
             return <button className={`command-item${index === active ? ' active' : ''}`} id={`command-${item.id}`} role="option" aria-selected={index === active} key={item.id} onMouseEnter={() => setActive(index)} onClick={() => execute(index)}>
-              <span className="command-icon"><Icon size={15} /></span><span className="command-copy"><strong>{item.title}</strong>{item.detail && <small>{item.detail}</small>}</span>{item.id === 'open' && <kbd>{platform === 'pwa' && navigator.platform.includes('Mac') ? '⌘ O' : 'Ctrl O'}</kbd>}
+              <span className="command-icon"><Icon size={15} /></span><span className="command-copy"><strong>{item.title}</strong>{item.detail && <small>{item.detail}</small>}</span>{item.id === 'open' && <kbd>{/(Mac|iPhone|iPad|iPod)/i.test(navigator.platform) ? '⌘ O' : 'Ctrl O'}</kbd>}
             </button>
           })() : null)}
         </div>)}

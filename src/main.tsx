@@ -15,4 +15,4 @@ if (import.meta.env.MODE === 'app') {
   window.addEventListener('viewer:apply-update', () => { void updateServiceWorker?.(true) })
 }
 
-createRoot(document.getElementById('root')!).render(<StrictMode><App platform="pwa" /></StrictMode>)
+createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
