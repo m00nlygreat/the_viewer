@@ -28,8 +28,6 @@ const SourceEditor = lazy(() => import('../components/SourceEditor'))
 interface HistoryEntry { model: DocumentModel; text: string; sourceError?: string; isDirty: boolean }
 interface Notice { id: number; tone: 'success' | 'error' | 'info'; message: string }
 interface BeforeInstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
-interface RelayStatus { busy: boolean; error: string }
-
 const fileAccept = FORMATS.map((format) => `.${format}`).join(',')
 const labels = { eml: '이메일', csv: '표', md: '문서', ics: '일정', vcf: '연락처' } satisfies Record<Format, string>
 
@@ -49,12 +47,11 @@ export function App() {
   const [pasteText, setPasteText] = useState('')
   const [pasteFormat, setPasteFormat] = useState<Format>('md')
   const [notices, setNotices] = useState<Notice[]>([])
-  const [working, setWorking] = useState(false)
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPrompt | null>(null)
   const [updateReady, setUpdateReady] = useState(false)
   const [offlineReady, setOfflineReady] = useState(false)
   const [relayRoute, setRelayRoute] = useState<RelayRoute | null>(() => parseRelayRoute(window.location.hash))
-  const [relayStatus, setRelayStatus] = useState<RelayStatus | null>(() => parseRelayRoute(window.location.hash) ? { busy: true, error: '' } : null)
+  const [relayError, setRelayError] = useState('')
   const inputRef = useRef<FilePickerHandle>(null)
   const attachmentInputRef = useRef<FilePickerHandle>(null)
   const attachmentTarget = useRef('')
@@ -161,7 +158,6 @@ export function App() {
 
   const openFiles = useCallback(async (files: PickedFile[], forcedFormat?: Format): Promise<{ opened: ViewerDocument[]; errors: string[] }> => {
     if (!files.length) return { opened: [], errors: [] }
-    setWorking(true)
     const opened: ViewerDocument[] = []
     const errors: string[] = []
     let first: ViewerDocument | null = null
@@ -179,7 +175,6 @@ export function App() {
       }
     }
     if (first) { setActiveId(first.id); setShowCommand(false); setTimeout(() => { location.hash = `/file/${first!.id}` }, 0) }
-    setWorking(false)
     return { opened, errors }
   }, [notify])
 
@@ -190,7 +185,7 @@ export function App() {
   const runRelay = useCallback(async (route: RelayRoute) => {
     if (relayRuns.current.has(route.ticketId)) return
     relayRuns.current.add(route.ticketId)
-    setRelayStatus({ busy: true, error: '' })
+    setRelayError('')
     let imported: ViewerDocument | null = null
     const finish = (item: ViewerDocument) => {
       setActiveId(item.id)
@@ -198,7 +193,7 @@ export function App() {
       history.replaceState(null, '', `#/file/${item.id}`)
       receivedRelayFiles.current.delete(route.ticketId)
       setRelayRoute(null)
-      setRelayStatus(null)
+      setRelayError('')
     }
     try {
       imported = documentsRef.current.find((item) => item.relayTicketId === route.ticketId) ?? null
@@ -225,16 +220,14 @@ export function App() {
       setActiveId(imported.id)
       await commitExtensionFile({ extensionId: route.extensionId, ticketId: route.ticketId })
       finish(imported)
-      notify('파일을 전달받았습니다.', 'success')
     } catch (error) {
       if (imported && error instanceof RelayTransferError && (error.code === 'INVALID_TICKET' || error.code === 'EXPIRED')) {
         finish(imported)
-        notify('저장된 작업을 확인했습니다.', 'success')
       } else {
-        setRelayStatus({ busy: false, error: error instanceof Error ? error.message : '파일 전달에 실패했습니다.' })
+        setRelayError(error instanceof Error ? error.message : '파일 전달에 실패했습니다.')
       }
     } finally { relayRuns.current.delete(route.ticketId) }
-  }, [notify, recoveryEnabled])
+  }, [recoveryEnabled])
 
   useEffect(() => {
     if (loaded && relayRoute) void runRelay(relayRoute)
@@ -525,7 +518,7 @@ export function App() {
         </div>)}
         {!documents.length && <div className="sidebar-empty">열린 파일이 없습니다.</div>}
       </nav>
-      <div className="sidebar-bottom"><div className={`connection-status${online ? '' : ' offline'}`}><span />{online ? '브라우저에서 처리 중' : '오프라인'}</div><button className="sidebar-settings" onClick={() => setShowSettings(true)}><Settings2 size={14} /> 설정 <span className="sidebar-version">v{__APP_VERSION__}</span></button></div>
+      <div className="sidebar-bottom"><div className={`connection-status${online ? '' : ' offline'}`}><span />{online ? '온라인' : '오프라인'}</div><button className="sidebar-settings" onClick={() => setShowSettings(true)}><Settings2 size={14} /> 설정 <span className="sidebar-version">v{__APP_VERSION__}</span></button></div>
     </aside>
 
     <main className="main-column">
@@ -550,7 +543,7 @@ export function App() {
       {activeDocument ? <>
         <div className="document-workspace" key={activeDocument.id}>
           {activeDocument.sourceError && activeDocument.mode === 'source' && <div className="source-diagnostic" role="alert"><span>원본 문법 오류 · 마지막으로 해석된 구조는 유지됩니다. 이 텍스트는 원문 파일로 내보낼 수 있습니다.</span><small>{activeDocument.sourceError}</small></div>}
-          <Suspense fallback={<div className="editor-loading"><span className="spinner" />편집기를 준비하고 있습니다…</div>}>
+          <Suspense fallback={null}>
             {activeDocument.mode === 'view' ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)}
           </Suspense>
         </div>
@@ -563,7 +556,6 @@ export function App() {
         <button className="secondary-button mobile-history" aria-label="다시 실행" onClick={() => undo(true)}><Redo2 size={17} /></button>
         <button className="primary-button mobile-export" onClick={() => { void saveCurrent() }}><Upload size={15} /> 내보내기</button>
       </nav>}
-      {working && <div className="loading-overlay" role="status"><span className="spinner" />파일을 읽고 있습니다…</div>}
       {offlineReady && <div className="status-banner"><Check size={15} />오프라인에서 사용할 파일을 준비했습니다.<button className="icon-button" aria-label="알림 닫기" onClick={() => setOfflineReady(false)}><X size={14} /></button></div>}
       {updateReady && !relayRoute && <div className="status-banner update-banner"><span>새 버전을 사용할 수 있습니다. 업데이트는 사용자가 선택할 때 적용됩니다.</span><button className="subtle-button" onClick={() => window.dispatchEvent(new Event('viewer:apply-update'))}>업데이트</button><button className="icon-button" aria-label="업데이트 알림 닫기" onClick={() => setUpdateReady(false)}><X size={14} /></button></div>}
     </main>
@@ -571,7 +563,7 @@ export function App() {
     {showCommand && <CommandMenu commands={commands} onClose={() => setShowCommand(false)} />}
     {showSettings && <SettingsDialog theme={theme} onThemeChange={changeTheme} recoveryEnabled={recoveryEnabled} onRecoveryChange={(enabled) => { void changeRecovery(enabled) }} onClearData={() => { void clearData() }} onClose={() => setShowSettings(false)} onInstall={() => { void installApp() }} canInstall={Boolean(installPrompt)} />}
     {showPaste && <PasteDialog text={pasteText} format={pasteFormat} onTextChange={setPasteText} onFormatChange={setPasteFormat} onClose={() => setShowPaste(false)} onOpen={() => { void createFromPaste() }} />}
-    {relayRoute && relayStatus && !relayStatus.busy && <div className="status-banner relay-error-banner" role="status" aria-live="polite"><span>{relayStatus.error}</span><button className="subtle-button" onClick={() => { void runRelay(relayRoute) }}>다시 시도</button></div>}
+    {relayRoute && relayError && <div className="status-banner relay-error-banner" role="status" aria-live="polite"><span>{relayError}</span><button className="subtle-button" onClick={() => { void runRelay(relayRoute) }}>다시 시도</button></div>}
     <div className="toast-stack" aria-live="polite" aria-atomic="false">{notices.map((notice) => <div className={`toast ${notice.tone}`} key={notice.id}><span>{notice.message}</span><button aria-label="알림 닫기" onClick={() => setNotices((items) => items.filter((item) => item.id !== notice.id))}><X size={13} /></button></div>)}</div>
   </div>
 }

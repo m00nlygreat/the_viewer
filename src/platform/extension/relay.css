@@ -11,6 +11,4 @@ button { min-height: 42px; border: 1px solid #3a3b40; border-radius: 10px; paddi
 button.primary { border-color: #b4f2d4; background: #b4f2d4; color: #101112; font-weight: 700; }
 button:disabled { opacity: .55; cursor: wait; }
 .relay-error { color: #ffb4a8; }
-.relay-progress { height: 5px; border-radius: 99px; background: #35363a; overflow: hidden; margin: 18px 0 8px; }
-.relay-progress span { display: block; height: 100%; background: #b4f2d4; transition: width .15s ease; }
 @media (prefers-color-scheme: light) { :root { background: #f3f4f6; color: #161719; } .relay-card { background: white; border-color: #ddd; box-shadow: 0 24px 80px #1018281a; } p { color: #65676b; } .relay-detail, button { background: #f4f5f6; color: #333; border-color: #ddd; } button.primary { background: #126547; border-color: #126547; color: white; } }

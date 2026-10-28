@@ -148,7 +148,6 @@ textarea { resize: vertical; }
 .source-diagnostic small { color: var(--text-muted); }
 .source-statusbar { height: 28px; flex: 0 0 auto; display: flex; align-items: center; gap: 15px; padding: 0 14px; border-top: 1px solid var(--line); color: var(--text-weak); background: var(--sidebar); font-size: 12px; }
 .error-label { color: var(--warning); }.ready-label { color: #63B887; }
-.loading-overlay { position: absolute; inset: 48px 0 0; z-index: 20; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-secondary); background: color-mix(in srgb, var(--bg) 76%, transparent); backdrop-filter: blur(2px); }
 .spinner { width: 18px; height: 18px; display: inline-block; border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
 .spinner.small { width: 13px; height: 13px; border-width: 1.5px; }
 @keyframes spin { to { transform: rotate(360deg); } }
