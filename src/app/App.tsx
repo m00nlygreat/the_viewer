@@ -8,10 +8,11 @@ import { CommandMenu, type CommandItem } from '../components/CommandMenu'
 import { SettingsDialog } from '../components/SettingsDialog'
 import { useFocusTrap } from '../components/useFocusTrap'
 import { ViewerZoom } from '../components/ViewerZoom'
+import { disposeSourceEditor } from '../components/sourceEditorRegistry'
 import { FORMAT_MIME, FORMATS, getFormat, type CalendarModel, type ContactModel, type CsvModel, type DocumentModel, type EmailModel, type Format, type ThemePreference, type ViewerDocument } from '../domain/types'
-import { makeDocumentFromBytes } from '../domain/session'
+import { applySourceEdit, applyViewCommand, buildExportSnapshot, diagnosticsFromMessages, flushDocument, historyEntry, makeDocumentFromBytes, undoDocument, redoDocument, type HistoryEntry } from '../domain/session'
 import { parseWithWorker } from '../domain/workerClient'
-import { serializeDocument } from '../domain/serialize'
+import { hasFatalDiagnostics } from '../domain/formatParsing'
 import { clearAllData, clearDocuments, loadDocuments, loadTheme, readSetting, removeDocument, saveDocument, takeShareTicket, writeSetting } from '../platform/storage'
 import { FilePicker, type FilePickerHandle } from '../platform/FilePicker'
 import type { PickedFile } from '../platform/fileTypes'
@@ -25,11 +26,29 @@ const CalendarEditor = lazy(() => import('../features/CalendarEditor').then((mod
 const ContactsEditor = lazy(() => import('../features/ContactsEditor').then((module) => ({ default: module.ContactsEditor })))
 const SourceEditor = lazy(() => import('../components/SourceEditor'))
 
-interface HistoryEntry { model: DocumentModel; text: string; sourceError?: string; isDirty: boolean }
 interface Notice { id: number; tone: 'success' | 'error' | 'info'; message: string }
 interface BeforeInstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
 const fileAccept = FORMATS.map((format) => `.${format}`).join(',')
 const labels = { eml: '이메일', csv: '표', md: '문서', ics: '일정', vcf: '연락처' } satisfies Record<Format, string>
+const MAX_HISTORY_ENTRIES = 80
+const MAX_HISTORY_BYTES = 24 * 1024 * 1024
+
+function historyEntryBytes(entry: HistoryEntry): number {
+  let bytes = entry.text.length * 2
+  if ('attachments' in entry.model) for (const attachment of entry.model.attachments) bytes += attachment.content.length
+  return bytes
+}
+
+function trimHistory(history: { undo: HistoryEntry[]; redo: HistoryEntry[] }): void {
+  const entries = () => [...history.undo, ...history.redo]
+  const totalBytes = () => entries().reduce((sum, entry) => sum + historyEntryBytes(entry), 0)
+  while (history.undo.length + history.redo.length > MAX_HISTORY_ENTRIES || (history.undo.length + history.redo.length > 1 && totalBytes() > MAX_HISTORY_BYTES)) {
+    if (history.undo.length > 1) history.undo.shift()
+    else if (history.redo.length > 1) history.redo.shift()
+    else if (history.undo.length && history.redo.length) history.redo.shift()
+    else break
+  }
+}
 
 export function App() {
   const [documents, setDocuments] = useState<ViewerDocument[]>([])
@@ -56,8 +75,10 @@ export function App() {
   const attachmentInputRef = useRef<FilePickerHandle>(null)
   const attachmentTarget = useRef('')
   const historyRef = useRef(new Map<string, { undo: HistoryEntry[]; redo: HistoryEntry[] }>())
-  const sourceParseTimer = useRef<number | undefined>(undefined)
-  const sourceRequest = useRef(0)
+  const historyGroupRef = useRef(new Map<string, { group: 'typing' | 'command'; at: number }>())
+  const sourceParseTimers = useRef(new Map<string, { revision: number; timer: number }>())
+  const sourceRequestTokens = useRef(new Map<string, number>())
+  const pendingSerializations = useRef(new Map<string, Promise<void>>())
   const noticeTimer = useRef(new Map<number, number>())
   const relayRuns = useRef(new Set<string>())
   const receivedRelayFiles = useRef(new Map<string, ReceivedExtensionFile>())
@@ -70,6 +91,50 @@ export function App() {
     const timer = window.setTimeout(() => setNotices((items) => items.filter((item) => item.id !== id)), 4200)
     noticeTimer.current.set(id, timer)
   }, [])
+
+  const publishDocument = useCallback((updated: ViewerDocument) => {
+    documentsRef.current = documentsRef.current.map((item) => item.id === updated.id ? updated : item)
+    setDocuments((items) => items.map((item) => item.id === updated.id ? updated : item))
+  }, [])
+
+  const recordHistory = useCallback((document: ViewerDocument, group: 'typing' | 'command' = 'command') => {
+    const history = historyRef.current.get(document.id) ?? { undo: [], redo: [] }
+    const now = Date.now()
+    const previousGroup = historyGroupRef.current.get(document.id)
+    const coalesce = group === 'typing' && previousGroup?.group === 'typing' && now - previousGroup.at < 800
+    if (!coalesce) {
+      history.undo.push(historyEntry(document))
+    }
+    history.redo = []
+    trimHistory(history)
+    historyRef.current.set(document.id, history)
+    historyGroupRef.current.set(document.id, { group, at: now })
+  }, [])
+
+  const parseNow = useCallback(async (id: string, revision: number) => {
+    const scheduled = sourceParseTimers.current.get(id)
+    if (scheduled) { window.clearTimeout(scheduled.timer); sourceParseTimers.current.delete(id) }
+    const document = documentsRef.current.find((item) => item.id === id)
+    if (!document || document.revision !== revision || document.textRevision !== revision || document.parseState !== 'pending') return
+    const token = (sourceRequestTokens.current.get(id) ?? 0) + 1
+    sourceRequestTokens.current.set(id, token)
+    try {
+      const parsed = await parseWithWorker(document.name, document.mimeType, new TextEncoder().encode(document.text), document.format, { documentId: id, revision, csvHasHeader: document.format === 'csv' ? (document.model as CsvModel).hasHeader : undefined })
+      const latest = documentsRef.current.find((item) => item.id === id)
+      if (sourceRequestTokens.current.get(id) !== token || !latest || latest.revision !== revision || latest.text !== document.text) return
+      if (hasFatalDiagnostics(parsed.format, parsed.model, parsed.diagnostics)) {
+        const message = parsed.diagnostics[0] ?? '문서 구조를 해석하지 못했습니다.'
+        publishDocument({ ...latest, parseState: 'error', diagnostics: diagnosticsFromMessages(parsed.diagnostics, 'error'), sourceError: message })
+        return
+      }
+      publishDocument({ ...latest, model: parsed.model, modelRevision: revision, parseState: 'ready', diagnostics: diagnosticsFromMessages(parsed.diagnostics), sourceError: undefined })
+    } catch (error) {
+      const latest = documentsRef.current.find((item) => item.id === id)
+      if (sourceRequestTokens.current.get(id) !== token || !latest || latest.revision !== revision) return
+      const message = error instanceof Error ? error.message : '원본 문법을 해석하지 못했습니다.'
+      publishDocument({ ...latest, parseState: 'error', diagnostics: [{ severity: 'error', message }], sourceError: message })
+    }
+  }, [publishDocument])
 
   useEffect(() => {
     let cancelled = false
@@ -129,24 +194,25 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    if (activeDocument?.mode !== 'source') return
-    const id = activeDocument.id
-    const text = activeDocument.text
-    const revision = ++sourceRequest.current
-    window.clearTimeout(sourceParseTimer.current)
-    sourceParseTimer.current = window.setTimeout(() => {
-      const bytes = new TextEncoder().encode(text)
-      void parseWithWorker(activeDocument.name, activeDocument.mimeType, bytes, activeDocument.format).then((parsed) => {
-        if (sourceRequest.current !== revision) return
-        setDocuments((items) => items.map((item) => item.id === id && item.text === text ? { ...item, model: parsed.model, sourceError: undefined } : item))
-      }).catch((error: unknown) => {
-        if (sourceRequest.current !== revision) return
-        const message = error instanceof Error ? error.message : '원본 문법을 해석하지 못했습니다.'
-        setDocuments((items) => items.map((item) => item.id === id && item.text === text ? { ...item, sourceError: message } : item))
-      })
-    }, 450)
-    return () => window.clearTimeout(sourceParseTimer.current)
-  }, [activeDocument?.id, activeDocument?.mode, activeDocument?.text, activeDocument?.format, activeDocument?.mimeType, activeDocument?.name])
+    const pendingIds = new Set(documents.filter((item) => item.parseState === 'pending' && item.modelRevision !== item.revision).map((item) => item.id))
+    for (const [id, scheduled] of sourceParseTimers.current) {
+      const current = documents.find((item) => item.id === id)
+      if (!pendingIds.has(id) || current?.revision !== scheduled.revision) {
+        window.clearTimeout(scheduled.timer)
+        sourceParseTimers.current.delete(id)
+      }
+    }
+    for (const item of documents) {
+      if (!pendingIds.has(item.id) || sourceParseTimers.current.get(item.id)?.revision === item.revision) continue
+      const timer = window.setTimeout(() => { sourceParseTimers.current.delete(item.id); void parseNow(item.id, item.revision) }, 380)
+      sourceParseTimers.current.set(item.id, { revision: item.revision, timer })
+    }
+  }, [documents, parseNow])
+
+  useEffect(() => () => {
+    for (const scheduled of sourceParseTimers.current.values()) window.clearTimeout(scheduled.timer)
+    sourceParseTimers.current.clear()
+  }, [])
 
   const openFiles = useCallback(async (files: PickedFile[], forcedFormat?: Format): Promise<{ opened: ViewerDocument[]; errors: string[] }> => {
     if (!files.length) return { opened: [], errors: [] }
@@ -241,44 +307,73 @@ export function App() {
     inputRef.current?.open(format)
   }, [])
 
-  const updateDocument = useCallback((id: string, update: (document: ViewerDocument) => ViewerDocument, contentChanged = true, dirtyState?: boolean) => {
-    setDocuments((items) => items.map((document) => {
-      if (document.id !== id) return document
-      if (contentChanged) {
-        const history = historyRef.current.get(id) ?? { undo: [], redo: [] }
-        history.undo.push({ model: document.model, text: document.text, sourceError: document.sourceError, isDirty: document.isDirty })
-        if (history.undo.length > 80) history.undo.shift()
-        history.redo = []
-        historyRef.current.set(id, history)
-      }
-      return { ...update(document), revision: document.revision + (contentChanged ? 1 : 0), isDirty: contentChanged ? (dirtyState ?? true) : document.isDirty, lastEditedAt: contentChanged ? Date.now() : document.lastEditedAt }
-    }))
-  }, [])
+  const changeModel = useCallback((id: string, baseRevision: number, model: DocumentModel, group: 'typing' | 'command' = 'command') => {
+    const current = documentsRef.current.find((item) => item.id === id)
+    if (!current) return
+    if (current.revision !== baseRevision || current.parseState !== 'ready' || current.modelRevision !== current.revision) {
+      notify('원본을 해석 중이거나 문서가 바뀌어 구조 편집을 잠시 사용할 수 없습니다.', 'info')
+      return
+    }
+    if (model === current.model) return
+    recordHistory(current, group)
+    const nextRevision = current.revision + 1
+    publishDocument({ ...current, model, revision: nextRevision, modelRevision: nextRevision, parseState: 'ready', diagnostics: [], sourceError: undefined, isDirty: true, lastEditedAt: Date.now() })
 
-  const changeModel = useCallback((id: string, model: DocumentModel) => {
-    const item = documents.find((document) => document.id === id)
-    if (!item) return
-    updateDocument(id, (current) => ({ ...current, model, sourceError: undefined }))
-    void serializeDocument(item.format, model).then((text) => setDocuments((items) => items.map((current) => current.id === id && current.model === model ? { ...current, text } : current)))
-  }, [documents, updateDocument])
+    const pending = applyViewCommand(id, baseRevision, model, current).then((serialized) => {
+      const latest = documentsRef.current.find((item) => item.id === id)
+      if (!latest || latest.revision !== serialized.revision || latest.model !== model) return
+      publishDocument({ ...serialized, mode: latest.mode, savedText: latest.savedText, savedBytes: latest.savedBytes, sourceText: latest.sourceText, initialBytes: latest.initialBytes, isDirty: serialized.text !== latest.savedText })
+    }).catch((error: unknown) => {
+      const latest = documentsRef.current.find((item) => item.id === id)
+      if (!latest || latest.revision !== nextRevision || latest.model !== model) return
+      const message = error instanceof Error ? error.message : '보기 변경을 원문으로 직렬화하지 못했습니다.'
+      publishDocument({ ...latest, parseState: 'error', diagnostics: [{ severity: 'error', message }], sourceError: message })
+      notify(message, 'error')
+    }).finally(() => {
+      if (pendingSerializations.current.get(id) === pending) pendingSerializations.current.delete(id)
+    })
+    pendingSerializations.current.set(id, pending)
+  }, [notify, publishDocument, recordHistory])
+
+  const applySourceText = useCallback((id: string, nextText: string, group: 'typing' | 'command' = 'typing') => {
+    const current = documentsRef.current.find((item) => item.id === id)
+    if (!current || current.text === nextText) return
+    recordHistory(current, group)
+    sourceRequestTokens.current.set(id, (sourceRequestTokens.current.get(id) ?? 0) + 1)
+    publishDocument(applySourceEdit(id, nextText, current))
+  }, [publishDocument, recordHistory])
 
   const setMode = useCallback((mode: ViewerDocument['mode']) => {
-    if (!activeDocument) return
-    if (activeDocument.sourceError && mode !== 'source') notify('원본 문법 오류가 남아 있습니다. 마지막으로 해석한 구조를 표시합니다.', 'info')
-    updateDocument(activeDocument.id, (item) => ({ ...item, mode }), false)
-  }, [activeDocument, notify, updateDocument])
+    const current = documentsRef.current.find((item) => item.id === activeId)
+    if (!current || current.mode === mode) return
+    if (mode === 'source') {
+      void flushDocument(current.id, () => documentsRef.current.find((item) => item.id === current.id) ?? null, () => pendingSerializations.current.get(current.id)).then((document) => {
+        publishDocument({ ...document, mode: 'source' })
+      }).catch((error: unknown) => notify(error instanceof Error ? error.message : '원본 편집기를 준비하지 못했습니다.', 'error'))
+      return
+    }
+    publishDocument({ ...current, mode: 'view' })
+    if (current.parseState === 'pending' && current.modelRevision !== current.revision) void parseNow(current.id, current.revision)
+    else if (current.parseState === 'error') notify('원본 문법 오류가 있습니다. 마지막으로 유효했던 보기를 표시합니다.', 'info')
+  }, [activeId, notify, parseNow, publishDocument])
 
   const undo = useCallback((redo = false) => {
-    if (!activeDocument) return
-    const stack = historyRef.current.get(activeDocument.id) ?? { undo: [], redo: [] }
+    const current = documentsRef.current.find((item) => item.id === activeId)
+    if (!current) return
+    const stack = historyRef.current.get(current.id) ?? { undo: [], redo: [] }
     const from = redo ? stack.redo : stack.undo
     const to = redo ? stack.undo : stack.redo
     const previous = from.pop()
     if (!previous) return
-    to.push({ model: activeDocument.model, text: activeDocument.text, sourceError: activeDocument.sourceError, isDirty: activeDocument.isDirty })
-    historyRef.current.set(activeDocument.id, stack)
-    setDocuments((items) => items.map((item) => item.id === activeDocument.id ? { ...item, ...previous, revision: item.revision + 1, lastEditedAt: Date.now() } : item))
-  }, [activeDocument])
+    to.push(historyEntry(current))
+    trimHistory(stack)
+    historyRef.current.set(current.id, stack)
+    sourceRequestTokens.current.set(current.id, (sourceRequestTokens.current.get(current.id) ?? 0) + 1)
+    const next = redo ? redoDocument(current.id, current, previous) : undoDocument(current.id, current, previous)
+    historyGroupRef.current.delete(current.id)
+    publishDocument(next)
+    if (next.parseState === 'pending') void parseNow(current.id, next.revision)
+  }, [activeId, parseNow, publishDocument])
 
   const createBlank = useCallback(async (format: Format) => {
     const templates: Record<Format, string> = {
@@ -290,7 +385,7 @@ export function App() {
     const bytes = new TextEncoder().encode(templates[format])
     try {
       const document = await makeDocumentFromBytes(`Untitled.${format}`, FORMAT_MIME[format], bytes)
-      document.mode = 'edit'
+      document.mode = 'view'
       setDocuments((items) => [document, ...items])
       setActiveId(document.id)
       setShowCommand(false)
@@ -298,57 +393,63 @@ export function App() {
     } catch (error) { notify(error instanceof Error ? error.message : '새 파일을 만들지 못했습니다.', 'error') }
   }, [notify])
 
-  const outputPayload = useCallback(async (item: ViewerDocument): Promise<{ bytes: Uint8Array; text: string }> => {
-    if (!item.isDirty) return { bytes: new Uint8Array(item.sourceBytes.slice(0)), text: item.savedText }
-    const text = item.sourceError ? item.text : await serializeDocument(item.format, item.model)
-    const output = item.format === 'csv' && (item.model as CsvModel).bom ? `\uFEFF${text}` : text
-    return { bytes: new TextEncoder().encode(output), text }
-  }, [])
-
   const saveCurrent = useCallback(async () => {
     if (!activeDocument) return
-    const item = activeDocument
-    let payload: { bytes: Uint8Array; text: string }
-    try { payload = await outputPayload(item) }
-    catch (error) { notify(error instanceof Error ? `파일을 구성하지 못했습니다: ${error.message}` : '파일을 구성하지 못했습니다.', 'error'); return }
+    const id = activeDocument.id
+    let snapshot: ReturnType<typeof buildExportSnapshot>
+    try {
+      const item = await flushDocument(id, () => documentsRef.current.find((document) => document.id === id) ?? null, () => pendingSerializations.current.get(id))
+      snapshot = buildExportSnapshot(id, item)
+    } catch (error) { notify(error instanceof Error ? `파일을 구성하지 못했습니다: ${error.message}` : '파일을 구성하지 못했습니다.', 'error'); return }
     let status: 'saved' | 'started' | 'cancelled' = 'started'
     try {
-      status = await saveLocalFile(item.name, item.format, payload.bytes)
+      status = await saveLocalFile(activeDocument.name, activeDocument.format, snapshot.bytes)
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') { status = 'cancelled' }
       else { notify(error instanceof Error ? `내보내기 실패: ${error.message}` : '내보내기 실패', 'error'); return }
     }
     if (status === 'cancelled') return
-    const savedBytes = payload.bytes.slice().buffer as ArrayBuffer
-    setDocuments((items) => items.map((document) => document.id === item.id ? { ...document, savedText: payload.text, sourceText: payload.text, sourceBytes: savedBytes, isDirty: document.revision === item.revision ? false : document.isDirty } : document))
+    const current = documentsRef.current.find((document) => document.id === id)
+    if (current) publishDocument({ ...current, savedText: snapshot.text, savedBytes: snapshot.bytes.slice().buffer as ArrayBuffer, encoding: snapshot.encoding, isDirty: current.revision === snapshot.revision ? false : true })
     notify(status === 'saved' ? '파일을 저장했습니다.' : '내려받기를 시작했습니다.', 'success')
-  }, [activeDocument, notify, outputPayload])
+  }, [activeDocument, notify, publishDocument])
 
   const revertCurrent = useCallback(async () => {
     if (!activeDocument || !window.confirm('마지막 저장·내보내기 기준으로 복원할까요? 현재 편집 내용은 사라집니다.')) return
     const item = activeDocument
     try {
-      const parsed = await parseWithWorker(item.name, item.mimeType, new Uint8Array(item.sourceBytes))
+      const parsed = await parseWithWorker(item.name, item.mimeType, new Uint8Array(item.savedBytes), item.format, { documentId: item.id, revision: item.revision, csvHasHeader: item.format === 'csv' ? (item.model as CsvModel).hasHeader : undefined })
       if (documentsRef.current.find((document) => document.id === item.id)?.revision !== item.revision) return
-      setDocuments((items) => items.map((document) => document.id === item.id ? { ...document, text: parsed.text, model: parsed.model, sourceText: parsed.text, savedText: parsed.text, sourceError: undefined, isDirty: false, revision: document.revision + 1 } : document))
+      const revision = item.revision + 1
+      publishDocument({ ...item, text: parsed.text, model: parsed.model, savedText: parsed.text, sourceError: undefined, isDirty: false, revision, modelRevision: revision, textRevision: revision, parseState: 'ready', diagnostics: diagnosticsFromMessages(parsed.diagnostics), encoding: parsed.encoding })
       historyRef.current.set(item.id, { undo: [], redo: [] })
+      historyGroupRef.current.delete(item.id)
       notify('마지막 저장본으로 복원했습니다.', 'success')
     } catch (error) {
       const message = error instanceof Error ? error.message : '원본 파일을 해석하지 못했습니다.'
       if (documentsRef.current.find((document) => document.id === item.id)?.revision !== item.revision) return
-      setDocuments((items) => items.map((document) => document.id === item.id ? { ...document, text: item.savedText, sourceError: message, isDirty: false, revision: document.revision + 1 } : document))
+      const revision = item.revision + 1
+      publishDocument({ ...item, text: item.savedText, textRevision: revision, revision, parseState: 'error', diagnostics: [{ severity: 'error', message }], sourceError: message, isDirty: false })
       historyRef.current.set(item.id, { undo: [], redo: [] })
+      historyGroupRef.current.delete(item.id)
       notify('저장된 원문으로 복원했습니다. 구조 편집에는 유효한 문서가 필요합니다.', 'info')
     }
-  }, [activeDocument, notify])
+  }, [activeDocument, notify, publishDocument])
 
   const closeDocument = useCallback(async (id: string) => {
     const item = documents.find((document) => document.id === id)
     if (!item) return
     if (item.isDirty && !window.confirm(`“${item.name}”에 내보내지 않은 변경이 있습니다. 닫을까요?`)) return
     setDocuments((items) => items.filter((document) => document.id !== id))
+    documentsRef.current = documentsRef.current.filter((document) => document.id !== id)
     await removeDocument(id).catch(() => undefined)
     historyRef.current.delete(id)
+    historyGroupRef.current.delete(id)
+    disposeSourceEditor(id)
+    sourceRequestTokens.current.set(id, (sourceRequestTokens.current.get(id) ?? 0) + 1)
+    const scheduled = sourceParseTimers.current.get(id)
+    if (scheduled) { window.clearTimeout(scheduled.timer); sourceParseTimers.current.delete(id) }
+    pendingSerializations.current.delete(id)
     if (activeId === id) {
       const next = documents.find((document) => document.id !== id)
       setActiveId(next?.id ?? '')
@@ -385,7 +486,7 @@ export function App() {
     if (!item || item.format !== 'eml') return
     const model = item.model as EmailModel
     const attachments = files.map((file) => ({ filename: file.name, mimeType: file.type || 'application/octet-stream', content: Array.from(file.bytes) }))
-    changeModel(item.id, { ...model, attachments: [...model.attachments, ...attachments] })
+    changeModel(item.id, item.revision, { ...model, attachments: [...model.attachments, ...attachments] })
   }, [documents, changeModel])
 
   const addAttachment = useCallback(() => {
@@ -397,7 +498,7 @@ export function App() {
   const removeAttachment = useCallback((index: number) => {
     if (!activeDocument || activeDocument.format !== 'eml') return
     const model = activeDocument.model as EmailModel
-    changeModel(activeDocument.id, { ...model, attachments: model.attachments.filter((_, itemIndex) => itemIndex !== index) })
+    changeModel(activeDocument.id, activeDocument.revision, { ...model, attachments: model.attachments.filter((_, itemIndex) => itemIndex !== index) })
   }, [activeDocument, changeModel])
 
   const handlePaste = useCallback(async () => {
@@ -427,6 +528,10 @@ export function App() {
   }, [])
   const clearData = useCallback(async () => {
     await clearAllData().catch(() => undefined)
+    for (const document of documentsRef.current) disposeSourceEditor(document.id)
+    historyRef.current.clear()
+    historyGroupRef.current.clear()
+    documentsRef.current = []
     setDocuments([])
     setActiveId('')
     setTheme('system')
@@ -446,13 +551,14 @@ export function App() {
   const shareCurrent = useCallback(async () => {
     if (!activeDocument || !navigator.share) { notify('이 브라우저에서는 시스템 공유를 사용할 수 없습니다.', 'info'); return }
     try {
-      const payload = await outputPayload(activeDocument)
-      await shareLocalFile(activeDocument.name, activeDocument.format, payload.bytes)
+      const item = await flushDocument(activeDocument.id, () => documentsRef.current.find((document) => document.id === activeDocument.id) ?? null, () => pendingSerializations.current.get(activeDocument.id))
+      const payload = buildExportSnapshot(item.id, item)
+      await shareLocalFile(item.name, item.format, payload.bytes)
       notify('공유를 시작했습니다.', 'success')
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) notify('파일을 공유하지 못했습니다.', 'error')
     }
-  }, [activeDocument, notify, outputPayload])
+  }, [activeDocument, notify])
 
   const commands = useMemo<CommandItem[]>(() => [
     ...documents.map((item) => ({ id: `switch-${item.id}`, title: `열린 파일 · ${safeFilename(item.name)}`, detail: `${labels[item.format]}${item.isDirty ? ' · 수정됨' : ''}`, section: '열린 파일', icon: 'open' as const, run: () => { setActiveId(item.id); location.hash = `/file/${item.id}` } })),
@@ -492,8 +598,25 @@ export function App() {
   }, [openFiles, notify])
   const dirty = activeDocument?.isDirty ?? false
   const switchTab = (id: string) => { setActiveId(id); location.hash = `/file/${id}` }
-  const modeLabel: Record<ViewerDocument['mode'], string> = { view: '보기', edit: '편집', source: '원본' }
-  const renderActiveDocument = (document: ViewerDocument) => renderDocument(document, (model) => changeModel(document.id, model), (text) => updateDocument(document.id, (item) => ({ ...item, text, sourceError: undefined }), true, text !== document.savedText), openAttachment, downloadAttachment, addAttachment, removeAttachment, resolvedTheme)
+  const modeLabel: Record<ViewerDocument['mode'], string> = { view: '보기', source: '원본' }
+  const renderModeTabs = (placement: 'desktop' | 'mobile') => <div className="mode-switch" role="tablist" aria-label="문서 탭" onKeyDown={(event) => {
+    const modes: ViewerDocument['mode'][] = ['view', 'source']
+    const current = event.target instanceof HTMLButtonElement ? event.target.dataset.mode as ViewerDocument['mode'] | undefined : undefined
+    const index = current ? modes.indexOf(current) : -1
+    const next = event.key === 'ArrowRight' ? (index + 1) % modes.length : event.key === 'ArrowLeft' ? (index + modes.length - 1) % modes.length : event.key === 'Home' ? 0 : event.key === 'End' ? modes.length - 1 : -1
+    if (next < 0) return
+    event.preventDefault()
+    const target = modes[next]!
+    event.currentTarget.querySelector<HTMLButtonElement>(`[data-mode="${target}"]`)?.focus()
+    setMode(target)
+  }}>{(['view', 'source'] as const).map((mode) => <button key={mode} id={`document-${activeDocument!.id}-${placement}-tab-${mode}`} data-mode={mode} role="tab" aria-controls={`document-panel-${activeDocument!.id}`} aria-selected={activeDocument!.mode === mode} tabIndex={activeDocument!.mode === mode ? 0 : -1} className={activeDocument!.mode === mode ? 'active' : ''} onClick={() => setMode(mode)}>{modeLabel[mode]}</button>)}</div>
+  const renderActiveDocument = (document: ViewerDocument) => renderDocument(
+    document,
+    (model, group) => changeModel(document.id, document.revision, model, group),
+    (text, group) => applySourceText(document.id, text, group),
+    openAttachment, downloadAttachment, addAttachment, removeAttachment, resolvedTheme,
+    () => undo(), () => undo(true), () => setMode('source')
+  )
 
   return <div className="app-shell" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <FilePicker ref={inputRef} onFiles={(files, format) => { void openFiles(files, format) }} onError={notify} />
@@ -522,7 +645,7 @@ export function App() {
             <button className="icon-button desktop-only" aria-label="실행 취소" title="실행 취소" onClick={() => undo()}><Undo2 size={15} /></button>
             <button className="icon-button desktop-only" aria-label="다시 실행" title="다시 실행" onClick={() => undo(true)}><Redo2 size={15} /></button>
             <div className="topbar-divider desktop-only" />
-            <div className="mode-switch" role="group" aria-label="문서 모드">{(['view', 'edit', 'source'] as const).map((mode) => <button key={mode} aria-pressed={activeDocument.mode === mode} className={activeDocument.mode === mode ? 'active' : ''} onClick={() => setMode(mode)}>{modeLabel[mode]}</button>)}</div>
+            {renderModeTabs('desktop')}
             <button className="icon-button theme-toggle" aria-label={`현재 ${resolvedTheme === 'dark' ? '다크' : '라이트'} 테마; 테마 변경`} title="테마 전환" onClick={() => changeTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}>{resolvedTheme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}</button>
             <button className="primary-button export-button" onClick={() => { void saveCurrent() }}><Upload size={14} /><span>내보내기</span><ChevronDown size={12} /></button>
             {'share' in navigator && <button className="icon-button desktop-only" aria-label="시스템 공유" title="시스템 공유" onClick={() => { void shareCurrent() }}><Share2 size={15} /></button>}
@@ -533,17 +656,19 @@ export function App() {
       </header>
 
       {activeDocument ? <>
-        <div className="document-workspace" key={activeDocument.id}>
-          {activeDocument.sourceError && activeDocument.mode === 'source' && <div className="source-diagnostic" role="alert"><span>원본 문법 오류 · 마지막으로 해석된 구조는 유지됩니다. 이 텍스트는 원문 파일로 내보낼 수 있습니다.</span><small>{activeDocument.sourceError}</small></div>}
+        <div id={`document-panel-${activeDocument.id}`} className="document-workspace" key={activeDocument.id} role="tabpanel" aria-label={`${modeLabel[activeDocument.mode]} · ${activeDocument.name}`} tabIndex={0}>
+          {activeDocument.parseState === 'pending' && <div className="source-diagnostic" role="status"><span>최신 원문을 해석하고 있습니다. 마지막으로 유효한 보기를 표시합니다.</span></div>}
+          {activeDocument.parseState === 'error' && <div className="source-diagnostic" role="alert"><span>원문을 해석하지 못했습니다. 마지막 유효 보기는 유지되며 구조 편집은 잠깁니다.</span><small>{activeDocument.diagnostics.find((item) => item.severity === 'error')?.message ?? activeDocument.sourceError}</small></div>}
+          {activeDocument.parseState === 'ready' && activeDocument.diagnostics.some((item) => item.severity === 'warning') && <div className="inline-warning" role="status">진단 {activeDocument.diagnostics.filter((item) => item.severity === 'warning').length}개 · {activeDocument.diagnostics.find((item) => item.severity === 'warning')?.message}</div>}
           <Suspense fallback={null}>
             {activeDocument.mode === 'view' ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)}
           </Suspense>
         </div>
-        {activeDocument.mode === 'source' && <div className="source-statusbar"><span>원본 텍스트 · UTF-8 출력</span><span>{activeDocument.text.split(/\r\n|\r|\n/).length}줄 · {activeDocument.text.length.toLocaleString()}자</span><div className="toolbar-spacer" />{activeDocument.sourceError ? <span className="error-label">문법 오류</span> : <span className="ready-label">유효한 문서</span>}</div>}
+        {activeDocument.mode === 'source' && <div className="source-statusbar"><span>원본 텍스트 · UTF-8 출력</span><span>{activeDocument.text.split(/\r\n|\r|\n/).length}줄 · {activeDocument.text.length.toLocaleString()}자</span><div className="toolbar-spacer" />{activeDocument.parseState === 'pending' ? <span>해석 중</span> : activeDocument.parseState === 'error' ? <span className="error-label">문법 오류</span> : <span className="ready-label">유효한 문서</span>}</div>}
       </> : <WelcomeScreen onOpen={() => pickFiles()} onPaste={() => { void handlePaste() }} onCommand={() => setShowCommand(true)} />}
 
       {activeDocument && <nav className="mobile-action-bar" aria-label="문서 동작">
-        <div className="mode-switch" role="group" aria-label="문서 모드">{(['view', 'edit', 'source'] as const).map((mode) => <button key={mode} aria-pressed={activeDocument.mode === mode} className={activeDocument.mode === mode ? 'active' : ''} onClick={() => setMode(mode)}>{modeLabel[mode]}</button>)}</div>
+        {renderModeTabs('mobile')}
         <button className="secondary-button mobile-history" aria-label="실행 취소" onClick={() => undo()}><Undo2 size={17} /></button>
         <button className="secondary-button mobile-history" aria-label="다시 실행" onClick={() => undo(true)}><Redo2 size={17} /></button>
         <button className="primary-button mobile-export" onClick={() => { void saveCurrent() }}><Upload size={15} /> 내보내기</button>
@@ -560,14 +685,14 @@ export function App() {
   </div>
 }
 
-function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel) => void, onText: (text: string) => void, onOpenAttachment: (index: number) => void, onDownloadAttachment: (index: number) => void, onAddAttachment: () => void, onRemoveAttachment: (index: number) => void, theme: 'light' | 'dark') {
-  if (document.mode === 'source') return <SourceEditor value={document.text} onChange={onText} markdownMode={document.format === 'md'} label={`${document.name} 원본 편집기`} />
+function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel, group?: 'typing' | 'command') => void, onText: (text: string, group?: 'typing' | 'command') => void, onOpenAttachment: (index: number) => void, onDownloadAttachment: (index: number) => void, onAddAttachment: () => void, onRemoveAttachment: (index: number) => void, theme: 'light' | 'dark', onUndo: () => void, onRedo: () => void, onOpenSource: () => void) {
+  if (document.mode === 'source') return <SourceEditor documentId={document.id} format={document.format} value={document.text} diagnostics={document.diagnostics} theme={theme} onChange={onText} onUndo={onUndo} onRedo={onRedo} label={`${document.name} 원본 편집기`} />
   switch (document.format) {
-    case 'csv': return <CsvEditor document={document} model={document.model as CsvModel} onChange={(model) => onModel(model)} theme={theme} />
-    case 'md': return <MarkdownEditor document={document} text={(document.model as { text: string }).text} onChange={(text) => onModel({ text })} />
-    case 'eml': return <EmailEditor document={document} model={document.model as EmailModel} onChange={(model) => onModel(model)} onOpenAttachment={onOpenAttachment} onDownloadAttachment={onDownloadAttachment} onAddAttachments={onAddAttachment} onRemoveAttachment={onRemoveAttachment} />
-    case 'ics': return <CalendarEditor document={document} model={document.model as CalendarModel} onChange={(model) => onModel(model)} />
-    case 'vcf': return <ContactsEditor document={document} model={document.model as ContactModel} onChange={(model) => onModel(model)} />
+    case 'csv': return <CsvEditor document={document} model={document.model as CsvModel} onChange={(model, group) => onModel(model, group)} theme={theme} />
+    case 'md': return <MarkdownEditor document={document} text={document.text} onChange={onText} onUndo={onUndo} onRedo={onRedo} />
+    case 'eml': return <EmailEditor document={document} model={document.model as EmailModel} onChange={(model, group) => onModel(model, group)} onOpenAttachment={onOpenAttachment} onDownloadAttachment={onDownloadAttachment} onAddAttachments={onAddAttachment} onRemoveAttachment={onRemoveAttachment} onOpenSource={onOpenSource} />
+    case 'ics': return <CalendarEditor document={document} model={document.model as CalendarModel} onChange={(model, group) => onModel(model, group)} />
+    case 'vcf': return <ContactsEditor document={document} model={document.model as ContactModel} onChange={(model, group) => onModel(model, group)} />
   }
 }
 

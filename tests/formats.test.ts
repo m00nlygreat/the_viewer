@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { decodeBytes } from '../src/domain/formatParsing'
 import { parseCsv, serializeCsv } from '../src/domain/formats/csv'
-import { parseEmail, serializeEmail } from '../src/domain/formats/email'
+import { isEditableEmailMime, parseEmail, serializeEmail, serializeEmailPreserving } from '../src/domain/formats/email'
 import { expandCalendarEvent, parseCalendar, serializeCalendar } from '../src/domain/formats/calendar'
-import { parseVCF, serializeVCF, updateContact } from '../src/domain/vcard'
+import { parseVCF, serializeVCF, setContactItems, updateContact } from '../src/domain/vcard'
 import { renderMarkdownMarkup } from '../src/domain/markdown'
 
 describe('CSV', () => {
@@ -29,6 +29,13 @@ describe('CSV', () => {
     expect(parsed.rows).toEqual([])
     expect(parsed.errors).toEqual([])
     expect(serializeCsv(parsed)).toBe('')
+  })
+
+  it('keeps the selected no-header interpretation when reparsing source text', () => {
+    const parsed = parseCsv('코드,값\n0007,false', 'UTF-8', false, '\n', false)
+    expect(parsed.hasHeader).toBe(false)
+    expect(parsed.headers).toEqual([])
+    expect(parsed.rows).toEqual([['코드', '값'], ['0007', 'false']])
   })
 })
 
@@ -56,6 +63,36 @@ describe('EML', () => {
     const reopened = await parseEmail(new TextEncoder().encode(output))
     expect(reopened.subject).toBe('수정한 메일')
     expect(reopened.text).toBe(parsed.text)
+    expect(reopened.attachments[0]?.content).toEqual([255, 0, 1])
+  })
+
+  it('patches a simple message without rebuilding unchanged headers or body', async () => {
+    const source = [
+      'From: Viewer <sender@example.com>', 'To: reader@example.com', 'Subject: Original',
+      'X-Trace: keep-this-header', 'Content-Type: text/plain; charset=UTF-8', '', 'first line', 'second line', ''
+    ].join('\r\n')
+    const model = await parseEmail(new TextEncoder().encode(source))
+    model.subject = 'Updated'
+    expect(isEditableEmailMime(source)).toBe(true)
+    const output = await serializeEmailPreserving(model, source)
+    const sourceBody = source.slice(source.indexOf('\r\n\r\n') + 4)
+    const outputBody = output.slice(output.indexOf('\r\n\r\n') + 4)
+    expect(output).toContain('X-Trace: keep-this-header')
+    expect(outputBody).toBe(sourceBody)
+    expect((await parseEmail(new TextEncoder().encode(output))).subject).toBe('Updated')
+  })
+
+  it('encodes a changed body and wraps new attachments while keeping attachment bytes', async () => {
+    const source = ['Subject: Original', 'X-Trace: keep-this-header', 'Content-Type: text/plain; charset=UTF-8', '', 'Original body', ''].join('\r\n')
+    const model = await parseEmail(new TextEncoder().encode(source))
+    model.text = '바뀐 본문'
+    model.attachments.push({ filename: 'data.bin', mimeType: 'application/octet-stream', content: [255, 0, 1] })
+    const output = await serializeEmailPreserving(model, source)
+    expect(output).toContain('X-Trace: keep-this-header')
+    expect(output).toContain('Content-Type: multipart/mixed; boundary="viewer-')
+    expect(isEditableEmailMime(output)).toBe(true)
+    const reopened = await parseEmail(new TextEncoder().encode(output))
+    expect(reopened.text).toBe('바뀐 본문')
     expect(reopened.attachments[0]?.content).toEqual([255, 0, 1])
   })
 })
@@ -106,6 +143,26 @@ describe('vCard', () => {
     expect(reopened.cards[0]?.phones.map((item) => item.value)).toEqual(['010-1111', '010-2222'])
     expect(reopened.cards[0]?.organization).toBe('예시 회사')
     expect(output).toContain('X-KEEP;PREF=1:vendor-value')
+  })
+
+  it('updates only the selected duplicate UID and preserves compound name, organization, and property parameters', () => {
+    const source = [
+      'BEGIN:VCARD', 'VERSION:4.0', 'UID:duplicate', 'item1.FN;LANGUAGE=en:First', 'N:Old;Given;Middle;Dr.;Jr.',
+      'ORG:Old Company;Research', 'item1.TEL;TYPE=WORK;PREF=1:tel:+82-10-1111', 'END:VCARD',
+      'BEGIN:VCARD', 'VERSION:4.0', 'UID:duplicate', 'FN:Second', 'N:Last;Second;;;', 'END:VCARD', ''
+    ].join('\r\n')
+    const parsed = parseVCF(source)
+    const first = parsed.cards[0]!
+    const changed = updateContact(parsed, first.recordId, { fullName: 'Updated First', givenName: 'New Given', organization: 'New Company' })
+    const withPhone = setContactItems(changed, first.recordId, 'phones', [{ value: '+82-10-2222', label: 'WORK' }])
+    const output = serializeVCF(withPhone)
+    const reopened = parseVCF(output)
+    expect(reopened.cards[0]?.fullName).toBe('Updated First')
+    expect(reopened.cards[0]?.givenName).toBe('New Given')
+    expect(reopened.cards[0]?.properties.find((property) => property.name === 'N')?.value).toBe('Old;New Given;Middle;Dr.;Jr.')
+    expect(reopened.cards[0]?.properties.find((property) => property.name === 'ORG')?.value).toBe('New Company;Research')
+    expect(reopened.cards[0]?.properties.find((property) => property.name === 'TEL')?.raw).toBe('item1.TEL;TYPE=WORK;PREF=1:tel:+82-10-2222')
+    expect(reopened.cards[1]?.fullName).toBe('Second')
   })
 })
 

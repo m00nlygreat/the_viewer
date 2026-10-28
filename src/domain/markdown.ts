@@ -29,3 +29,37 @@ export function renderMarkdownMarkup(source: string): string { return markdown.r
 export function renderMarkdown(source: string): string {
   return DOMPurify.sanitize(renderMarkdownMarkup(source), { FORBID_TAGS: ['img', 'iframe', 'video', 'audio', 'style', 'link', 'form', 'input'], FORBID_ATTR: ['style', 'src', 'srcset'] })
 }
+
+export interface MarkdownSourceBlock { from: number; to: number; source: string; html: string; editable: boolean }
+
+export function renderMarkdownBlocks(source: string): MarkdownSourceBlock[] {
+  const lineStarts = [0]
+  for (let index = 0; index < source.length; index += 1) if (source[index] === '\n') lineStarts.push(index + 1)
+  const tokens = markdown.parse(source, {})
+  const ranges: Array<{ fromLine: number; toLine: number }> = []
+  let depth = 0
+  for (const token of tokens) {
+    if (depth === 0 && token.map && (token.nesting === 1 || token.nesting === 0)) {
+      const last = ranges[ranges.length - 1]
+      if (last && token.map[0] < last.toLine) last.toLine = Math.max(last.toLine, token.map[1])
+      else ranges.push({ fromLine: token.map[0], toLine: token.map[1] })
+    }
+    depth = Math.max(0, depth + token.nesting)
+  }
+  const rawLines = source.split(/\r\n|\r|\n/)
+  let frontmatterEnd = 0
+  if (rawLines[0]?.trim() === '---') {
+    const close = rawLines.findIndex((line, index) => index > 0 && ['---', '...'].includes(line.trim()))
+    if (close > 0) frontmatterEnd = lineStarts[close + 1] ?? source.length
+  }
+  return ranges.map(({ fromLine, toLine }) => {
+    const from = lineStarts[fromLine] ?? source.length
+    const to = lineStarts[toLine] ?? source.length
+    const blockSource = source.slice(from, to)
+    const protectedBlock = frontmatterEnd > from && frontmatterEnd >= to
+    const html = protectedBlock
+      ? `<pre class="markdown-frontmatter">${markdown.utils.escapeHtml(blockSource)}</pre>`
+      : renderMarkdown(blockSource)
+    return { from, to, source: blockSource, html, editable: !protectedBlock }
+  }).filter((block) => block.to > block.from)
+}

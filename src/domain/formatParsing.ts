@@ -1,5 +1,5 @@
 import { FORMAT_MIME, getFormat, type Format } from './types'
-import type { DocumentModel } from './types'
+import type { DocumentModel, EmailModel } from './types'
 
 export interface ParsedFile { format: Format; model: DocumentModel; text: string; diagnostics: string[]; encoding: string }
 
@@ -20,7 +20,7 @@ export function decodeBytes(bytes: Uint8Array): { text: string; encoding: string
 
 function normalizeNewline(text: string): '\n' | '\r\n' { return text.includes('\r\n') ? '\r\n' : '\n' }
 
-export async function parseFileContent(name: string, mimeType: string, bytes: Uint8Array, explicitFormat?: Format): Promise<ParsedFile> {
+export async function parseFileContent(name: string, mimeType: string, bytes: Uint8Array, explicitFormat?: Format, options?: { csvHasHeader?: boolean }): Promise<ParsedFile> {
   const format = explicitFormat ?? getFormat(name, mimeType)
   if (!format) throw new Error('지원하지 않는 파일입니다. .eml, .csv, .md, .ics, .vcf 파일을 선택하세요.')
   if (format === 'eml') {
@@ -28,13 +28,18 @@ export async function parseFileContent(name: string, mimeType: string, bytes: Ui
       import('./formats/email'),
       Promise.resolve(decodeBytes(bytes))
     ])
-    return { format, model: await parseEmail(bytes), text: decoded.text, encoding: decoded.encoding, diagnostics: [] }
+    try {
+      return { format, model: await parseEmail(bytes), text: decoded.text, encoding: decoded.encoding, diagnostics: [] }
+    } catch (error) {
+      const model: EmailModel = { subject: '', from: [], to: [], cc: [], date: '', text: '', html: '', attachments: [], headers: [] }
+      return { format, model, text: decoded.text, encoding: decoded.encoding, diagnostics: [`이메일 MIME을 해석하지 못했습니다: ${error instanceof Error ? error.message : '잘못된 구조'}`] }
+    }
   }
   const decoded = decodeBytes(bytes)
   const text = decoded.text
   if (format === 'csv') {
     const { parseCsv } = await import('./formats/csv')
-    const model = parseCsv(text, decoded.encoding, decoded.bom, normalizeNewline(text))
+    const model = parseCsv(text, decoded.encoding, decoded.bom, normalizeNewline(text), options?.csvHasHeader)
     return { format, model, text, encoding: decoded.encoding, diagnostics: model.errors }
   }
   if (format === 'md') return { format, model: { text }, text, encoding: decoded.encoding, diagnostics: [] }
@@ -49,3 +54,12 @@ export async function parseFileContent(name: string, mimeType: string, bytes: Ui
 }
 
 export function getMime(format: Format): string { return FORMAT_MIME[format] }
+
+export function hasFatalDiagnostics(format: Format, model: DocumentModel, messages: readonly string[]): boolean {
+  if (!messages.length) return false
+  if (format === 'eml') return true
+  if (format === 'ics') return (model as { jcal: unknown[] }).jcal.length === 0
+  if (format === 'vcf') return (model as { cards: unknown[] }).cards.length === 0
+  if (format === 'csv') return (model as { errors: string[] }).errors.some((message) => /MissingQuotes|InvalidQuotes/i.test(message))
+  return false
+}

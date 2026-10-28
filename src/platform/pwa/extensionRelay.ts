@@ -44,7 +44,20 @@ export function restoreLegacySnapshot(bytes: Uint8Array): ViewerDocument {
   if (saved.size !== sourceBytes.byteLength) throw new RelayTransferError('INVALID_MESSAGE', '기존 문서의 원본 크기가 일치하지 않습니다.')
   const restored: Record<string, unknown> = { ...saved }
   delete restored.sourceBytesBase64
-  return { ...restored, sourceBytes: sourceBytes.buffer as ArrayBuffer } as unknown as ViewerDocument
+  const document = { ...restored }
+  delete document.sourceBytes
+  const savedBytes = sourceBytes.buffer.slice(sourceBytes.byteOffset, sourceBytes.byteOffset + sourceBytes.byteLength)
+  return {
+    ...document,
+    mode: saved.mode === 'edit' ? 'view' : saved.mode,
+    modelRevision: -1,
+    textRevision: Number.isSafeInteger(saved.revision) ? saved.revision : 0,
+    parseState: 'pending',
+    diagnostics: [],
+    encoding: format === 'csv' && isRecord(saved.model) && typeof saved.model.encoding === 'string' ? saved.model.encoding : 'UTF-8',
+    bom: format === 'csv' && isRecord(saved.model) && typeof saved.model.bom === 'boolean' ? saved.model.bom : false,
+    savedBytes
+  } as unknown as ViewerDocument
 }
 
 export function receiveExtensionFile(options: ReceiveOptions): Promise<ReceivedExtensionFile> {

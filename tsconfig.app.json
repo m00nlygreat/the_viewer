@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "chrome"]
+  },
+  "files": ["src/types/global.d.ts", "src/main.tsx", "tests/formats.test.ts", "tests/session.test.ts"]
+}

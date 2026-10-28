@@ -23,17 +23,17 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run check
-      - run: npm run package:extension
-      - run: npm run verify:build
-      - name: Verify target outputs
-        run: |
-          test -f dist/app/index.html
-          test -f dist/app/manifest.webmanifest
-          test -f dist/app/sw.js
-          test -f dist/chrome_extension/manifest.json
-          test -f dist/chrome_extension/extension.html
-          test -f dist/chrome_extension/background.js
+      - run: npm run lint:app
+      - run: npm run typecheck:app
+      - run: npm run test:formats
+      - name: Verify root deployment paths
+        run: npm run build:app && npm run verify:pwa-build -- /
+        env:
+          BASE_PATH: /
+      - name: Verify GitHub Pages subpath
+        run: npm run build:app && npm run verify:pwa-build -- /the_viewer/
+        env:
+          BASE_PATH: /the_viewer/
 
   deploy:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'

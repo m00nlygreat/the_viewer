@@ -47,21 +47,22 @@ function paramLabel(params: string): string {
   return type?.split(',')[0] ?? '기타'
 }
 
-function cardFrom(properties: VCardProperty[], index: number): ContactCard {
+function cardFrom(properties: VCardProperty[], index: number, recordId = `contact-record-${index}`): ContactCard {
   const first = (name: string) => properties.find((property) => property.name === name)?.value ?? ''
   const all = (name: string) => properties.filter((property) => property.name === name)
-  const structuredName = first('N').split(';').map(unescapeText)
+  const structuredName = splitOutsideQuotes(first('N'), ';').map(unescapeText)
   const fullName = unescapeText(first('FN')) || [structuredName[1], structuredName[0]].filter(Boolean).join(' ')
   const versionText = first('VERSION')
   const version: ContactCard['version'] = versionText === '3.0' || versionText === '4.0' || versionText === '2.1' ? versionText : 'unknown'
   return {
+    recordId,
     uid: first('UID') || `contact-${index}`,
     version,
     properties,
     fullName,
     familyName: structuredName[0] ?? '',
     givenName: structuredName[1] ?? '',
-    organization: unescapeText(first('ORG').split(';')[0] ?? ''),
+    organization: unescapeText(splitOutsideQuotes(first('ORG'), ';')[0] ?? ''),
     title: unescapeText(first('TITLE')),
     phones: all('TEL').map((property) => ({ value: unescapeText(property.value.replace(/^tel:/i, '')), label: paramLabel(property.params) })),
     emails: all('EMAIL').map((property) => ({ value: unescapeText(property.value.replace(/^mailto:/i, '')), label: paramLabel(property.params) })),
@@ -114,37 +115,52 @@ function foldLine(line: string): string {
 function upsert(properties: VCardProperty[], name: string, value: string, params = ''): VCardProperty[] {
   const index = properties.findIndex((property) => property.name === name)
   if (!value) return properties.filter((property) => property.name !== name)
-  const property = { name, params, value, raw: `${name}${params ? `;${params}` : ''}:${value}` }
+  const existing = index < 0 ? undefined : properties[index]
+  const preservedParams = existing?.params ?? params
+  const rawName = `${existing?.group ? `${existing.group}.` : ''}${existing?.name ?? name}`
+  const property: VCardProperty = { name, group: existing?.group, params: preservedParams, value, raw: `${rawName}${preservedParams ? `;${preservedParams}` : ''}:${value}` }
   if (index < 0) return [...properties, property]
   return properties.map((entry, current) => current === index ? property : entry)
 }
 
-export function updateContact(model: ContactModel, uid: string, update: Partial<Pick<ContactCard, 'fullName' | 'givenName' | 'familyName' | 'organization' | 'title' | 'notes'>>): ContactModel {
+export function updateContact(model: ContactModel, recordId: string, update: Partial<Pick<ContactCard, 'fullName' | 'givenName' | 'familyName' | 'organization' | 'title' | 'notes'>>): ContactModel {
   return {
     ...model,
-    cards: model.cards.map((card) => {
-      if (card.uid !== uid) return card
+    cards: model.cards.map((card, index) => {
+      if (card.recordId !== recordId && card.uid !== recordId) return card
       let properties = [...card.properties]
+      const first = (name: string) => properties.find((property) => property.name === name)?.value ?? ''
       if (update.fullName !== undefined) properties = upsert(properties, 'FN', escapeText(update.fullName))
       if (update.givenName !== undefined || update.familyName !== undefined) {
-        const family = escapeText(update.familyName ?? card.familyName)
-        const given = escapeText(update.givenName ?? card.givenName)
-        properties = upsert(properties, 'N', `${family};${given};;;`)
+        const parts = splitOutsideQuotes(first('N'), ';')
+        while (parts.length < 5) parts.push('')
+        parts[0] = escapeText(update.familyName ?? card.familyName)
+        parts[1] = escapeText(update.givenName ?? card.givenName)
+        properties = upsert(properties, 'N', parts.slice(0, 5).join(';'))
       }
-      if (update.organization !== undefined) properties = upsert(properties, 'ORG', escapeText(update.organization))
+      if (update.organization !== undefined) {
+        const parts = splitOutsideQuotes(first('ORG'), ';')
+        parts[0] = escapeText(update.organization)
+        properties = upsert(properties, 'ORG', parts.join(';'))
+      }
       if (update.title !== undefined) properties = upsert(properties, 'TITLE', escapeText(update.title))
       if (update.notes !== undefined) properties = upsert(properties, 'NOTE', escapeText(update.notes))
-      return cardFrom(properties, 0)
+      return cardFrom(properties, index + 1, card.recordId)
     })
   }
 }
 
-export function setContactItems(model: ContactModel, uid: string, field: 'phones' | 'emails', items: Array<{ value: string; label: string }>): ContactModel {
+export function setContactItems(model: ContactModel, recordId: string, field: 'phones' | 'emails', items: Array<{ value: string; label: string }>): ContactModel {
   const propertyName = field === 'phones' ? 'TEL' : 'EMAIL'
+  const withType = (params: string, label: string, isNew: boolean) => {
+    if (label === '기타' && !isNew) return params
+    const other = splitOutsideQuotes(params, ';').filter((part) => part && !/^TYPE=/i.test(part))
+    return [`TYPE=${label === '기타' ? 'OTHER' : label}`, ...other].join(';')
+  }
   return {
     ...model,
-    cards: model.cards.map((card) => {
-      if (card.uid !== uid) return card
+    cards: model.cards.map((card, index) => {
+      if (card.recordId !== recordId && card.uid !== recordId) return card
       const previous = card.properties.filter((property) => property.name === propertyName)
       let cursor = 0
       const properties = card.properties.flatMap((property) => {
@@ -154,17 +170,20 @@ export function setContactItems(model: ContactModel, uid: string, field: 'phones
         cursor += 1
         if (!item?.value.trim()) return []
         const label = item.label.replace(/[^a-zA-Z0-9,-]/g, '') || paramLabel(old?.params ?? '')
-        const value = escapeText(item.value.trim())
-        const params = label === '기타' ? old?.params ?? '' : `TYPE=${label}`
-        return [{ name: propertyName, params, value, raw: `${propertyName}${params ? `;${params}` : ''}:${value}` }]
+        const prefix = old?.value.match(/^(?:tel:|mailto:)/i)?.[0] ?? ''
+        const value = `${prefix}${escapeText(item.value.trim())}`
+        const params = withType(old?.params ?? '', label, false)
+        const rawName = `${old?.group ? `${old.group}.` : ''}${propertyName}`
+        return [{ name: propertyName, group: old?.group, params, value, raw: `${rawName}${params ? `;${params}` : ''}:${value}` }]
       })
       const existingCount = previous.length
       const extras = items.slice(existingCount).filter((item) => item.value.trim()).map((item) => {
-        const label = item.label.replace(/[^a-zA-Z0-9,-]/g, '') || 'OTHER'
+        const label = item.label.replace(/[^a-zA-Z0-9,-]/g, '') || '기타'
         const value = escapeText(item.value.trim())
-        return { name: propertyName, params: `TYPE=${label}`, value, raw: `${propertyName};TYPE=${label}:${value}` }
+        const params = withType('', label, true)
+        return { name: propertyName, params, value, raw: `${propertyName};${params}:${value}` }
       })
-      return cardFrom([...properties, ...extras], 0)
+      return cardFrom([...properties, ...extras], index + 1, card.recordId)
     })
   }
 }
@@ -178,11 +197,11 @@ export function addContact(model: ContactModel): ContactModel {
     { name: 'N', params: '', value: ';;;;', raw: 'N:;;;;' },
     { name: 'UID', params: '', value: uid, raw: `UID:${uid}` }
   ]
-  return { ...model, cards: [...model.cards, cardFrom(properties, model.cards.length + 1)] }
+  return { ...model, cards: [...model.cards, cardFrom(properties, model.cards.length + 1, `contact-record-${crypto.randomUUID()}`)] }
 }
 
-export function removeContact(model: ContactModel, uid: string): ContactModel {
-  return { ...model, cards: model.cards.filter((card) => card.uid !== uid) }
+export function removeContact(model: ContactModel, recordId: string): ContactModel {
+  return { ...model, cards: model.cards.filter((card) => card.recordId !== recordId && card.uid !== recordId) }
 }
 
 export function serializeVCF(model: ContactModel): string {

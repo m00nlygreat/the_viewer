@@ -1,8 +1,17 @@
 import type { Format } from '../platform/fileTypes'
 export { FORMATS, FORMAT_MIME, FORMAT_MIME_ALIASES, GENERIC_FILE_MIME_TYPES, FORMAT_LABEL, getFormat } from '../platform/fileTypes'
 export type { Format } from '../platform/fileTypes'
-export type EditorMode = 'view' | 'edit' | 'source'
+export type EditorMode = 'view' | 'source'
 export type ThemePreference = 'system' | 'light' | 'dark'
+
+export interface ParseDiagnostic {
+  severity: 'error' | 'warning' | 'info'
+  message: string
+  from?: number
+  to?: number
+  line?: number
+  column?: number
+}
 
 export interface CsvModel {
   headers: string[]
@@ -57,6 +66,7 @@ export interface CalendarModel { events: CalendarEvent[]; jcal: unknown[]; diagn
 
 export interface VCardProperty { name: string; params: string; value: string; raw: string; group?: string }
 export interface ContactCard {
+  recordId: string
   uid: string
   version: '3.0' | '4.0' | '2.1' | 'unknown'
   properties: VCardProperty[]
@@ -80,12 +90,23 @@ export interface ViewerDocument {
   format: Format
   mimeType: string
   size: number
-  sourceBytes: ArrayBuffer
+  /** Bytes as first opened. Older recovered sessions may not have this value. */
+  initialBytes?: ArrayBuffer
+  /** Deprecated alias accepted only while migrating pre-session records. */
+  sourceBytes?: ArrayBuffer
+  /** Exact byte baseline of the last successful save/export. */
+  savedBytes: ArrayBuffer
   sourceText: string
   text: string
   model: DocumentModel
   mode: EditorMode
   revision: number
+  modelRevision: number
+  textRevision: number
+  parseState: 'pending' | 'ready' | 'error'
+  diagnostics: ParseDiagnostic[]
+  encoding: string
+  bom: boolean
   savedText: string
   isDirty: boolean
   sourceError?: string

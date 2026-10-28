@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentType } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { Columns3, Plus, Search, Trash2 } from 'lucide-react'
 import {
   CompactSelection,
@@ -16,8 +16,9 @@ import {
 } from '@glideapps/glide-data-grid'
 import '@glideapps/glide-data-grid/dist/index.css'
 import type { CsvModel, ViewerDocument } from '../domain/types'
+import { readCsvEditorState, saveCsvEditorState } from './csvEditorState'
 
-interface Props { document: ViewerDocument; model: CsvModel; onChange: (model: CsvModel) => void; theme: 'light' | 'dark' }
+interface Props { document: ViewerDocument; model: CsvModel; onChange: (model: CsvModel, group?: 'typing' | 'command') => void; theme: 'light' | 'dark' }
 
 const CSV_HEADER_HEIGHT = 34
 const CSV_ROW_HEIGHT = 38
@@ -73,14 +74,19 @@ function autoFitColumnWidths(headers: readonly string[], rows: readonly (readonl
 const SpreadsheetGrid = DataEditor as unknown as ComponentType<DataEditorProps & { fillHandle?: boolean }>
 
 export function CsvEditor({ document, model, onChange, theme }: Props) {
-  const [query, setQuery] = useState('')
-  const [sort, setSort] = useState<{ column: number; direction: 1 | -1 } | null>(null)
-  const [gridSelection, setGridSelection] = useState<GridSelection>(emptyGridSelection)
-  const [editingHeader, setEditingHeader] = useState<number | null>(null)
-  const [headerDraft, setHeaderDraft] = useState('')
+  const saved = readCsvEditorState(document.id)
+  const [query, setQuery] = useState(() => saved?.query ?? '')
+  const [sort, setSort] = useState<{ column: number; direction: 1 | -1 } | null>(() => saved?.sort ?? null)
+  const [gridSelection, setGridSelection] = useState<GridSelection>(() => saved?.gridSelection ?? emptyGridSelection)
+  const [editingHeader, setEditingHeader] = useState<number | null>(() => saved?.editingHeader ?? null)
+  const [headerDraft, setHeaderDraft] = useState(() => saved?.headerDraft ?? '')
+  const canEdit = document.parseState === 'ready' && document.modelRevision === document.revision
   const rows = model.rows
   const columnsCount = Math.max(model.headers.length, ...rows.map((row) => row.length), 1)
-  const [columnWidths, setColumnWidths] = useState<number[]>(() => autoFitColumnWidths(model.headers, rows, columnsCount, null))
+  const [columnWidths, setColumnWidths] = useState<number[]>(() => saved?.columnWidths ?? autoFitColumnWidths(model.headers, rows, columnsCount, null))
+  const savedView = useRef({ query, sort, gridSelection, columnWidths, editingHeader, headerDraft })
+  savedView.current = { query, sort, gridSelection, columnWidths, editingHeader, headerDraft }
+  useEffect(() => () => saveCsvEditorState(document.id, savedView.current), [document.id])
   const visible = useMemo(() => {
     const filtered = rows.map((row, index) => ({ row, index })).filter(({ row }) => !query || row.some((value) => value.toLocaleLowerCase().includes(query.toLocaleLowerCase())))
     if (sort) filtered.sort((a, b) => (a.row[sort.column] ?? '').localeCompare(b.row[sort.column] ?? '', undefined, { numeric: true, sensitivity: 'base' }) * sort.direction)
@@ -136,10 +142,10 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
 
   const getCellContent = useCallback(([column, row]: Item): GridCell => {
     const value = visible[row]?.row[column] ?? ''
-    return { kind: GridCellKind.Text, data: value, displayData: value, allowOverlay: true }
-  }, [visible])
+    return { kind: GridCellKind.Text, data: value, displayData: value, readonly: !canEdit, allowOverlay: canEdit }
+  }, [canEdit, visible])
 
-  const applyTextEdits = useCallback((edits: readonly { location: Item; value: string }[]) => {
+  const applyTextEdits = useCallback((edits: readonly { location: Item; value: string }[], group: 'typing' | 'command' = 'typing') => {
     if (edits.length === 0) return
     const next = [...rows]
     const changedRows = new Map<number, string[]>()
@@ -156,19 +162,19 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
       while (nextRow.length <= column) nextRow.push('')
       if (nextRow[column] !== value) { nextRow[column] = value; changed = true }
     }
-    if (changed) onChange({ ...model, rows: next })
-  }, [columnsCount, model, onChange, rows, visible])
+    if (changed && canEdit) onChange({ ...model, rows: next }, group)
+  }, [canEdit, columnsCount, model, onChange, rows, visible])
 
   const applyGridEdits = useCallback((edits: readonly EditListItem[]) => {
     applyTextEdits(edits.map(({ location, value }) => ({
       location,
       value: value.kind === GridCellKind.Text ? value.data : ('data' in value ? String(value.data ?? '') : ''),
-    })))
+    })), 'typing')
     return true
   }, [applyTextEdits])
 
   const pasteValues = useCallback((target: Item, values: readonly (readonly string[])[]) => {
-    if (values.length === 0) return false
+    if (!canEdit || values.length === 0) return false
     const [startColumn, startViewRow] = target
     if (startColumn < 0 || startColumn >= columnsCount || startViewRow < 0) return false
     const next = rows.map((row) => [...row])
@@ -189,10 +195,10 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
     if (changed) {
       const nextColumnCount = Math.max(columnsCount, ...next.map((row) => row.length), 1)
       if (nextColumnCount > columnsCount) setColumnWidths((current) => [...current, ...Array(nextColumnCount - current.length).fill(CSV_DEFAULT_COLUMN_WIDTH)])
-      onChange({ ...model, rows: next })
+      onChange({ ...model, rows: next }, 'command')
     }
     return false
-  }, [columnsCount, model, onChange, rows, visible])
+  }, [canEdit, columnsCount, model, onChange, rows, visible])
 
   const clearSelection = useCallback((selection: GridSelection) => {
     const range = selection.current?.range
@@ -201,25 +207,32 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
       for (let row = range.y; row < range.y + range.height; row++) {
         for (let column = range.x; column < range.x + range.width; column++) edits.push({ location: [column, row], value: '' })
       }
-      applyTextEdits(edits)
+      applyTextEdits(edits, 'command')
     }
     return true
   }, [applyTextEdits])
 
   useEffect(() => {
-    const cell = gridSelection.current?.cell
-    if (visible.length === 0) {
-      if (cell) setGridSelection(emptyGridSelection)
+    const current = gridSelection.current
+    if (!visible.length) {
+      if (current) setGridSelection(emptyGridSelection)
       return
     }
-    if (!cell || cell[0] >= columnsCount || cell[1] >= visible.length) {
-      const nextCell: Item = [0, 0]
-      setGridSelection({ current: { cell: nextCell, range: { x: 0, y: 0, width: 1, height: 1 }, rangeStack: [] }, columns: CompactSelection.empty(), rows: CompactSelection.empty() })
+    if (sort && sort.column >= columnsCount) setSort(null)
+    if (editingHeader !== null && editingHeader >= columnsCount) setEditingHeader(null)
+    if (!current) return
+    const [column, row] = current.cell
+    const range = current.range
+    const outside = column < 0 || column >= columnsCount || row < 0 || row >= visible.length || range.x < 0 || range.y < 0 || range.x + range.width > columnsCount || range.y + range.height > visible.length
+    if (outside) {
+      const nextCell: Item = [Math.max(0, Math.min(columnsCount - 1, column)), Math.max(0, Math.min(visible.length - 1, row))]
+      setGridSelection({ current: { cell: nextCell, range: { x: nextCell[0], y: nextCell[1], width: 1, height: 1 }, rangeStack: [] }, columns: CompactSelection.empty(), rows: CompactSelection.empty() })
     }
-  }, [columnsCount, gridSelection, visible.length])
+  }, [columnsCount, editingHeader, gridSelection, sort, visible.length])
 
-  const addRow = () => onChange({ ...model, rows: [...rows, Array(columnsCount).fill('')] })
+  const addRow = () => { if (canEdit) onChange({ ...model, rows: [...rows, Array(columnsCount).fill('')] }) }
   const addColumn = () => {
+    if (!canEdit) return
     setColumnWidths((current) => [...current, CSV_DEFAULT_COLUMN_WIDTH])
     onChange({
       ...model,
@@ -229,10 +242,12 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
     })
   }
   const removeActiveRow = () => {
+    if (!canEdit) return
     const sourceRow = visible[activeRow]?.index
     if (sourceRow !== undefined) onChange({ ...model, rows: rows.filter((_, index) => index !== sourceRow) })
   }
   const removeActiveColumn = () => {
+    if (!canEdit) return
     setColumnWidths((current) => current.filter((_, index) => index !== activeColumn))
     onChange({
       ...model,
@@ -242,7 +257,7 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
     })
   }
   const setHeaderStatus = (checked: boolean) => {
-    if (checked === model.hasHeader) return
+    if (!canEdit || checked === model.hasHeader) return
     if (checked) {
       const headers = model.rows[0] ?? model.headerRow
       onChange({ ...model, headers: [...headers], headerRow: [...headers], rows: model.rows.slice(1), hasHeader: true })
@@ -253,6 +268,7 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
   }
   const sortColumn = (column: number) => setSort((current) => current?.column === column ? { column, direction: current.direction === 1 ? -1 : 1 } : { column, direction: 1 })
   const handleHeaderClick = (column: number, event: Parameters<NonNullable<DataEditorProps['onHeaderClicked']>>[1]) => {
+    if (!canEdit) return
     if (event.isDoubleClick && model.hasHeader) {
       setEditingHeader(column)
       setHeaderDraft(model.headers[column] ?? '')
@@ -261,7 +277,7 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
     if (!event.isDoubleClick) sortColumn(column)
   }
   const commitHeader = () => {
-    if (editingHeader === null) return
+    if (!canEdit || editingHeader === null) return
     const headers = [...model.headers]
     headers[editingHeader] = headerDraft
     onChange({ ...model, headers })
@@ -288,18 +304,18 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
           if (event.key === 'Escape') { event.preventDefault(); setEditingHeader(null) }
         }} />}
         <div className="toolbar-separator" />
-        <button className="toolbar-button" onClick={addRow}><Plus size={14} /> 행 추가</button>
-        <button className="toolbar-button" onClick={addColumn}><Plus size={14} /> 열</button>
+        <button className="toolbar-button" disabled={!canEdit} onClick={addRow}><Plus size={14} /> 행 추가</button>
+        <button className="toolbar-button" disabled={!canEdit} onClick={addColumn}><Plus size={14} /> 열</button>
         <button className="toolbar-button csv-autofit-button" aria-label="열 너비 자동 맞춤" title="열 너비 자동 맞춤" onClick={autoFitColumns}><Columns3 size={14} /><span>너비 맞춤</span></button>
-        <button className="toolbar-button icon-only" aria-label="선택한 행 삭제" title="선택한 행 삭제" onClick={removeActiveRow}><Trash2 size={14} /></button>
-        <button className="toolbar-button icon-only" aria-label="선택한 열 삭제" title="선택한 열 삭제" onClick={removeActiveColumn}><Trash2 size={14} /></button>
+        <button className="toolbar-button icon-only" disabled={!canEdit} aria-label="선택한 행 삭제" title="선택한 행 삭제" onClick={removeActiveRow}><Trash2 size={14} /></button>
+        <button className="toolbar-button icon-only" disabled={!canEdit} aria-label="선택한 열 삭제" title="선택한 열 삭제" onClick={removeActiveColumn}><Trash2 size={14} /></button>
         <div className="toolbar-spacer" />
         <label className="csv-select-label">구분자
-          <select aria-label="CSV 구분자" value={model.delimiter} onChange={(event) => onChange({ ...model, delimiter: event.target.value })}>
+          <select aria-label="CSV 구분자" disabled={!canEdit} value={model.delimiter} onChange={(event) => onChange({ ...model, delimiter: event.target.value })}>
             <option value=",">쉼표</option><option value=";">세미콜론</option><option value="\t">탭</option>
           </select>
         </label>
-        <label className="csv-toggle"><input type="checkbox" checked={model.hasHeader} onChange={(event) => setHeaderStatus(event.target.checked)} /> 첫 행 머리글</label>
+        <label className="csv-toggle"><input type="checkbox" disabled={!canEdit} checked={model.hasHeader} onChange={(event) => setHeaderStatus(event.target.checked)} /> 첫 행 머리글</label>
       </div>
       {model.errors.length > 0 && <div className="inline-warning" role="status">CSV 진단 {model.errors.length}개 · 첫 오류: {model.errors[0]}</div>}
       <div className="csv-grid">

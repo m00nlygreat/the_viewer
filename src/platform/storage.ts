@@ -22,7 +22,7 @@ function getDatabase(): Promise<IDBPDatabase<ViewerDatabase>> {
 
 export async function loadDocuments(): Promise<ViewerDocument[]> {
   const db = await getDatabase()
-  return (await db.getAll('documents')).sort((a, b) => b.openedAt - a.openedAt)
+  return (await db.getAll('documents')).map(normalizeStoredDocument).sort((a, b) => b.openedAt - a.openedAt)
 }
 export async function saveDocument(document: ViewerDocument): Promise<void> { await (await getDatabase()).put('documents', document) }
 export async function removeDocument(id: string): Promise<void> { await (await getDatabase()).delete('documents', id) }
@@ -55,3 +55,30 @@ export async function takeShareTicket(id: string): Promise<Array<{ name: string;
   return ticket.files
 }
 export async function loadTheme(): Promise<ThemePreference> { return readSetting('theme', 'system') }
+
+function normalizeStoredDocument(value: ViewerDocument): ViewerDocument {
+  const stored = value as ViewerDocument & { sourceBytes?: ArrayBuffer }
+  const revision = Number.isSafeInteger(stored.revision) ? stored.revision : 0
+  const legacyBytes = stored.sourceBytes instanceof ArrayBuffer ? stored.sourceBytes : new ArrayBuffer(0)
+  const savedBytes = stored.savedBytes instanceof ArrayBuffer ? stored.savedBytes : legacyBytes
+  const parseState = stored.parseState === 'ready' || stored.parseState === 'error' || stored.parseState === 'pending' ? stored.parseState : 'pending'
+  const diagnostics = Array.isArray(stored.diagnostics) ? stored.diagnostics.filter((item) => item && typeof item.message === 'string' && ['error', 'warning', 'info'].includes(item.severity)) : []
+  const mode = stored.mode === 'source' ? 'source' : 'view'
+  const document = { ...stored }
+  delete document.sourceBytes
+  return {
+    ...document,
+    mode,
+    revision,
+    modelRevision: Number.isSafeInteger(stored.modelRevision) ? stored.modelRevision : -1,
+    textRevision: Number.isSafeInteger(stored.textRevision) ? stored.textRevision : revision,
+    parseState: stored.modelRevision === undefined ? 'pending' : parseState,
+    diagnostics,
+    initialBytes: stored.initialBytes instanceof ArrayBuffer ? stored.initialBytes : undefined,
+    savedBytes,
+    sourceText: typeof stored.sourceText === 'string' ? stored.sourceText : stored.text,
+    encoding: typeof stored.encoding === 'string' ? stored.encoding : 'UTF-8',
+    bom: typeof stored.bom === 'boolean' ? stored.bom : Boolean(stored.format === 'csv' && stored.model && 'bom' in stored.model && stored.model.bom),
+    isDirty: typeof stored.isDirty === 'boolean' ? stored.isDirty : stored.text !== stored.savedText
+  }
+}

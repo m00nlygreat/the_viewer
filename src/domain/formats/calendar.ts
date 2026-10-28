@@ -96,15 +96,23 @@ function updateEventTimezone(component: ICAL.Component, timezone: string | undef
 export function serializeCalendar(model: CalendarModel): string {
   const root = new ICAL.Component(model.jcal as ConstructorParameters<typeof ICAL.Component>[0])
   const original = root.getAllSubcomponents('vevent')
-  const updated = new Map<string, CalendarEvent[]>()
-  for (const event of model.events) updated.set(event.uid, [...(updated.get(event.uid) ?? []), event])
-  for (const component of original) {
-    const uid = String(component.getFirstPropertyValue('uid') ?? '')
-    const event = updated.get(uid)?.shift()
+  const updated = new Map<number, CalendarEvent>()
+  const additions: CalendarEvent[] = []
+  for (const event of model.events) {
+    if (event.componentIndex === undefined) additions.push(event)
+    else updated.set(event.componentIndex, event)
+  }
+  for (const [index, component] of original.entries()) {
+    const event = updated.get(index)
     if (!event) { root.removeSubcomponent(component); continue }
-    component.updatePropertyWithValue('summary', event.summary)
-    component.updatePropertyWithValue('location', event.location)
-    component.updatePropertyWithValue('description', event.description)
+    for (const [name, value] of [['summary', event.summary], ['location', event.location], ['description', event.description]] as const) {
+      const property = component.getFirstProperty(name)
+      const current = String(component.getFirstPropertyValue(name) ?? '')
+      if (current === value) continue
+      if (!value && property) component.removeProperty(property)
+      else if (property) component.updatePropertyWithValue(name, value)
+      else if (value) component.addPropertyWithValue(name, value)
+    }
     if (event.start !== event.originalStart || event.allDay !== event.originalAllDay) updateEventTime(component, 'dtstart', event.start, event.allDay)
     if (event.end !== event.originalEnd || event.allDay !== event.originalAllDay) updateEventTime(component, 'dtend', event.end, event.allDay)
     if (event.timezone !== event.originalTimezone || event.allDay !== event.originalAllDay) updateEventTimezone(component, event.timezone, event.allDay)
@@ -113,7 +121,7 @@ export function serializeCalendar(model: CalendarModel): string {
       else if (component.hasProperty('rrule')) component.removeProperty('rrule')
     }
   }
-  for (const events of updated.values()) for (const event of events) {
+  for (const event of additions) {
     const component = new ICAL.Component('vevent')
     component.addPropertyWithValue('uid', event.uid || crypto.randomUUID())
     component.addPropertyWithValue('summary', event.summary)

@@ -238,6 +238,7 @@
 - define-data-property@1.1.4 — MIT
 - define-properties@1.2.1 — MIT
 - detect-libc@2.1.2 — Apache-2.0
+- dompurify@3.4.15 — (MPL-2.0 OR Apache-2.0)
 - dompurify@3.4.17 — (MPL-2.0 OR Apache-2.0)
 - dunder-proto@1.0.1 — MIT
 - ejs@3.1.10 — Apache-2.0
@@ -373,6 +374,7 @@
 - magic-string@1.4.3 — MIT
 - magic-string@1.4.3 — MIT
 - markdown-it@14.3.3 — MIT
+- marked@14.0.0 — MIT
 - marked@16.4.2 — MIT
 - math-intrinsics@1.1.0 — MIT
 - mdurl@2.1.0 — MIT
@@ -381,6 +383,7 @@
 - minimatch@9.0.9 — ISC
 - minimatch@9.0.9 — ISC
 - minipass@7.1.3 — BlueOak-1.0.0
+- monaco-editor@0.57.0 — MIT
 - ms@2.1.3 — MIT
 - nanoid@3.3.20 — MIT
 - natural-compare@1.4.0 — MIT

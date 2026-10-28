@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
-import { EditorState } from '@codemirror/state'
+import { EditorSelection, EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view'
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
@@ -10,24 +10,45 @@ interface CodeEditorProps {
   onChange: (value: string) => void
   markdownMode?: boolean
   label: string
+  onUndo?: () => void
+  onRedo?: () => void
+  stateKey?: string
 }
 
-export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEditor({ value, onChange, markdownMode = false, label }, ref) {
+const savedEditorStates = new Map<string, { anchor: number; head: number; scrollTop: number }>()
+
+export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEditor({ value, onChange, markdownMode = false, label, onUndo, onRedo, stateKey }, ref) {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
-  const initialValue = useRef(value)
+  const valueRef = useRef(value)
   const change = useRef(onChange)
+  const undo = useRef(onUndo)
+  const redo = useRef(onRedo)
+  const syncing = useRef(false)
   change.current = onChange
+  undo.current = onUndo
+  redo.current = onRedo
+  valueRef.current = value
+  const hasExternalHistory = Boolean(onUndo || onRedo)
 
   useEffect(() => {
     if (!host.current) return
+    const saved = stateKey ? savedEditorStates.get(stateKey) : undefined
     const state = EditorState.create({
-      doc: initialValue.current,
+      doc: valueRef.current,
+      selection: saved ? EditorSelection.range(Math.min(saved.anchor, valueRef.current.length), Math.min(saved.head, valueRef.current.length)) : undefined,
       extensions: [
-        lineNumbers(), history(), keymap.of([...defaultKeymap, ...historyKeymap]),
+        lineNumbers(),
+        ...(!hasExternalHistory ? [history(), keymap.of(historyKeymap)] : []),
+        keymap.of(defaultKeymap),
+        ...(hasExternalHistory ? [Prec.highest(keymap.of([
+          { key: 'Mod-z', run: () => { undo.current?.(); return true } },
+          { key: 'Mod-y', run: () => { redo.current?.(); return true } },
+          { key: 'Mod-Shift-z', run: () => { redo.current?.(); return true } }
+        ]))] : []),
         highlightActiveLine(), ...(markdownMode ? [markdown()] : []),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) change.current(update.state.doc.toString())
+          if (update.docChanged && !syncing.current) change.current(update.state.doc.toString())
         }),
         EditorView.theme({
           '&': { height: '100%', color: 'var(--text)', backgroundColor: 'var(--panel)' },
@@ -43,13 +64,23 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
       ]
     })
     view.current = new EditorView({ state, parent: host.current })
-    return () => { view.current?.destroy(); view.current = null }
-  }, [markdownMode])
+    if (saved) view.current.scrollDOM.scrollTop = saved.scrollTop
+    return () => {
+      if (stateKey && view.current) {
+        const selection = view.current.state.selection.main
+        savedEditorStates.set(stateKey, { anchor: selection.anchor, head: selection.head, scrollTop: view.current.scrollDOM.scrollTop })
+      }
+      view.current?.destroy(); view.current = null
+    }
+  }, [hasExternalHistory, markdownMode, stateKey])
 
   useEffect(() => {
     const editor = view.current
     if (!editor || editor.state.doc.toString() === value) return
-    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: value } })
+    syncing.current = true
+    const selection = editor.state.selection.main
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: value }, selection: EditorSelection.range(Math.min(selection.anchor, value.length), Math.min(selection.head, value.length)) })
+    syncing.current = false
   }, [value])
 
   useImperativeHandle(ref, () => ({
