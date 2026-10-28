@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check, ChevronDown, ClipboardPaste, Command, FilePlus2, FileText,
-  FolderOpen, LogOut, MoreHorizontal, Moon, Redo2, Settings2, Share2,
+  FolderOpen, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Redo2, Settings2, Share2,
   Sun, Undo2, Upload, X
 } from 'lucide-react'
 import { CommandMenu, type CommandItem } from '../components/CommandMenu'
@@ -39,8 +39,8 @@ export function App() {
   const [loaded, setLoaded] = useState(false)
   const [theme, setTheme] = useState<ThemePreference>('system')
   const [systemLight, setSystemLight] = useState(() => typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: light)').matches)
-  const [online, setOnline] = useState(() => navigator.onLine)
   const [recoveryEnabled, setRecoveryEnabled] = useState(true)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showCommand, setShowCommand] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showPaste, setShowPaste] = useState(false)
@@ -101,14 +101,6 @@ export function App() {
     const update = (event: MediaQueryListEvent) => setSystemLight(event.matches)
     preference.addEventListener('change', update)
     return () => preference.removeEventListener('change', update)
-  }, [])
-
-  useEffect(() => {
-    const onOnline = () => setOnline(true)
-    const onOffline = () => setOnline(false)
-    window.addEventListener('online', onOnline)
-    window.addEventListener('offline', onOffline)
-    return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline) }
   }, [])
 
   useEffect(() => {
@@ -506,19 +498,19 @@ export function App() {
   return <div className="app-shell" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <FilePicker ref={inputRef} onFiles={(files, format) => { void openFiles(files, format) }} onError={notify} />
     <FilePicker ref={attachmentInputRef} onFiles={(files) => { void receiveAttachments(files) }} onError={notify} />
-    <aside className="sidebar">
-      <div className="sidebar-brand"><img src={`${__APP_BASE__}icons/viewer.svg`} alt="" /><span>The Viewer</span><button className="sidebar-more" aria-label="앱 설정" onClick={() => setShowSettings(true)}><MoreHorizontal size={16} /></button></div>
-      <button className="sidebar-open" onClick={() => pickFiles()}><FolderOpen size={15} /><span>파일 열기</span><kbd>⌘ O</kbd></button>
-      <button className="sidebar-command" onClick={() => setShowCommand(true)}><Command size={14} /><span>명령 메뉴</span><kbd>⌘ K</kbd></button>
+    <aside id="document-sidebar" className={`sidebar${sidebarCollapsed ? ' collapsed' : ''}`}>
+      <div className="sidebar-brand"><img src={`${__APP_BASE__}icons/viewer.svg`} alt="" /><span>The Viewer</span><button className="sidebar-toggle" aria-label={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'} title={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'} aria-controls="document-sidebar" aria-expanded={!sidebarCollapsed} onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}>{sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
+      <button className="sidebar-open" aria-label="파일 열기" title="파일 열기" onClick={() => pickFiles()}><FolderOpen size={15} /><span>파일 열기</span><kbd>⌘ O</kbd></button>
+      <button className="sidebar-command" aria-label="명령 메뉴" title="명령 메뉴" onClick={() => setShowCommand(true)}><Command size={14} /><span>명령 메뉴</span><kbd>⌘ K</kbd></button>
       <div className="sidebar-section-title"><span>열린 파일</span><button aria-label="파일 열기" onClick={() => pickFiles()}><FilePlus2 size={14} /></button></div>
       <nav className="document-nav" aria-label="열린 파일">
         {documents.map((item) => <div className={`document-nav-row${item.id === activeId ? ' active' : ''}`} key={item.id}>
-          <button className="document-nav-select" onClick={() => switchTab(item.id)}><span className={`file-badge format-${item.format}`}>{item.format.toUpperCase()}</span><span className="document-nav-name">{safeFilename(item.name)}</span>{item.isDirty && <i className="dirty-dot" aria-label="수정됨" />}</button>
+          <button className="document-nav-select" aria-label={item.name} title={item.name} onClick={() => switchTab(item.id)}><span className={`file-badge format-${item.format}`}>{item.format.toUpperCase()}</span><span className="document-nav-name">{safeFilename(item.name)}</span>{item.isDirty && <i className="dirty-dot" aria-label="수정됨" />}</button>
           <button className="document-nav-close" aria-label={`${item.name} 닫기`} onClick={() => { void closeDocument(item.id) }}><X size={13} /></button>
         </div>)}
         {!documents.length && <div className="sidebar-empty">열린 파일이 없습니다.</div>}
       </nav>
-      <div className="sidebar-bottom"><div className={`connection-status${online ? '' : ' offline'}`}><span />{online ? '온라인' : '오프라인'}</div><button className="sidebar-settings" onClick={() => setShowSettings(true)}><Settings2 size={14} /> 설정 <span className="sidebar-version">v{__APP_VERSION__}</span></button></div>
+      <div className="sidebar-bottom"><button className="sidebar-settings" aria-label="설정" title="설정" onClick={() => setShowSettings(true)}><Settings2 size={14} /><span className="sidebar-settings-label">설정</span><span className="sidebar-version">v{__APP_VERSION__}</span></button></div>
     </aside>
 
     <main className="main-column">
