@@ -7,6 +7,7 @@ import type { ParseDiagnostic } from '../domain/types'
 import type { Format } from '../platform/fileTypes'
 import { CodeEditor } from './CodeEditor'
 import { registerSourceEditorDisposer } from './sourceEditorRegistry'
+import { applyLineBasedTextChanges, createTextPositionMapper, findTextChanges, mergeTextDuringComposition, normalizeLineEndings } from './editorText'
 
 interface Props {
   documentId: string
@@ -20,7 +21,12 @@ interface Props {
   label: string
 }
 
-interface SavedEditorState { position: monaco.Position | null; selection: monaco.Selection | null; scrollTop: number }
+interface SavedEditorState {
+  position: monaco.Position | null
+  selections: monaco.Selection[]
+  scrollTop: number
+  scrollLeft: number
+}
 
 const models = new Map<string, monaco.editor.ITextModel>()
 const editorStates = new Map<string, SavedEditorState>()
@@ -33,6 +39,55 @@ function disposeSourceEditorModel(documentId: string): void {
   editorStates.delete(documentId)
 }
 
+function syncModelText(model: monaco.editor.ITextModel, value: string, editor: monaco.editor.IStandaloneCodeEditor | null, documentId: string): void {
+  const previous = normalizeLineEndings(model.getValue())
+  const next = normalizeLineEndings(value)
+  if (previous === next) return
+  const changes = findTextChanges(previous, next)
+  const mapPosition = createTextPositionMapper(previous, next)
+  const edits = changes.map((change) => {
+    const start = model.getPositionAt(change.from)
+    const end = model.getPositionAt(change.to)
+    return {
+      range: new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column),
+      text: change.insert,
+      forceMoveMarkers: true
+    }
+  })
+  const liveSelections = editor?.getSelections() ?? null
+  const saved = liveSelections ? null : editorStates.get(documentId)
+  const selectionOffsets = liveSelections?.map((selection) => ({
+    anchor: model.getOffsetAt({ lineNumber: selection.selectionStartLineNumber, column: selection.selectionStartColumn }),
+    head: model.getOffsetAt({ lineNumber: selection.positionLineNumber, column: selection.positionColumn })
+  })) ?? (saved?.selections.length ? saved.selections.map((selection) => ({
+    anchor: model.getOffsetAt({ lineNumber: selection.selectionStartLineNumber, column: selection.selectionStartColumn }),
+    head: model.getOffsetAt({ lineNumber: selection.positionLineNumber, column: selection.positionColumn })
+  })) : null)
+  const positionOffset = saved?.position ? model.getOffsetAt(saved.position) : null
+  const scrollTop = editor?.getScrollTop() ?? saved?.scrollTop
+  const scrollLeft = editor?.getScrollLeft() ?? saved?.scrollLeft
+  model.applyEdits(edits)
+  if (selectionOffsets) {
+    const selections = selectionOffsets.map(({ anchor, head }) => {
+      const forward = anchor <= head
+      const mappedAnchor = model.getPositionAt(mapPosition(anchor, forward ? -1 : 1))
+      const mappedHead = model.getPositionAt(mapPosition(head, forward ? 1 : -1))
+      return new monaco.Selection(mappedAnchor.lineNumber, mappedAnchor.column, mappedHead.lineNumber, mappedHead.column)
+    })
+    if (editor) editor.setSelections(selections)
+    else if (saved) editorStates.set(documentId, {
+      ...saved,
+      position: positionOffset === null ? saved.position : model.getPositionAt(mapPosition(positionOffset)),
+      selections
+    })
+  } else if (saved && positionOffset !== null) {
+    editorStates.set(documentId, { ...saved, position: model.getPositionAt(mapPosition(positionOffset)) })
+  }
+  if (editor && scrollTop !== undefined) editor.setScrollTop(scrollTop)
+  if (editor && scrollLeft !== undefined) editor.setScrollLeft(scrollLeft)
+  if (saved) editorStates.set(documentId, { ...editorStates.get(documentId) ?? saved, scrollTop: scrollTop ?? saved.scrollTop, scrollLeft: scrollLeft ?? saved.scrollLeft })
+}
+
 export default function SourceEditor({ documentId, format, value, diagnostics, theme, onChange, onUndo, onRedo, label }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
@@ -40,13 +95,15 @@ export default function SourceEditor({ documentId, format, value, diagnostics, t
   const undoRef = useRef(onUndo)
   const redoRef = useRef(onRedo)
   const valueRef = useRef(value)
+  const editorText = useRef(value)
   const themeRef = useRef(theme)
   const externalUpdate = useRef(false)
+  const pendingExternalValue = useRef<string | null>(null)
+  const compositionBaseValue = useRef<string | null>(null)
   const [mobile, setMobile] = useState(() => typeof matchMedia !== 'undefined' && matchMedia('(max-width: 767px)').matches)
   changeRef.current = onChange
   undoRef.current = onUndo
   redoRef.current = onRedo
-  valueRef.current = value
   themeRef.current = theme
 
   useEffect(() => {
@@ -69,9 +126,10 @@ export default function SourceEditor({ documentId, format, value, diagnostics, t
       model = monaco.editor.createModel(valueRef.current, format === 'md' ? 'markdown' : 'plaintext', uri)
       models.set(documentId, model)
     } else {
-      if (model.getValue() !== valueRef.current) model.setValue(valueRef.current)
+      if (normalizeLineEndings(model.getValue()) !== normalizeLineEndings(valueRef.current)) syncModelText(model, valueRef.current, null, documentId)
       monaco.editor.setModelLanguage(model, format === 'md' ? 'markdown' : 'plaintext')
     }
+    editorText.current = valueRef.current
     registerSourceEditorDisposer(documentId, () => disposeSourceEditorModel(documentId))
 
     monaco.editor.defineTheme('the-viewer-dark', {
@@ -117,12 +175,29 @@ export default function SourceEditor({ documentId, format, value, diagnostics, t
     editorRef.current = editor
     const saved = editorStates.get(documentId)
     if (saved) {
-      if (saved.position) editor.setPosition(saved.position)
-      if (saved.selection) editor.setSelection(saved.selection)
+      if (saved.selections.length) editor.setSelections(saved.selections)
+      else if (saved.position) editor.setPosition(saved.position)
       editor.setScrollTop(saved.scrollTop)
+      editor.setScrollLeft(saved.scrollLeft)
     }
-    const contentListener = model.onDidChangeContent(() => {
-      if (!externalUpdate.current) changeRef.current(model.getValue())
+    const contentListener = model.onDidChangeContent((event) => {
+      if (externalUpdate.current) return
+      const localText = applyLineBasedTextChanges(editorText.current, event.changes.map((change) => ({
+        startLineNumber: change.range.startLineNumber,
+        startColumn: change.range.startColumn,
+        endLineNumber: change.range.endLineNumber,
+        endColumn: change.range.endColumn,
+        text: change.text
+      })))
+      editorText.current = localText
+      const compositionBase = compositionBaseValue.current
+      const externalText = pendingExternalValue.current
+      const nextText = compositionBase !== null && externalText !== null
+        ? mergeTextDuringComposition(compositionBase, localText, externalText)
+        : localText
+      if (compositionBase !== null && externalText !== null) pendingExternalValue.current = nextText
+      valueRef.current = nextText
+      changeRef.current(nextText)
     })
     const commandListener = editor.onKeyDown((event) => {
       const command = event.ctrlKey || event.metaKey
@@ -135,13 +210,46 @@ export default function SourceEditor({ documentId, format, value, diagnostics, t
         event.preventDefault(); event.stopPropagation(); redoRef.current()
       }
     })
+    const compositionStartListener = editor.onDidCompositionStart(() => {
+      compositionBaseValue.current = editorText.current
+    })
+    const compositionListener = editor.onDidCompositionEnd(() => {
+      const compositionBase = compositionBaseValue.current
+      const pending = pendingExternalValue.current
+      if (compositionBase !== null && pending !== null) {
+        const merged = mergeTextDuringComposition(compositionBase, editorText.current, pending)
+        valueRef.current = merged
+        pendingExternalValue.current = merged
+        if (merged !== pending) changeRef.current(merged)
+      }
+      compositionBaseValue.current = null
+      window.requestAnimationFrame(() => {
+        const latest = pendingExternalValue.current
+        if (latest === null) return
+        const currentModel = models.get(documentId)
+        if (!currentModel || currentModel.isDisposed()) return
+        externalUpdate.current = true
+        syncModelText(currentModel, latest, editor, documentId)
+        externalUpdate.current = false
+        editorText.current = latest
+        valueRef.current = latest
+        pendingExternalValue.current = null
+      })
+    })
     editor.addAction({ id: 'viewer.undo', label: '실행 취소', contextMenuGroupId: 'navigation', contextMenuOrder: 1, run: () => undoRef.current() })
     editor.addAction({ id: 'viewer.redo', label: '다시 실행', contextMenuGroupId: 'navigation', contextMenuOrder: 2, run: () => redoRef.current() })
     return () => {
-      editorStates.set(documentId, { position: editor.getPosition(), selection: editor.getSelection(), scrollTop: editor.getScrollTop() })
+      editorStates.set(documentId, {
+        position: editor.getPosition(),
+        selections: editor.getSelections() ?? [],
+        scrollTop: editor.getScrollTop(),
+        scrollLeft: editor.getScrollLeft()
+      })
       editorRef.current = null
       contentListener.dispose()
       commandListener.dispose()
+      compositionStartListener.dispose()
+      compositionListener.dispose()
       editor.dispose()
     }
   }, [documentId, format, label, mobile])
@@ -171,10 +279,35 @@ export default function SourceEditor({ documentId, format, value, diagnostics, t
 
   useEffect(() => {
     const model = models.get(documentId)
-    if (!model || model.isDisposed() || model.getValue() === value) return
+    const editor = editorRef.current
+    if (!model || model.isDisposed()) {
+      valueRef.current = value
+      editorText.current = value
+      pendingExternalValue.current = null
+      return
+    }
+    if (editor?.inComposition || compositionBaseValue.current !== null) {
+      if (normalizeLineEndings(model.getValue()) === normalizeLineEndings(value)) {
+        valueRef.current = value
+        if (pendingExternalValue.current === null) editorText.current = value
+        return
+      }
+      pendingExternalValue.current = value
+      valueRef.current = value
+      return
+    }
+    if (normalizeLineEndings(model.getValue()) === normalizeLineEndings(value)) {
+      valueRef.current = value
+      editorText.current = value
+      pendingExternalValue.current = null
+      return
+    }
     externalUpdate.current = true
-    model.setValue(value)
+    syncModelText(model, value, editor, documentId)
     externalUpdate.current = false
+    valueRef.current = value
+    editorText.current = value
+    pendingExternalValue.current = null
   }, [documentId, value])
 
   return <div className="source-editor-host" ref={host} aria-label={label}>

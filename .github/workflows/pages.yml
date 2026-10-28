@@ -25,7 +25,7 @@ jobs:
       - run: npm ci
       - run: npm run lint:app
       - run: npm run typecheck:app
-      - run: npm run test:formats
+      - run: npm run test:app
       - name: Verify root deployment paths
         run: npm run build:app && npm run verify:pwa-build -- /
         env:

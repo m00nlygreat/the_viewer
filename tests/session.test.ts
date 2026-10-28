@@ -84,4 +84,25 @@ describe('document session', () => {
     expect(redone.text).toBe(edited.text)
     expect(redone.revision).toBe(3)
   })
+
+  it('shares Markdown view and source text through undo, redo, and immediate export', () => {
+    const text = '\uFEFF---\r\ntitle: Note\r\n---\r\n\r\n# 제목\r\n\r\n- [ ] 작업\r\n'
+    const bytes = new TextEncoder().encode(text).buffer
+    const document = makeDocument({
+      id: 'markdown-document', name: 'notes.md', format: 'md', mimeType: 'text/markdown',
+      size: bytes.byteLength, initialBytes: bytes.slice(0), savedBytes: bytes.slice(0),
+      sourceText: text, text, model: { text }, bom: true, savedText: text
+    })
+    const editedText = text.replace('작업', '완료')
+    const viewed = applySourceEdit(document.id, editedText, document)
+    expect(viewed.text).toBe(editedText)
+    expect(viewed.textRevision).toBe(viewed.revision)
+    expect(buildExportSnapshot(viewed.id, viewed).text).toBe(editedText)
+
+    const undone = undoDocument(document.id, viewed, historyEntry(document))
+    expect(undone.text).toBe(text)
+    const redone = redoDocument(document.id, undone, historyEntry(viewed))
+    expect(redone.text).toBe(editedText)
+    expect(buildExportSnapshot(redone.id, redone).bytes.slice(0, 3)).toEqual(new Uint8Array([0xef, 0xbb, 0xbf]))
+  })
 })
