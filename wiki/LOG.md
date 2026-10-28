@@ -15,6 +15,7 @@ usage: "중요한 결정, 새 사실, 범위 변경, 설계 방향 변경이 생
 - EML·CSV·Markdown·ICS·VCF의 HTTP(S) 최상위 GET 응답을 기본 자동 열기로 제공하며, 설치 시 HTTP(S) 전체 사이트 접근 권한을 요청한다. 응답 MIME·URL 파일명·응답 파일명을 함께 확인하고 HTML 응답은 건드리지 않는다. 응답 확인 뒤 본문을 다시 GET하므로 서버에서 두 번 처리될 수 있음을 안내한다.
 - [Tourmaline 확장 구현](https://github.com/m00nlygreat/tourmaline-chrome/blob/e5c92609e92298b3ab0368f44581ce2c20bef13c/src/extension/manifest.json)을 확인해 일반 MV3 확장에서도 Chrome으로 연 로컬 파일을 처리할 수 있음을 확인했다. 로컬 지원 파일의 `file://` 탐색을 DNR로 뷰어에 전달한다. Chrome의 파일 URL 접근 승인이 한 번 필요하며, 새 탭 강제 교체는 사용하지 않는다.
 - 사용자 요청에 따라 상위 탭을 `보기 / 원본`으로 통합했다. 문서별 작업본·Undo/Redo, 최신 revision 파싱, 보기 편집과 원본 편집을 연결하고 데스크톱 Monaco·모바일 CodeMirror를 적용했다. PWA 전용 검사·배포 workflow로 분리했으며 확장 검증은 사용자 요청에 따라 실행하지 않는다. [구현 계획과 검증 범위](../GOAL.md#14-보기원본-두-탭과-양방향-편집-계획)
+- PWA 전용 린트·타입 검사·17개 테스트와 루트·Pages 하위 경로 빌드 검사를 통과해 `8fda65b`를 `main`에 배포했다. [GitHub Pages](https://m00nlygreat.github.io/the_viewer/) 공개 응답과 Monaco·Worker 서비스 워커 캐시를 확인했다. 화면 시각·오프라인 수동 확인과 Chrome 확장 검증은 별도 확인 항목이다.
 
 ## 2026-10-21
 

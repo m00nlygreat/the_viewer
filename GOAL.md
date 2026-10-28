@@ -1,7 +1,7 @@
 # GOAL — The Viewer PWA·Chrome 확장 앱 구현 계획
 
 - 작성일: 2026-10-19 (KST)
-- 상태: PWA 구현 완료 · PWA 배포 대기 · Chrome 확장 검증은 사용자 수행 예정
+- 상태: PWA 배포 완료 · Chrome 확장 검증은 사용자 수행 예정 · PWA 화면·오프라인 수동 확인 일부 남음
 - 디자인 기준: [기준 목업](mockup/The%20Viewer.html)
 - 구현 규칙: [에이전트 메모](AGENTs.md), [컴포넌트 작성 규칙](docs/COMPONENTS.md)
 - 제품 요구사항: [요구사항 요약](wiki/REQUIREMENT.md), [용어](wiki/TERMS.md)
@@ -752,5 +752,5 @@ flowchart LR
 
 - PWA 앱 전용 린트와 타입 검사, 형식·세션 테스트(17개), 루트·Pages 하위 경로 빌드와 자산 검사가 통과했다. 로컬 Pages 경로 미리보기도 HTTP 200과 `/the_viewer/` 자산 경로를 반환했다.
 - 브라우저에서의 PWA 시각 확인과 오프라인 최초 실행, 모바일 실기기 한글 입력은 별도 수동 확인 항목이다.
-- 원격 PWA 배포는 아직 대기 중이며, 완료 후 공개 URL과 Actions 결과를 기록한다.
+- [GitHub Pages PWA](https://m00nlygreat.github.io/the_viewer/) 배포가 완료됐다. Pages Actions의 PWA 검증·배포가 통과했고, 공개 `index.js`가 이번 빌드와 일치하며 manifest·서비스 워커와 Monaco 청크·Worker precache를 확인했다.
 - Chrome 확장 설치·파일 전달·확장 번들 검증은 사용자가 수행한다. Pages workflow는 PWA만 빌드·검증·배포한다.
