@@ -161,7 +161,13 @@ export function buildMarkdownPreviewDecorations(state: EditorState, composingPos
 
   const visit = (node: MarkdownNode): void => {
     if (node.name === 'Table' || node.name === 'FencedCode') {
-      if (node.name === 'FencedCode') addLineClass(node.from, node.to, 'cm-md-code-block')
+      if (node.name === 'FencedCode') {
+        addLineClass(node.from, node.to, 'cm-md-code-block')
+        const firstLine = state.doc.lineAt(node.from)
+        const lastLine = state.doc.lineAt(Math.max(node.from, node.to - 1))
+        addLineClass(firstLine.from, firstLine.to, 'cm-md-code-block-start')
+        addLineClass(lastLine.from, lastLine.to, 'cm-md-code-block-end')
+      }
       return
     }
     if (node.name === 'Image') {
@@ -219,8 +225,11 @@ export function buildMarkdownPreviewDecorations(state: EditorState, composingPos
   }
 
   for (let block = tree.topNode.firstChild; block; block = block.nextSibling) {
+    if (isActiveBlock(block.from, block.to, selections, composingPosition)) {
+      addLineClass(block.from, block.to, 'cm-md-editing-block')
+      continue
+    }
     if (overlapsFrontmatter(block, frontmatter)) continue
-    if (isActiveBlock(block.from, block.to, selections, composingPosition)) continue
     if (!supportsPreview(block.name) || startsUnknownContainerDirective(state, block)) continue
     const heading = block.name.match(/^ATXHeading([1-6])$/u) ?? block.name.match(/^SetextHeading([12])$/u)
     if (heading) addLineClass(block.from, block.to, `cm-md-heading-${heading[1]}`)

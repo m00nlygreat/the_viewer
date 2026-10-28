@@ -66,6 +66,36 @@ describe('Markdown live preview decorations', () => {
     expect(collectDecorations(base, 2).some((item) => item.className === 'cm-md-bold')).toBe(false)
   })
 
+  it('marks the actively edited block while keeping inactive blocks in preview', () => {
+    const text = '**editing**\n\n**preview**\n'
+    const editingStart = text.indexOf('**editing**')
+    const previewStart = text.indexOf('**preview**')
+    const state = makeState(text, editingStart + 4)
+    const decorations = collectDecorations(state)
+
+    expect(decorations.some((item) => item.className === 'cm-md-editing-block' && item.from === editingStart)).toBe(true)
+    expect(decorations.some((item) => item.className === 'cm-md-bold' && item.from === previewStart + 2)).toBe(true)
+    expect(decorations.some((item) => item.className === 'cm-md-bold' && item.from === editingStart + 2)).toBe(false)
+    expect(state.doc.toString()).toBe(text)
+  })
+
+  it('marks blocks containing multiple selections and IME composition as active', () => {
+    const text = '**first**\n\n**second**\n'
+    const firstStart = text.indexOf('**first**')
+    const secondStart = text.indexOf('**second**')
+    const base = makeState(text)
+    const multiple = base.update({ selection: EditorSelection.create([
+      EditorSelection.cursor(firstStart + 3),
+      EditorSelection.cursor(secondStart + 3)
+    ]) }).state
+    const multiDecorations = collectDecorations(multiple)
+
+    expect(multiDecorations.some((item) => item.className === 'cm-md-editing-block' && item.from === firstStart)).toBe(true)
+    expect(multiDecorations.some((item) => item.className === 'cm-md-editing-block' && item.from === secondStart)).toBe(true)
+    expect(collectDecorations(base, secondStart + 3).some((item) => item.className === 'cm-md-editing-block' && item.from === secondStart)).toBe(true)
+    expect(base.doc.toString()).toBe(text)
+  })
+
   it('does not treat the next block as selected when a drag range ends at its boundary', () => {
     const text = '**first**\n\n**second**\n'
     const base = makeState(text)
@@ -87,6 +117,18 @@ describe('Markdown live preview decorations', () => {
     expect(decorations.some((item) => item.from < tableEnd && item.to > tableStart && !item.className)).toBe(false)
     expect(decorations.some((item) => item.from < codeEnd && item.to > codeStart && !item.className)).toBe(false)
     expect(decorations.some((item) => item.hasWidget && item.from === text.indexOf('!['))).toBe(true)
+    expect(state.doc.toString()).toBe(text)
+  })
+
+  it('styles the opening and closing lines of inactive fenced code without changing its source', () => {
+    const text = 'focus\n\n```ts title=demo\nconst x = 1\n```\n'
+    const state = makeState(text, text.indexOf('focus') + 2)
+    const decorations = collectDecorations(state)
+    const codeStart = text.indexOf('```ts')
+    const codeEnd = text.indexOf('```', codeStart + 3)
+
+    expect(decorations.some((item) => item.className?.includes('cm-md-code-block-start') && item.from === codeStart)).toBe(true)
+    expect(decorations.some((item) => item.className?.includes('cm-md-code-block-end') && item.from === codeEnd)).toBe(true)
     expect(state.doc.toString()).toBe(text)
   })
 

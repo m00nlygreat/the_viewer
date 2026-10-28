@@ -178,8 +178,9 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
           { key: 'Mod-y', run: () => { redo.current?.(); return true } },
           { key: 'Mod-Shift-z', run: () => { redo.current?.(); return true } }
         ]))] : []),
-        ...(!livePreview ? [highlightActiveLine()] : []),
+        highlightActiveLine(),
         ...(markdownMode ? [markdown({ base: markdownLanguage })] : []),
+        ...(livePreview ? [EditorView.lineWrapping] : []),
         ...(livePreview ? [markdownLivePreview] : []),
         EditorView.updateListener.of((update) => {
           if (!update.docChanged || syncing.current) return
