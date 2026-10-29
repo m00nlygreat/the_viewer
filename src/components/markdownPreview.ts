@@ -183,10 +183,6 @@ export function buildMarkdownPreviewDecorations(
   const decorations: Range<Decoration>[] = []
   const hidden = new Set<string>()
   const widgetRanges: Array<{ from: number; to: number }> = []
-  if (frontmatter && (editingPosition < frontmatter.from || editingPosition >= frontmatter.to)) {
-    decorations.push(Decoration.replace({ widget: new MarkdownFrontmatterWidget(frontmatter.content, frontmatter.from), inclusive: false, block: true }).range(frontmatter.from, frontmatter.to))
-    widgetRanges.push(frontmatter)
-  }
   if (codeBlocksAreWidgets) tree.iterate({ enter: (node) => {
     if (node.name === 'FencedCode' && !overlapsFrontmatter(node, frontmatter)) widgetRanges.push({ from: markdownCodeBlockFrom(state, node.from), to: node.to })
   } })
@@ -342,6 +338,41 @@ export function buildMarkdownPreviewDecorations(
   return Decoration.set(decorations, true)
 }
 
+export function buildMarkdownFrontmatterDecorations(state: EditorState, composingPosition: number | null = null): DecorationSet {
+  const frontmatter = frontmatterRange(state)
+  const editingPosition = composingPosition ?? state.selection.main.head
+  if (!frontmatter || (editingPosition >= frontmatter.from && editingPosition < frontmatter.to)) return Decoration.set([], true)
+  return Decoration.set([
+    Decoration.replace({ widget: new MarkdownFrontmatterWidget(frontmatter.content, frontmatter.from), inclusive: false, block: true }).range(frontmatter.from, frontmatter.to)
+  ], true)
+}
+
+interface MarkdownFrontmatterDecorationValue {
+  composingPosition: number | null
+  decorations: DecorationSet
+}
+
+function markdownFrontmatterDecorations() {
+  return StateField.define<MarkdownFrontmatterDecorationValue>({
+    create: (state) => ({ composingPosition: null, decorations: buildMarkdownFrontmatterDecorations(state) }),
+    update: (value, transaction) => {
+      let composingPosition = transaction.docChanged && value.composingPosition !== null
+        ? transaction.changes.mapPos(value.composingPosition, 1)
+        : value.composingPosition
+      let needsRefresh = transaction.docChanged || Boolean(transaction.selection && !transaction.selection.eq(transaction.startState.selection))
+      for (const effect of transaction.effects) {
+        if (!effect.is(setCompositionPosition) || effect.value === composingPosition) continue
+        composingPosition = effect.value
+        needsRefresh = true
+      }
+      return needsRefresh
+        ? { composingPosition, decorations: buildMarkdownFrontmatterDecorations(transaction.state, composingPosition) }
+        : value
+    },
+    provide: (field) => EditorView.decorations.from(field, (value) => value.decorations)
+  })
+}
+
 interface MarkdownTableDecorationValue {
   tableStates: Map<number, MarkdownTableState>
   decorations: DecorationSet
@@ -456,6 +487,7 @@ class MarkdownPreviewPlugin {
 
 export function markdownLivePreview(theme: 'light' | 'dark', undo: () => void = () => {}, redo: () => void = () => {}) {
   return [
+    markdownFrontmatterDecorations(),
     markdownTableDecorations(theme),
     markdownCodeBlockDecorations(theme, undo, redo),
     ViewPlugin.fromClass(MarkdownPreviewPlugin, { decorations: (plugin) => plugin.decorations }),

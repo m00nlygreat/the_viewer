@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { EditorSelection, EditorState } from '@codemirror/state'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { buildMarkdownPreviewDecorations, taskMarkerRangesForSelection } from '../src/components/markdownPreview'
+import { buildMarkdownFrontmatterDecorations, buildMarkdownPreviewDecorations, taskMarkerRangesForSelection } from '../src/components/markdownPreview'
 import { markdownLinkAttributes } from '../src/domain/markdown'
 
 function makeState(text: string, position = text.length): EditorState {
@@ -14,9 +14,11 @@ function makeState(text: string, position = text.length): EditorState {
 
 function collectDecorations(state: EditorState, composingPosition: number | null = null) {
   const items: Array<{ from: number; to: number; className?: string; tagName?: string; attributes?: Record<string, string>; hasWidget: boolean }> = []
-  buildMarkdownPreviewDecorations(state, composingPosition).between(0, state.doc.length, (from, to, decoration) => {
-    items.push({ from, to, className: decoration.spec.class, tagName: decoration.spec.tagName, attributes: decoration.spec.attributes, hasWidget: Boolean(decoration.spec.widget) })
-  })
+  for (const decorations of [buildMarkdownPreviewDecorations(state, composingPosition), buildMarkdownFrontmatterDecorations(state, composingPosition)]) {
+    decorations.between(0, state.doc.length, (from, to, decoration) => {
+      items.push({ from, to, className: decoration.spec.class, tagName: decoration.spec.tagName, attributes: decoration.spec.attributes, hasWidget: Boolean(decoration.spec.widget) })
+    })
+  }
   return items
 }
 
