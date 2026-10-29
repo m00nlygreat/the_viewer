@@ -90,36 +90,12 @@ function startsUnknownContainerDirective(state: EditorState, block: MarkdownNode
   return block.name === 'Paragraph' && /^\s*:::/u.test(state.doc.lineAt(block.from).text)
 }
 
-function isActiveBlock(
-  from: number,
-  to: number,
-  ranges: EditorState['selection']['ranges'],
-  composingPosition: number | null
-): boolean {
-  if (composingPosition !== null && composingPosition >= from && composingPosition <= to) return true
-  return ranges.some((range) => range.empty
-    ? range.head >= from && range.head <= to
-    : range.from < to && range.to > from)
-}
-
-function activePositionInList(
-  from: number,
-  to: number,
-  ranges: EditorState['selection']['ranges'],
-  composingPosition: number | null
-): number | null {
-  if (composingPosition !== null && composingPosition >= from && composingPosition <= to) {
-    return Math.min(composingPosition, Math.max(from, to - 1))
-  }
-  for (const range of ranges) {
-    if (range.empty && range.head >= from && range.head <= to) {
-      return Math.min(range.head, Math.max(from, to - 1))
-    }
-    if (!range.empty && range.from < to && range.to > from) {
-      return Math.min(Math.max(range.head, from), Math.max(from, to - 1))
-    }
-  }
-  return null
+function isPositionInBlock(state: EditorState, from: number, to: number, position: number): boolean {
+  const firstLine = state.doc.lineAt(from).number
+  const lastPosition = to > from ? to - 1 : to
+  const lastLine = state.doc.lineAt(lastPosition).number
+  const positionLine = state.doc.lineAt(position).number
+  return positionLine >= firstLine && positionLine <= lastLine
 }
 
 export function taskMarkerRangesForSelection(state: EditorState): Array<{ from: number; to: number; checked: boolean }> {
@@ -147,7 +123,6 @@ export function buildMarkdownPreviewDecorations(state: EditorState, composingPos
   const lineClasses = new Map<number, Set<string>>()
   const decorations: Range<Decoration>[] = []
   const hidden = new Set<string>()
-  const selections = state.selection.ranges
 
   const addLineClass = (from: number, to: number, className: string) => {
     const firstLine = state.doc.lineAt(from)
@@ -178,6 +153,11 @@ export function buildMarkdownPreviewDecorations(state: EditorState, composingPos
     while (end < state.doc.length && (state.doc.sliceString(end, end + 1) === ' ' || state.doc.sliceString(end, end + 1) === '\t')) end += 1
     hide(from, end)
   }
+
+  const editingPosition = composingPosition ?? state.selection.main.head
+  const activeLine = state.doc.lineAt(editingPosition)
+  const editingLine = { from: activeLine.from, to: activeLine.to }
+  addLineClass(editingLine.from, editingLine.to, 'cm-md-editing-block')
 
   const visit = (node: MarkdownNode, editingLine?: { from: number; to: number }): void => {
     const overlapsEditingLine = (from: number, to: number) => Boolean(editingLine && from < editingLine.to && to > editingLine.from)
@@ -252,16 +232,10 @@ export function buildMarkdownPreviewDecorations(state: EditorState, composingPos
   }
 
   for (let block = tree.topNode.firstChild; block; block = block.nextSibling) {
-    const isList = block.name === 'BulletList' || block.name === 'OrderedList'
-    const listPosition = isList ? activePositionInList(block.from, block.to, selections, composingPosition) : null
-    if (listPosition !== null) {
-      const line = state.doc.lineAt(listPosition)
-      addLineClass(line.from, line.to, 'cm-md-editing-block')
-      visit(block, { from: line.from, to: line.to })
-      continue
-    }
-    if (isActiveBlock(block.from, block.to, selections, composingPosition)) {
-      addLineClass(block.from, block.to, 'cm-md-editing-block')
+    if (isPositionInBlock(state, block.from, block.to, editingPosition)) {
+      if (!overlapsFrontmatter(block, frontmatter) && supportsPreview(block.name) && !startsUnknownContainerDirective(state, block)) {
+        visit(block, editingLine)
+      }
       continue
     }
     if (overlapsFrontmatter(block, frontmatter)) continue

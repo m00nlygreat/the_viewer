@@ -62,11 +62,11 @@ describe('Markdown live preview decorations', () => {
       EditorSelection.cursor(text.indexOf('second') + 2)
     ]) }).state
     expect(collectDecorations(multiple).some((item) => item.className === 'cm-md-bold')).toBe(false)
-    expect(collectDecorations(multiple).some((item) => item.className === 'cm-md-italic')).toBe(false)
+    expect(collectDecorations(multiple).some((item) => item.className === 'cm-md-italic')).toBe(true)
     expect(collectDecorations(base, 2).some((item) => item.className === 'cm-md-bold')).toBe(false)
   })
 
-  it('marks the actively edited block while keeping inactive blocks in preview', () => {
+  it('marks only the actively edited line while keeping other lines in preview', () => {
     const text = '**editing**\n\n**preview**\n'
     const editingStart = text.indexOf('**editing**')
     const previewStart = text.indexOf('**preview**')
@@ -79,7 +79,47 @@ describe('Markdown live preview decorations', () => {
     expect(state.doc.toString()).toBe(text)
   })
 
-  it('marks blocks containing multiple selections and IME composition as active', () => {
+  it('keeps a multi-line paragraph in preview except for the active source line', () => {
+    const text = '**first**\n**second**\n**third**\n'
+    const secondStart = text.indexOf('**second**')
+    const state = makeState(text, secondStart + 4)
+    const decorations = collectDecorations(state)
+
+    expect(decorations.filter((item) => item.className === 'cm-md-editing-block').map((item) => item.from)).toEqual([secondStart])
+    expect(decorations.filter((item) => item.className === 'cm-md-bold').map((item) => item.from)).toEqual([
+      text.indexOf('**first**') + 2,
+      text.indexOf('**third**') + 2
+    ])
+    expect(state.doc.toString()).toBe(text)
+  })
+
+  it('marks a focused blank line without activating either neighboring block', () => {
+    const text = '**above**\n\n**below**\n'
+    const blankLine = text.indexOf('\n') + 1
+    const base = makeState(text)
+    const state = base.update({ selection: { anchor: blankLine } }).state
+    const decorations = collectDecorations(state)
+
+    expect(decorations.filter((item) => item.className === 'cm-md-editing-block').map((item) => item.from)).toEqual([blankLine])
+    expect(decorations.filter((item) => item.className === 'cm-md-bold')).toHaveLength(2)
+    expect(state.doc.toString()).toBe(text)
+  })
+
+  it('keeps a list in preview except for its single active source line', () => {
+    const text = '- **first**\n- **second**\n- **third**\n'
+    const secondStart = text.indexOf('- **second**')
+    const state = makeState(text, secondStart + 6)
+    const decorations = collectDecorations(state)
+
+    expect(decorations.filter((item) => item.className === 'cm-md-editing-block').map((item) => item.from)).toEqual([secondStart])
+    expect(decorations.filter((item) => item.className === 'cm-md-bold').map((item) => item.from)).toEqual([
+      text.indexOf('**first**') + 2,
+      text.indexOf('**third**') + 2
+    ])
+    expect(state.doc.toString()).toBe(text)
+  })
+
+  it('marks only the primary selection line or IME composition line as active', () => {
     const text = '**first**\n\n**second**\n'
     const firstStart = text.indexOf('**first**')
     const secondStart = text.indexOf('**second**')
@@ -90,9 +130,10 @@ describe('Markdown live preview decorations', () => {
     ]) }).state
     const multiDecorations = collectDecorations(multiple)
 
-    expect(multiDecorations.some((item) => item.className === 'cm-md-editing-block' && item.from === firstStart)).toBe(true)
-    expect(multiDecorations.some((item) => item.className === 'cm-md-editing-block' && item.from === secondStart)).toBe(true)
+    expect(multiDecorations.filter((item) => item.className === 'cm-md-editing-block').map((item) => item.from)).toEqual([firstStart])
+    expect(multiDecorations.some((item) => item.className === 'cm-md-bold' && item.from === secondStart + 2)).toBe(true)
     expect(collectDecorations(base, secondStart + 3).some((item) => item.className === 'cm-md-editing-block' && item.from === secondStart)).toBe(true)
+    expect(collectDecorations(base, secondStart + 3).some((item) => item.className === 'cm-md-bold' && item.from === firstStart + 2)).toBe(true)
     expect(base.doc.toString()).toBe(text)
   })
 
