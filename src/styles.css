@@ -317,7 +317,7 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .markdown-prose th, .markdown-prose td { padding: 7px 9px; border: 1px solid var(--line); text-align: left; }
 .markdown-prose th { color: var(--text-strong); background: var(--control); font-weight: 530; }
 .markdown-prose hr { border: 0; border-top: 1px solid var(--line); }
-.markdown-prose input[type='checkbox'] { accent-color: var(--primary); }
+.markdown-prose input[type='checkbox'] { border-radius: 0; accent-color: var(--primary); }
 .blocked-image { padding: 2px 5px; border: 1px solid var(--line); border-radius: 0; color: var(--text-weak); background: var(--control); font-size: 13px; }
 .document-stats { width: min(720px, 100%); margin: 18px auto 0; color: var(--text-weak); font: 12px var(--font-mono); }
 .markdown-toolbar { height: 39px; flex: 0 0 auto; padding: 0 12px; display: flex; align-items: center; gap: 2px; border-bottom: 1px solid var(--line); background: var(--panel); }
