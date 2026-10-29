@@ -15,7 +15,7 @@
     "build": "npm run build:app && npm run build:extension",
     "lint:app": "eslint src/app src/components src/domain src/features src/platform/pwa src/platform/relay src/platform/storage.ts src/platform/attachmentResources.ts src/platform/browserFiles.ts src/platform/fileTypes.ts src/platform/FilePicker.tsx src/main.tsx",
     "typecheck:app": "tsc -p tsconfig.app.json",
-    "test:app": "vitest run tests/formats.test.ts tests/session.test.ts tests/markdownPreview.test.ts tests/editorText.test.ts",
+    "test:app": "vitest run tests/formats.test.ts tests/session.test.ts tests/markdownPreview.test.ts tests/editorText.test.ts tests/monacoThemeColors.test.ts",
     "test:formats": "vitest run tests/formats.test.ts tests/session.test.ts",
     "verify:pwa-build": "node scripts/verify-pwa-build.mjs",
     "preview:app": "vite preview --mode app --outDir dist/app",

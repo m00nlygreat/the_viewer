@@ -6,6 +6,7 @@ import '../../node_modules/monaco-editor/min/vs/editor/editor.main.css'
 import type { ParseDiagnostic } from '../domain/types'
 import type { Format } from '../platform/fileTypes'
 import { CodeEditor } from './CodeEditor'
+import { normalizeMonacoThemeColor } from './monacoThemeColors'
 import { registerSourceEditorDisposer } from './sourceEditorRegistry'
 import { applyLineBasedTextChanges, createTextPositionMapper, findTextChanges, mergeTextDuringComposition, normalizeLineEndings } from './editorText'
 
@@ -316,6 +317,6 @@ export default function SourceEditor({ documentId, format, value, diagnostics, t
 }
 
 function cssColor(name: string, fallback: string): string {
-  if (typeof document === 'undefined') return fallback
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+  const value = typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(name)
+  return normalizeMonacoThemeColor(value, fallback)
 }

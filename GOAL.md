@@ -749,7 +749,7 @@ flowchart LR
 
 ### 14.9 현재 검증과 남은 확인
 
-- Markdown 보기 자동 줄바꿈, 활성 편집 블록·현재 행 강조, 비활성 코드 블록 경계 표시를 추가했다. Markdown Decoration·원문 개행 보존·세션 Undo/Redo·내보내기·다중 외부 변경 위치 매핑·IME 변경 병합·탭 복원 선택 회귀 테스트를 추가했다. `npm run lint:app`, `npm run typecheck:app`, `npm run test:app`(4개 파일, 39개 테스트), 루트 및 `/the_viewer/` 경로의 `npm run build:app`과 `npm run verify:pwa-build`가 통과했다.
+- Markdown 보기 자동 줄바꿈, 활성 편집 블록·현재 행 강조, 비활성 코드 블록 경계 표시와 Monaco 테마 색상 정규화를 추가했다. Markdown Decoration·원문 개행 보존·세션 Undo/Redo·내보내기·다중 외부 변경 위치 매핑·IME 변경 병합·탭 복원 선택·단축 색상 정규화 회귀 테스트를 추가했다. `npm run lint:app`, `npm run typecheck:app`, `npm run test:app`(5개 파일, 42개 테스트), 루트 및 `/the_viewer/` 경로의 `npm run build:app`과 `npm run verify:pwa-build`가 통과했다.
 - 보기·원본 왕복, Undo/Redo, 입력 직후 내보내기 동작과 IME 중 외부 변경 병합 로직은 회귀 테스트로 확인했다. Computer Use가 Windows 브라우저 URL을 안전하게 판별하지 못해 중단되어, 실제 브라우저 시각·클릭 입력과 한글 IME 실기기 동작은 아직 수동 확인하지 못했다.
 - [GitHub Pages PWA](https://m00nlygreat.github.io/the_viewer/)의 Markdown 화면 보완 배포가 완료됐다. [Pages Actions #17](https://github.com/m00nlygreat/the_viewer/actions/runs/40745860680)의 PWA 검증·배포가 통과했고, 공개 페이지·version.json·manifest·index.js가 200으로 응답하며 공개 JS 해시가 `/the_viewer/` 빌드와 일치한다.
 - Chrome 확장 설치·파일 전달·확장 번들 검증은 사용자가 수행한다. Pages workflow는 PWA만 빌드·검증·배포한다.
