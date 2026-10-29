@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type RefAttributes } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type RefAttributes } from 'react'
 import { Check, Plus, Trash2 } from 'lucide-react'
 import {
   DataEditor,
@@ -87,8 +87,16 @@ function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableStat
     }))
   }, [columnCount, headerKey])
 
-  useEffect(() => {
-    gridRef.current?.focus()
+  useLayoutEffect(() => {
+    let focusFrame = 0
+    let confirmFocusFrame = 0
+    focusFrame = window.requestAnimationFrame(() => {
+      confirmFocusFrame = window.requestAnimationFrame(() => gridRef.current?.focus())
+    })
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+      window.cancelAnimationFrame(confirmFocusFrame)
+    }
   }, [])
 
   const gridTheme = useMemo<GridTheme>(() => {

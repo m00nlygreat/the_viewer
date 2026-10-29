@@ -16,6 +16,7 @@ export class MarkdownTableWidget extends WidgetType {
     this.table.attachView(view)
     const element = document.createElement('div')
     element.className = 'cm-md-table-widget'
+    element.contentEditable = 'false'
     const root = createRoot(element)
     roots.set(element, root)
     root.render(<MarkdownTableBlock table={this.table} />)
