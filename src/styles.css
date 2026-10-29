@@ -386,6 +386,8 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .cm-md-table-editor-status { min-height: 25px; padding: 0 9px; display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--line); color: var(--text-weak); background: var(--sidebar); font: 10px var(--font-mono); }
 @supports (width: 100cqw) {
   .code-editor-live-preview .cm-scroller { container-type: inline-size; }
+  .code-editor-live-preview .cm-content:has(.cm-md-table-editor) { width: 100%; min-width: 0; }
+  .code-editor-live-preview .cm-line:has(.cm-md-table-editor) { min-width: 0; }
   .code-editor-live-preview .cm-md-table-editor { position: relative; left: calc((100% - 100cqw) / 2); width: 100cqw; }
 }
 .code-editor { min-height: 280px; flex: 1; overflow: hidden; }
