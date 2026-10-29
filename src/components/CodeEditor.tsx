@@ -228,7 +228,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
           '&': { height: '100%', color: 'var(--text)', backgroundColor: 'var(--panel)' },
           '.cm-scroller': {
             fontFamily: livePreview ? 'inherit' : 'var(--font-mono)',
-            fontSize: livePreview ? '17px' : '16px',
+            fontSize: livePreview ? 'var(--markdown-font-size)' : '16px',
             lineHeight: livePreview ? '1.7' : '1.72',
             overflow: 'auto'
           },
