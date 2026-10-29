@@ -71,7 +71,7 @@ export function parseMarkdownTable(source: string): MarkdownTableModel | null {
 function escapePipes(value: string): string {
   let result = ''
   let backslashes = 0
-  for (const character of value.trim()) {
+  for (const character of value.trim().replace(/[\r\n]+/gu, ' ')) {
     if (character === '|') {
       if (backslashes % 2 === 0) result += '\\'
       result += character

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type RefAttributes } from 'react'
 import { Check, Plus, Trash2 } from 'lucide-react'
 import {
   DataEditor,
@@ -6,6 +6,7 @@ import {
   emptyGridSelection,
   getDefaultTheme,
   type DataEditorProps,
+  type DataEditorRef,
   type EditListItem,
   type GridCell,
   type GridColumn,
@@ -22,10 +23,15 @@ interface Props { table: MarkdownTableState }
 
 const TABLE_ROW_HEIGHT = 36
 const TABLE_HEADER_HEIGHT = 34
-const TABLE_COLUMN_WIDTH = 160
+let nextMarkdownColumnId = 0
+
+function createMarkdownColumnId(): string {
+  nextMarkdownColumnId += 1
+  return `markdown-column-${nextMarkdownColumnId}`
+}
 
 // Glide 6.0.4 alpha exposes fillHandle at runtime before including it in its public prop types.
-const SpreadsheetGrid = DataEditor as unknown as ComponentType<DataEditorProps & { fillHandle?: boolean }>
+const SpreadsheetGrid = DataEditor as unknown as ComponentType<DataEditorProps & { fillHandle?: boolean } & RefAttributes<DataEditorRef>>
 
 export function MarkdownTableBlock({ table }: Props) {
   const snapshot = useSyncExternalStore(table.subscribe, table.getSnapshot, table.getSnapshot)
@@ -56,19 +62,34 @@ function RenderedMarkdownTable({ table }: Props) {
 }
 
 function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableState; model: MarkdownTableModel; theme: 'light' | 'dark' }) {
-  const [selection, setSelection] = useState<GridSelection>(emptyGridSelection)
+  const gridRef = useRef<DataEditorRef>(null)
+  const [selection, setSelection] = useState<GridSelection>(() => ({
+    ...emptyGridSelection,
+    current: { cell: [0, 0], range: { x: 0, y: 0, width: 1, height: 1 }, rangeStack: [] }
+  }))
   const [editingHeader, setEditingHeader] = useState<number | null>(null)
   const [headerDraft, setHeaderDraft] = useState('')
   const columnCount = Math.max(model.headers.length, ...model.rows.map((row) => row.length), 1)
+  const columnIds = useRef<string[]>([])
+  while (columnIds.current.length < columnCount) columnIds.current.push(createMarkdownColumnId())
+  if (columnIds.current.length > columnCount) columnIds.current = columnIds.current.slice(0, columnCount)
   const activeCell = selection.current?.cell ?? [0, 0]
   const activeColumn = Math.max(0, Math.min(columnCount - 1, activeCell[0]))
   const activeRow = Math.max(0, Math.min(Math.max(model.rows.length - 1, 0), activeCell[1]))
   const selectedRange = selection.current?.range
+  const headerKey = JSON.stringify(model.headers)
 
-  const columns = useMemo<GridColumn[]>(() => Array.from({ length: columnCount }, (_, column) => ({
-    title: model.headers[column] || `열 ${column + 1}`,
-    width: TABLE_COLUMN_WIDTH
-  })), [columnCount, model.headers])
+  const columns = useMemo<GridColumn[]>(() => {
+    const headers = JSON.parse(headerKey) as string[]
+    return Array.from({ length: columnCount }, (_, column) => ({
+      title: headers[column] || `열 ${column + 1}`,
+      id: columnIds.current[column]!
+    }))
+  }, [columnCount, headerKey])
+
+  useEffect(() => {
+    gridRef.current?.focus()
+  }, [])
 
   const gridTheme = useMemo<GridTheme>(() => {
     const light = theme === 'light'
@@ -166,6 +187,7 @@ function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableStat
   }
   const removeActiveColumn = () => {
     if (columnCount <= 1) return
+    columnIds.current = columnIds.current.filter((_, index) => index !== activeColumn)
     table.replaceModel({
       ...model,
       headers: model.headers.filter((_, index) => index !== activeColumn),
@@ -202,6 +224,7 @@ function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableStat
     </div>
     <div className="cm-md-table-grid" style={{ height: `${Math.min(360, Math.max(164, (model.rows.length + 1) * TABLE_ROW_HEIGHT + TABLE_HEADER_HEIGHT))}px` }}>
       <SpreadsheetGrid
+        ref={gridRef}
         className="cm-md-table-data-grid"
         columns={columns}
         rows={model.rows.length}
@@ -224,6 +247,7 @@ function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableStat
         headerHeight={TABLE_HEADER_HEIGHT}
         minColumnWidth={80}
         maxColumnWidth={640}
+        maxColumnAutoWidth={640}
         width="100%"
         height="100%"
         theme={gridTheme}
