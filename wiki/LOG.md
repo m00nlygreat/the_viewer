@@ -12,7 +12,7 @@ usage: "중요한 결정, 새 사실, 범위 변경, 설계 방향 변경이 생
 - Markdown 보기의 블록별 입력 패널을 CodeMirror 6 연속 편집기로 바꿨다. 세션의 Markdown 문자열을 기준 데이터로 유지하고, GFM Lezer 트리·Decoration으로 활성 문법 블록은 원문, 비활성 영역은 서식으로 표시한다. 체크리스트는 원문 표식만 바꾸며 미지원 구문은 원문 편집을 유지한다.
 - 보기·모바일 원본 CodeMirror의 줄바꿈 보존, 다중 외부 변경 위치 매핑, IME 중 외부 변경 병합, 탭 복원 시 선택·스크롤 복원을 보강했다. 위험한 링크와 미지원 블록·컨테이너 문법은 표식을 숨기지 않고 원문으로 유지한다. 원문 보존·왕복 편집·Undo/Redo·내보내기·IME 병합 회귀 테스트를 추가했다. PWA 린트·타입 검사·36개 테스트와 루트·Pages 하위 경로 빌드 검사가 통과했다. Windows 브라우저 URL을 Computer Use가 안전하게 판별하지 못해 실제 시각·클릭 입력과 한글 IME 수동 확인은 남았다. [구현 계획과 검증 결과](../GOAL.md#149-현재-검증과-남은-확인)
 - 배포 화면 피드백을 반영해 Markdown 보기의 자동 줄바꿈과 편집 중인 블록·현재 행 강조를 추가했다. 비활성 코드 블록에는 시작·끝 경계를 표시하며 모든 시각 효과는 Decoration으로 적용해 문서 원문을 바꾸지 않는다. PWA 전용 검사·39개 테스트·루트 및 Pages 하위 경로 빌드가 통과했고 [Actions #17](https://github.com/m00nlygreat/the_viewer/actions/runs/40745860680)에서 배포를 완료했다.
-- 원본 탭에서 Monaco가 짧은 CSS hex 색상을 토큰 색으로 거부하는 오류를 확인했다. 테마 색상은 Monaco가 받기 전에 정규화하고 `#fff`·유효한 전체 hex·잘못된 값의 fallback 회귀 테스트를 추가했다.
+- 원본 탭에서 Monaco가 짧은 CSS hex 색상을 토큰 색으로 거부하는 오류를 확인했다. 테마 색상은 Monaco가 받기 전에 정규화하고 `#fff`·유효한 전체 hex·잘못된 값의 fallback 회귀 테스트를 추가했다. PWA 전용 42개 테스트·빌드가 통과했고 [Actions #19](https://github.com/m00nlygreat/the_viewer/actions/runs/40849188214) 배포 후 SourceEditor 청크 해시가 공개 빌드와 일치함을 확인했다.
 
 ## 2026-10-28
 
