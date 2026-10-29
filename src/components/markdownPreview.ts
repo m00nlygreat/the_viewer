@@ -148,6 +148,12 @@ export function buildMarkdownPreviewDecorations(state: EditorState, composingPos
     if (to > from) decorations.push(Decoration.mark({ class: className, ...(attributes ? { tagName: 'a', attributes } : {}) }).range(from, to))
   }
 
+  const addBlockLineClasses = (block: MarkdownNode) => {
+    const heading = block.name.match(/^ATXHeading([1-6])$/u) ?? block.name.match(/^SetextHeading([12])$/u)
+    if (heading) addLineClass(block.from, block.to, `cm-md-heading-${heading[1]}`)
+    if (block.name === 'Blockquote') addLineClass(block.from, block.to, 'cm-md-blockquote')
+  }
+
   const hideMarkerAndSpace = (from: number, to: number) => {
     let end = to
     while (end < state.doc.length && (state.doc.sliceString(end, end + 1) === ' ' || state.doc.sliceString(end, end + 1) === '\t')) end += 1
@@ -232,18 +238,14 @@ export function buildMarkdownPreviewDecorations(state: EditorState, composingPos
   }
 
   for (let block = tree.topNode.firstChild; block; block = block.nextSibling) {
+    const canPreviewBlock = !overlapsFrontmatter(block, frontmatter) && supportsPreview(block.name) && !startsUnknownContainerDirective(state, block)
+    if (canPreviewBlock) addBlockLineClasses(block)
+
     if (isPositionInBlock(state, block.from, block.to, editingPosition)) {
-      if (!overlapsFrontmatter(block, frontmatter) && supportsPreview(block.name) && !startsUnknownContainerDirective(state, block)) {
-        if (block.name === 'Blockquote') addLineClass(block.from, block.to, 'cm-md-blockquote')
-        visit(block, editingLine)
-      }
+      if (canPreviewBlock) visit(block, editingLine)
       continue
     }
-    if (overlapsFrontmatter(block, frontmatter)) continue
-    if (!supportsPreview(block.name) || startsUnknownContainerDirective(state, block)) continue
-    const heading = block.name.match(/^ATXHeading([1-6])$/u) ?? block.name.match(/^SetextHeading([12])$/u)
-    if (heading) addLineClass(block.from, block.to, `cm-md-heading-${heading[1]}`)
-    if (block.name === 'Blockquote') addLineClass(block.from, block.to, 'cm-md-blockquote')
+    if (!canPreviewBlock) continue
     visit(block)
   }
 
