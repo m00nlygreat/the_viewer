@@ -13,8 +13,9 @@ export interface MarkdownTableSnapshot {
 export class MarkdownTableState {
   private snapshot: MarkdownTableSnapshot
   private readonly listeners = new Set<() => void>()
+  private view: EditorView | null = null
 
-  constructor(private view: EditorView, from: number, to: number, source: string, theme: 'light' | 'dark') {
+  constructor(from: number, to: number, source: string, theme: 'light' | 'dark') {
     const model = parseMarkdownTable(source)
     if (!model) throw new Error('Invalid Markdown table block')
     this.snapshot = { from, to, source, model, editing: false, theme }
@@ -27,11 +28,12 @@ export class MarkdownTableState {
     return () => this.listeners.delete(listener)
   }
 
-  update(view: EditorView, from: number, to: number, source: string, theme: 'light' | 'dark'): void {
+  attachView(view: EditorView): void { this.view = view }
+
+  update(from: number, to: number, source: string, theme: 'light' | 'dark'): void {
     const model = parseMarkdownTable(source)
     if (!model) return
-    if (this.view === view && this.snapshot.from === from && this.snapshot.to === to && this.snapshot.source === source && this.snapshot.theme === theme) return
-    this.view = view
+    if (this.snapshot.from === from && this.snapshot.to === to && this.snapshot.source === source && this.snapshot.theme === theme) return
     this.snapshot = { ...this.snapshot, from, to, source, model, theme }
     this.emit()
   }
@@ -47,7 +49,7 @@ export class MarkdownTableState {
   }
 
   private replaceSource(source: string, group: 'typing' | 'command'): void {
-    if (source === this.snapshot.source) return
+    if (source === this.snapshot.source || !this.view) return
     this.view.dispatch({
       changes: { from: this.snapshot.from, to: this.snapshot.to, insert: source },
       userEvent: group === 'command' ? 'input.format' : 'input.type'

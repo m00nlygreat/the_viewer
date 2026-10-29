@@ -1,5 +1,5 @@
 import { createRoot, type Root } from 'react-dom/client'
-import { WidgetType } from '@codemirror/view'
+import { WidgetType, type EditorView } from '@codemirror/view'
 import { MarkdownTableBlock } from '../features/MarkdownTableGrid'
 import type { MarkdownTableState } from './markdownTableState'
 
@@ -12,7 +12,8 @@ export class MarkdownTableWidget extends WidgetType {
     return other instanceof MarkdownTableWidget && other.table === this.table
   }
 
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
+    this.table.attachView(view)
     const element = document.createElement('div')
     element.className = 'cm-md-table-widget'
     const root = createRoot(element)

@@ -1,5 +1,5 @@
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
-import { StateEffect, type ChangeDesc, type EditorState, type Range } from '@codemirror/state'
+import { StateEffect, StateField, type ChangeDesc, type EditorState, type Range } from '@codemirror/state'
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view'
 import { markdownLinkAttributes, renderMarkdown } from '../domain/markdown'
 import { parseMarkdownTable } from '../domain/formats/markdownTable'
@@ -122,8 +122,7 @@ export function taskMarkerRangesForSelection(state: EditorState): Array<{ from: 
 
 export function buildMarkdownPreviewDecorations(
   state: EditorState,
-  composingPosition: number | null = null,
-  tableStates?: ReadonlyMap<number, MarkdownTableState>
+  composingPosition: number | null = null
 ): DecorationSet {
   const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
   const frontmatter = frontmatterRange(state)
@@ -170,19 +169,17 @@ export function buildMarkdownPreviewDecorations(
   const editingPosition = composingPosition ?? state.selection.main.head
   const activeLine = state.doc.lineAt(editingPosition)
   const editingLine = { from: activeLine.from, to: activeLine.to }
-  const editingRenderedTable = [...(tableStates?.values() ?? [])].some((table) => {
-    const range = table.getSnapshot()
-    return editingPosition >= range.from && editingPosition <= range.to
-  })
+  let editingRenderedTable = false
+  tree.iterate({ enter: (node) => {
+    if (node.name === 'Table' && editingPosition >= node.from && editingPosition <= node.to && !overlapsFrontmatter(node, frontmatter)) {
+      editingRenderedTable = true
+    }
+  } })
   if (!editingRenderedTable) addLineClass(editingLine.from, editingLine.to, 'cm-md-editing-block')
 
   const visit = (node: MarkdownNode, editingLine?: { from: number; to: number }): void => {
     const overlapsEditingLine = (from: number, to: number) => Boolean(editingLine && from < editingLine.to && to > editingLine.from)
-    if (node.name === 'Table') {
-      const table = tableStates?.get(node.from)
-      if (table && node.to > node.from) decorations.push(Decoration.replace({ widget: new MarkdownTableWidget(table), inclusive: false, block: true }).range(node.from, node.to))
-      return
-    }
+    if (node.name === 'Table') return
     if (node.name === 'FencedCode') {
       addLineClass(node.from, node.to, 'cm-md-code-block')
       const firstLine = state.doc.lineAt(node.from)
@@ -267,32 +264,50 @@ export function buildMarkdownPreviewDecorations(
   return Decoration.set(decorations, true)
 }
 
+interface MarkdownTableDecorationValue {
+  tableStates: Map<number, MarkdownTableState>
+  decorations: DecorationSet
+}
+
+function buildMarkdownTableDecorationValue(
+  state: EditorState,
+  theme: 'light' | 'dark',
+  previous = new Map<number, MarkdownTableState>(),
+  changes?: ChangeDesc
+): MarkdownTableDecorationValue {
+  const mappedPrevious = new Map<number, MarkdownTableState>()
+  for (const [from, table] of previous) mappedPrevious.set(changes ? changes.mapPos(from, -1) : from, table)
+  const tableStates = new Map<number, MarkdownTableState>()
+  const ranges: Range<Decoration>[] = []
+  const frontmatter = frontmatterRange(state)
+  const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
+
+  tree.iterate({ enter: (node) => {
+    if (node.name !== 'Table' || overlapsFrontmatter(node, frontmatter)) return
+    const source = state.doc.sliceString(node.from, node.to)
+    if (!source.trim() || !parseMarkdownTable(source)) return
+    const table = mappedPrevious.get(node.from) ?? new MarkdownTableState(node.from, node.to, source, theme)
+    table.update(node.from, node.to, source, theme)
+    tableStates.set(node.from, table)
+    if (node.to > node.from) ranges.push(Decoration.replace({ widget: new MarkdownTableWidget(table), inclusive: false, block: true }).range(node.from, node.to))
+  } })
+
+  return { tableStates, decorations: Decoration.set(ranges, true) }
+}
+
+function markdownTableDecorations(theme: 'light' | 'dark') {
+  return StateField.define<MarkdownTableDecorationValue>({
+    create: (state) => buildMarkdownTableDecorationValue(state, theme),
+    update: (value, transaction) => buildMarkdownTableDecorationValue(transaction.state, theme, value.tableStates, transaction.changes),
+    provide: (field) => EditorView.decorations.from(field, (value) => value.decorations)
+  })
+}
+
 class MarkdownPreviewPlugin {
   decorations: DecorationSet
   private composingPosition: number | null = null
-  private tableStates = new Map<number, MarkdownTableState>()
 
-  constructor(view: EditorView, private readonly theme: 'light' | 'dark') {
-    this.updateTableStates(view)
-    this.decorations = buildMarkdownPreviewDecorations(view.state, null, this.tableStates)
-  }
-
-  private updateTableStates(view: EditorView, changes?: ChangeDesc): void {
-    const previous = new Map<number, MarkdownTableState>()
-    for (const [from, table] of this.tableStates) previous.set(changes ? changes.mapPos(from, -1) : from, table)
-    const next = new Map<number, MarkdownTableState>()
-    const frontmatter = frontmatterRange(view.state)
-    const tree = ensureSyntaxTree(view.state, view.state.doc.length, 40) ?? syntaxTree(view.state)
-    tree.iterate({ enter: (node) => {
-      if (node.name !== 'Table' || overlapsFrontmatter(node, frontmatter)) return
-      const source = view.state.doc.sliceString(node.from, node.to)
-      if (!source.trim() || !parseMarkdownTable(source)) return
-      const table = previous.get(node.from) ?? new MarkdownTableState(view, node.from, node.to, source, this.theme)
-      table.update(view, node.from, node.to, source, this.theme)
-      next.set(node.from, table)
-    } })
-    this.tableStates = next
-  }
+  constructor(view: EditorView) { this.decorations = buildMarkdownPreviewDecorations(view.state) }
 
   update(update: ViewUpdate): void {
     if (update.docChanged && this.composingPosition !== null) this.composingPosition = update.changes.mapPos(this.composingPosition, 1)
@@ -301,16 +316,16 @@ class MarkdownPreviewPlugin {
         if (effect.is(setCompositionPosition)) this.composingPosition = effect.value
       }
     }
-    this.updateTableStates(update.view, update.changes)
     if (update.docChanged || update.selectionSet || update.viewportChanged || update.transactions.length) {
-      this.decorations = buildMarkdownPreviewDecorations(update.state, this.composingPosition, this.tableStates)
+      this.decorations = buildMarkdownPreviewDecorations(update.state, this.composingPosition)
     }
   }
 }
 
 export function markdownLivePreview(theme: 'light' | 'dark') {
   return [
-    ViewPlugin.define((view) => new MarkdownPreviewPlugin(view, theme), { decorations: (plugin) => plugin.decorations }),
+    markdownTableDecorations(theme),
+    ViewPlugin.fromClass(MarkdownPreviewPlugin, { decorations: (plugin) => plugin.decorations }),
     EditorView.domEventHandlers({
       compositionstart(_event, view) {
         view.dispatch({ effects: setCompositionPosition.of(view.state.selection.main.head) })
