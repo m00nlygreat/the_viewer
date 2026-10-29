@@ -660,7 +660,7 @@ export function App() {
 
       {activeDocument ? <>
         <div id={`document-panel-${activeDocument.id}`} className="document-workspace" key={activeDocument.id} role="tabpanel" aria-label={`${modeLabel[activeDocument.mode]} · ${activeDocument.name}`} tabIndex={0}>
-          {activeDocument.parseState === 'pending' && <div className="source-diagnostic" role="status"><span>{activeDocument.format === 'md' ? 'Markdown을 확인하고 있습니다. 편집은 계속할 수 있습니다.' : '최신 원문을 해석하고 있습니다. 마지막으로 유효한 보기를 표시합니다.'}</span></div>}
+          {activeDocument.parseState === 'pending' && !(activeDocument.format === 'md' && activeDocument.mode === 'view') && <div className="source-diagnostic" role="status"><span>최신 원문을 해석하고 있습니다. 편집은 계속할 수 있습니다.</span></div>}
           {activeDocument.parseState === 'error' && <div className="source-diagnostic" role="alert"><span>원문을 해석하지 못했습니다. 마지막 유효 보기는 유지되며 구조 편집은 잠깁니다.</span><small>{activeDocument.diagnostics.find((item) => item.severity === 'error')?.message ?? activeDocument.sourceError}</small></div>}
           {activeDocument.parseState === 'ready' && activeDocument.diagnostics.some((item) => item.severity === 'warning') && <div className="inline-warning" role="status">진단 {activeDocument.diagnostics.filter((item) => item.severity === 'warning').length}개 · {activeDocument.diagnostics.find((item) => item.severity === 'warning')?.message}</div>}
           <Suspense fallback={null}>

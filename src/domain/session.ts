@@ -30,8 +30,18 @@ export function historyEntry(document: ViewerDocument): HistoryEntry {
 
 export function applySourceEdit(documentId: string, nextText: string, document: ViewerDocument): ViewerDocument {
   if (document.id !== documentId || document.text === nextText) return document
+  const revision = document.revision + 1
+  const isMarkdown = document.format === 'md'
   return {
-    ...document, text: nextText, revision: document.revision + 1, textRevision: document.revision + 1, parseState: 'pending', diagnostics: [], sourceError: undefined,
+    ...document,
+    text: nextText,
+    model: isMarkdown ? { text: nextText } : document.model,
+    revision,
+    textRevision: revision,
+    modelRevision: isMarkdown ? revision : document.modelRevision,
+    parseState: isMarkdown ? 'ready' : 'pending',
+    diagnostics: [],
+    sourceError: undefined,
     isDirty: nextText !== document.savedText, lastEditedAt: Date.now()
   }
 }

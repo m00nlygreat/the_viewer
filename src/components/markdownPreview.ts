@@ -298,7 +298,9 @@ function buildMarkdownTableDecorationValue(
 function markdownTableDecorations(theme: 'light' | 'dark') {
   return StateField.define<MarkdownTableDecorationValue>({
     create: (state) => buildMarkdownTableDecorationValue(state, theme),
-    update: (value, transaction) => buildMarkdownTableDecorationValue(transaction.state, theme, value.tableStates, transaction.changes),
+    update: (value, transaction) => transaction.docChanged
+      ? buildMarkdownTableDecorationValue(transaction.state, theme, value.tableStates, transaction.changes)
+      : value,
     provide: (field) => EditorView.decorations.from(field, (value) => value.decorations)
   })
 }
@@ -311,14 +313,16 @@ class MarkdownPreviewPlugin {
 
   update(update: ViewUpdate): void {
     if (update.docChanged && this.composingPosition !== null) this.composingPosition = update.changes.mapPos(this.composingPosition, 1)
+    let needsRefresh = update.docChanged || update.selectionSet
     for (const transaction of update.transactions) {
       for (const effect of transaction.effects) {
-        if (effect.is(setCompositionPosition)) this.composingPosition = effect.value
+        if (effect.is(setCompositionPosition) && effect.value !== this.composingPosition) {
+          this.composingPosition = effect.value
+          needsRefresh = true
+        }
       }
     }
-    if (update.docChanged || update.selectionSet || update.viewportChanged || update.transactions.length) {
-      this.decorations = buildMarkdownPreviewDecorations(update.state, this.composingPosition)
-    }
+    if (needsRefresh) this.decorations = buildMarkdownPreviewDecorations(update.state, this.composingPosition)
   }
 }
 
