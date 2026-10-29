@@ -234,6 +234,7 @@ export function buildMarkdownPreviewDecorations(state: EditorState, composingPos
   for (let block = tree.topNode.firstChild; block; block = block.nextSibling) {
     if (isPositionInBlock(state, block.from, block.to, editingPosition)) {
       if (!overlapsFrontmatter(block, frontmatter) && supportsPreview(block.name) && !startsUnknownContainerDirective(state, block)) {
+        if (block.name === 'Blockquote') addLineClass(block.from, block.to, 'cm-md-blockquote')
         visit(block, editingLine)
       }
       continue
