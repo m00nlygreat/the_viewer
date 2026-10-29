@@ -102,6 +102,26 @@ function isActiveBlock(
     : range.from < to && range.to > from)
 }
 
+function activePositionInList(
+  from: number,
+  to: number,
+  ranges: EditorState['selection']['ranges'],
+  composingPosition: number | null
+): number | null {
+  if (composingPosition !== null && composingPosition >= from && composingPosition <= to) {
+    return Math.min(composingPosition, Math.max(from, to - 1))
+  }
+  for (const range of ranges) {
+    if (range.empty && range.head >= from && range.head <= to) {
+      return Math.min(range.head, Math.max(from, to - 1))
+    }
+    if (!range.empty && range.from < to && range.to > from) {
+      return Math.min(Math.max(range.head, from), Math.max(from, to - 1))
+    }
+  }
+  return null
+}
+
 export function taskMarkerRangesForSelection(state: EditorState): Array<{ from: number; to: number; checked: boolean }> {
   const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
   const ranges = state.selection.ranges
@@ -159,7 +179,8 @@ export function buildMarkdownPreviewDecorations(state: EditorState, composingPos
     hide(from, end)
   }
 
-  const visit = (node: MarkdownNode): void => {
+  const visit = (node: MarkdownNode, editingLine?: { from: number; to: number }): void => {
+    const overlapsEditingLine = (from: number, to: number) => Boolean(editingLine && from < editingLine.to && to > editingLine.from)
     if (node.name === 'Table' || node.name === 'FencedCode') {
       if (node.name === 'FencedCode') {
         addLineClass(node.from, node.to, 'cm-md-code-block')
@@ -171,15 +192,17 @@ export function buildMarkdownPreviewDecorations(state: EditorState, composingPos
       return
     }
     if (node.name === 'Image') {
-      const rawImage = state.doc.sliceString(node.from, node.to)
-      decorations.push(Decoration.replace({ widget: new ImagePreviewWidget(rawImage), inclusive: false }).range(node.from, node.to))
+      if (!overlapsEditingLine(node.from, node.to)) {
+        const rawImage = state.doc.sliceString(node.from, node.to)
+        decorations.push(Decoration.replace({ widget: new ImagePreviewWidget(rawImage), inclusive: false }).range(node.from, node.to))
+      }
       return
     }
     if (node.name === 'StrongEmphasis' || node.name === 'Emphasis' || node.name === 'Strikethrough' || node.name === 'InlineCode') {
       const markerNames = node.name === 'InlineCode' ? new Set(['CodeMark'])
         : node.name === 'Strikethrough' ? new Set(['StrikethroughMark']) : new Set(['EmphasisMark'])
       const markerNodes = descendants(node).filter((child) => markerNames.has(child.name))
-      if (markerNodes.length >= 2) {
+      if (markerNodes.length >= 2 && !overlapsEditingLine(node.from, node.to)) {
         markerNodes.forEach((child) => hide(child.from, child.to))
         const className = node.name === 'StrongEmphasis' ? 'cm-md-bold'
           : node.name === 'Emphasis' ? 'cm-md-italic'
@@ -190,7 +213,7 @@ export function buildMarkdownPreviewDecorations(state: EditorState, composingPos
       const children = descendants(node)
       const linkMarks = children.filter((child) => child.name === 'LinkMark')
       const urls = children.filter((child) => child.name === 'URL')
-      if (linkMarks.length >= 2) {
+      if (linkMarks.length >= 2 && !overlapsEditingLine(node.from, node.to)) {
         const url = urls[0] ? state.doc.sliceString(urls[0].from, urls[0].to) : ''
         const attrs = url ? markdownLinkAttributes(url) : null
         if (attrs) {
@@ -201,30 +224,42 @@ export function buildMarkdownPreviewDecorations(state: EditorState, composingPos
       }
     } else if (node.name === 'TaskMarker') {
       const marker = state.doc.sliceString(node.from, node.to)
-      if (marker === '[ ]' || marker === '[x]' || marker === '[X]') {
+      if ((marker === '[ ]' || marker === '[x]' || marker === '[X]') && !overlapsEditingLine(node.from, node.to)) {
         decorations.push(Decoration.replace({ widget: new TaskCheckboxWidget(marker !== '[ ]', node.from), inclusive: false }).range(node.from, node.to))
         addLineClass(node.from, node.to, 'cm-md-task-line')
       }
       return
     } else if (node.name === 'ListMark') {
-      const marker = state.doc.sliceString(node.from, node.to)
-      const display = /^\d+[.)]$/u.test(marker) ? marker : '•'
-      decorations.push(Decoration.replace({ widget: new MarkerWidget(display, 'cm-md-list-marker'), inclusive: false }).range(node.from, node.to))
-      addLineClass(node.from, node.to, 'cm-md-list-line')
+      if (!overlapsEditingLine(node.from, node.to)) {
+        const marker = state.doc.sliceString(node.from, node.to)
+        const display = /^\d+[.)]$/u.test(marker) ? marker : '•'
+        decorations.push(Decoration.replace({ widget: new MarkerWidget(display, 'cm-md-list-marker'), inclusive: false }).range(node.from, node.to))
+        addLineClass(node.from, node.to, 'cm-md-list-line')
+      }
       return
     } else if (node.name === 'QuoteMark') {
-      hideMarkerAndSpace(node.from, node.to)
-      addLineClass(node.from, node.to, 'cm-md-quote-line')
+      if (!overlapsEditingLine(node.from, node.to)) {
+        hideMarkerAndSpace(node.from, node.to)
+        addLineClass(node.from, node.to, 'cm-md-quote-line')
+      }
       return
     } else if (node.name === 'HeaderMark') {
-      hideMarkerAndSpace(node.from, node.to)
+      if (!overlapsEditingLine(node.from, node.to)) hideMarkerAndSpace(node.from, node.to)
       return
     }
 
-    for (let child = node.firstChild; child; child = child.nextSibling) visit(child)
+    for (let child = node.firstChild; child; child = child.nextSibling) visit(child, editingLine)
   }
 
   for (let block = tree.topNode.firstChild; block; block = block.nextSibling) {
+    const isList = block.name === 'BulletList' || block.name === 'OrderedList'
+    const listPosition = isList ? activePositionInList(block.from, block.to, selections, composingPosition) : null
+    if (listPosition !== null) {
+      const line = state.doc.lineAt(listPosition)
+      addLineClass(line.from, line.to, 'cm-md-editing-block')
+      visit(block, { from: line.from, to: line.to })
+      continue
+    }
     if (isActiveBlock(block.from, block.to, selections, composingPosition)) {
       addLineClass(block.from, block.to, 'cm-md-editing-block')
       continue

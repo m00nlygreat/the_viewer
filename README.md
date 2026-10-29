@@ -50,4 +50,4 @@ Chrome 128 이상에서 위 ZIP을 내려받아 압축을 풀고 `chrome://exten
 - 형식 및 표시명은 [용어](wiki/TERMS.md), 현재 제품 요구사항은 [요구사항](wiki/REQUIREMENT.md)에 정리합니다.
 - 의존성별 고지는 `public/licenses/THIRD_PARTY_NOTICES.md`와 빌드 산출물의 `licenses/`에 있습니다.
 - 프로젝트 자체 소스 코드 라이선스는 별도 `LICENSE` 파일로 지정하지 않았습니다.
-- 기준 목업과 구현 계획은 [목업](mockup/The%20Viewer.html), [GOAL](GOAL.md)에서 확인할 수 있습니다.
+- 기준 목업과 현재 요구사항은 [목업](mockup/The%20Viewer.html), [요구사항](wiki/REQUIREMENT.md)에서 확인할 수 있습니다.
