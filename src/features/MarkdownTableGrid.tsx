@@ -63,6 +63,7 @@ function RenderedMarkdownTable({ table }: Props) {
 
 function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableState; model: MarkdownTableModel; theme: 'light' | 'dark' }) {
   const gridRef = useRef<DataEditorRef>(null)
+  const editorRoot = useRef<HTMLElement>(null)
   const [selection, setSelection] = useState<GridSelection>(() => ({
     ...emptyGridSelection,
     current: { cell: [0, 0], range: { x: 0, y: 0, width: 1, height: 1 }, rangeStack: [] }
@@ -97,6 +98,21 @@ function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableStat
       window.cancelAnimationFrame(focusFrame)
       window.cancelAnimationFrame(confirmFocusFrame)
     }
+  }, [])
+
+  useLayoutEffect(() => {
+    const keepEnterInGrid = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' || event.isComposing) return
+      const root = editorRoot.current
+      const content = root?.closest('.cm-content')
+      const target = event.target
+      if (!root || !content || !(target instanceof Node) || root.contains(target) || !content.contains(target)) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      gridRef.current?.focus()
+    }
+    document.addEventListener('keydown', keepEnterInGrid, true)
+    return () => document.removeEventListener('keydown', keepEnterInGrid, true)
   }, [])
 
   const gridTheme = useMemo<GridTheme>(() => {
@@ -216,7 +232,7 @@ function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableStat
     setEditingHeader(null)
   }
 
-  return <section className="cm-md-table-editor" aria-label="Markdown 표 편집기">
+  return <section ref={editorRoot} className="cm-md-table-editor" aria-label="Markdown 표 편집기">
     <div className="cm-md-table-editor-toolbar">
       <span>표 편집</span>
       {editingHeader !== null && <input autoFocus aria-label="열 이름 변경" value={headerDraft} onChange={(event) => setHeaderDraft(event.target.value)} onBlur={commitHeader} onKeyDown={(event) => {
