@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import * as monaco from 'monaco-editor/editor/editor.api.js'
-import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker'
 import 'monaco-editor/languages/definitions/markdown/register.js'
 import '../../node_modules/monaco-editor/min/vs/editor/editor.main.css'
 import type { ParseDiagnostic } from '../domain/types'
 import type { Format } from '../platform/fileTypes'
 import { CodeEditor } from './CodeEditor'
-import { CSV_COLUMN_DARK_COLORS, CSV_COLUMN_LIGHT_COLORS } from './csvColumnColors'
 import { registerCsvMonacoLanguage } from './csvMonacoLanguage'
-import { normalizeMonacoThemeColor } from './monacoThemeColors'
+import { configureMonacoWorker, defineViewerMonacoThemes, monaco } from './monacoRuntime'
 import { registerSourceEditorDisposer } from './sourceEditorRegistry'
 import { applyLineBasedTextChanges, createTextPositionMapper, findTextChanges, mergeTextDuringComposition, normalizeLineEndings } from './editorText'
 
@@ -34,7 +31,6 @@ interface SavedEditorState {
 
 const models = new Map<string, monaco.editor.ITextModel>()
 const editorStates = new Map<string, SavedEditorState>()
-let workerConfigured = false
 
 function disposeSourceEditorModel(documentId: string): void {
   const model = models.get(documentId)
@@ -120,10 +116,7 @@ export default function SourceEditor({ documentId, format, csvDelimiter = ',', v
 
   useEffect(() => {
     if (mobile || !host.current) return
-    if (!workerConfigured) {
-      ;(globalThis as typeof globalThis & { MonacoEnvironment?: { getWorker: () => Worker } }).MonacoEnvironment = { getWorker: () => new EditorWorker() }
-      workerConfigured = true
-    }
+    configureMonacoWorker()
     const language = format === 'md' ? 'markdown' : format === 'csv' ? registerCsvMonacoLanguage(csvDelimiter) : 'plaintext'
     const uri = monaco.Uri.parse(`inmemory://the-viewer/${encodeURIComponent(documentId)}.${format}`)
     let model = models.get(documentId)
@@ -137,38 +130,7 @@ export default function SourceEditor({ documentId, format, csvDelimiter = ',', v
     editorText.current = valueRef.current
     registerSourceEditorDisposer(documentId, () => disposeSourceEditorModel(documentId))
 
-    monaco.editor.defineTheme('the-viewer-dark', {
-      base: 'vs-dark', inherit: true, rules: [
-        ...CSV_COLUMN_DARK_COLORS.map((color, index) => ({ token: `column${index}.csv`, foreground: color.slice(1) })),
-        { token: 'separator.csv', foreground: 'A4AAF7' },
-        { token: 'string.csv', foreground: 'CE9178' },
-        { token: 'string.quote.csv', foreground: 'E0A33A' },
-        { token: 'string.escape.csv', foreground: 'E0A33A' }
-      ], colors: {
-        'editor.background': cssColor('--panel', '#0B0B0C'),
-        'editor.foreground': cssColor('--text', '#E6E6E8'),
-        'editorLineNumber.foreground': cssColor('--text-weak', '#777980'),
-        'editorLineNumber.activeForeground': cssColor('--text-strong', '#F2F2F3'),
-        'editorCursor.foreground': cssColor('--accent', '#A4AAF7'),
-        'editor.selectionBackground': cssColor('--selection', '#353859')
-      }
-    })
-    monaco.editor.defineTheme('the-viewer-light', {
-      base: 'vs', inherit: true, rules: [
-        ...CSV_COLUMN_LIGHT_COLORS.map((color, index) => ({ token: `column${index}.csv`, foreground: color.slice(1) })),
-        { token: 'separator.csv', foreground: '4A52C4' },
-        { token: 'string.csv', foreground: '287A46' },
-        { token: 'string.quote.csv', foreground: 'A0650F' },
-        { token: 'string.escape.csv', foreground: 'A0650F' }
-      ], colors: {
-        'editor.background': cssColor('--panel', '#FCFCFD'),
-        'editor.foreground': cssColor('--text', '#1C1D21'),
-        'editorLineNumber.foreground': cssColor('--text-weak', '#8A8B91'),
-        'editorLineNumber.activeForeground': cssColor('--text-strong', '#111216'),
-        'editorCursor.foreground': cssColor('--accent', '#4A52C4'),
-        'editor.selectionBackground': cssColor('--selection', '#D9DBF7')
-      }
-    })
+    defineViewerMonacoThemes()
     const editor = monaco.editor.create(host.current, {
       model,
       theme: themeRef.current === 'dark' ? 'the-viewer-dark' : 'the-viewer-light',
@@ -330,9 +292,4 @@ export default function SourceEditor({ documentId, format, csvDelimiter = ',', v
   return <div className="source-editor-host" ref={host} aria-label={label}>
     {mobile && <CodeEditor stateKey={`source:${documentId}`} value={value} onChange={onChange} markdownMode={format === 'md'} csvMode={format === 'csv'} csvDelimiter={csvDelimiter} label={label} onUndo={onUndo} onRedo={onRedo} />}
   </div>
-}
-
-function cssColor(name: string, fallback: string): string {
-  const value = typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(name)
-  return normalizeMonacoThemeColor(value, fallback)
 }

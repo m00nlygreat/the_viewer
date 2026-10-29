@@ -186,7 +186,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
         ...(markdownMode ? [markdown({ base: markdownLanguage })] : []),
         ...(csvMode ? csvEditorLanguage(csvDelimiter) : []),
         ...(livePreview ? [EditorView.lineWrapping] : []),
-        ...(livePreview ? markdownLivePreview(markdownTheme) : []),
+        ...(livePreview ? markdownLivePreview(markdownTheme, () => undo.current?.(), () => redo.current?.()) : []),
         EditorView.updateListener.of((update) => {
           if (!update.docChanged || syncing.current) return
           const localText = applyCodeMirrorChanges(update.startState, update.changes, editorText.current)

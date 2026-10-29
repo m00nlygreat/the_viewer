@@ -305,6 +305,7 @@
 - hasown@2.0.4 — MIT
 - hermes-estree@0.25.1 — MIT
 - hermes-parser@0.25.1 — MIT
+- highlight.js@11.12.0 — BSD-3-Clause
 - hookified@1.15.1 — MIT
 - hookified@2.2.0 — MIT
 - html-element-attributes@1.3.1 — MIT

@@ -3,6 +3,8 @@ import { StateEffect, StateField, type ChangeDesc, type EditorState, type Range 
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view'
 import { markdownLinkAttributes, renderMarkdown } from '../domain/markdown'
 import { parseMarkdownTable } from '../domain/formats/markdownTable'
+import { MarkdownCodeBlockState, type MarkdownCodeBlockContext } from './markdownCodeBlockState'
+import { MarkdownCodeBlockWidget } from './MarkdownCodeBlockWidget'
 import { MarkdownTableState } from './markdownTableState'
 import { MarkdownTableWidget } from './MarkdownTableWidget'
 
@@ -83,6 +85,26 @@ function overlapsFrontmatter(node: { from: number; to: number }, frontmatter: { 
   return Boolean(frontmatter && node.from < frontmatter.to && node.to > frontmatter.from)
 }
 
+function markdownCodeBlockContext(state: EditorState, node: MarkdownNode): MarkdownCodeBlockContext {
+  const children = descendants(node)
+  const firstCodeText = children.find((child) => child.name === 'CodeText')
+  const codeMarks = children.filter((child) => child.name === 'CodeMark')
+  const bodyPrefix = firstCodeText
+    ? state.doc.sliceString(state.doc.lineAt(firstCodeText.from).from, firstCodeText.from)
+    : ''
+  const closingMark = codeMarks.length > 1 ? codeMarks[codeMarks.length - 1] : null
+  const closingPrefix = closingMark
+    ? state.doc.sliceString(state.doc.lineAt(closingMark.from).from, closingMark.from)
+    : bodyPrefix
+  return { bodyPrefix, closingPrefix }
+}
+
+function markdownCodeBlockFrom(state: EditorState, from: number): number {
+  const line = state.doc.lineAt(from)
+  const prefix = state.doc.sliceString(line.from, from)
+  return /^[ \t]{0,3}$/u.test(prefix) ? line.from : from
+}
+
 function supportsPreview(blockName: string): boolean {
   return blockName === 'Paragraph' || blockName === 'BulletList' || blockName === 'OrderedList' ||
     blockName === 'Blockquote' || /^ATXHeading[1-6]$/u.test(blockName) || /^SetextHeading[12]$/u.test(blockName) ||
@@ -122,13 +144,18 @@ export function taskMarkerRangesForSelection(state: EditorState): Array<{ from: 
 
 export function buildMarkdownPreviewDecorations(
   state: EditorState,
-  composingPosition: number | null = null
+  composingPosition: number | null = null,
+  codeBlocksAreWidgets = false
 ): DecorationSet {
   const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
   const frontmatter = frontmatterRange(state)
   const lineClasses = new Map<number, Set<string>>()
   const decorations: Range<Decoration>[] = []
   const hidden = new Set<string>()
+  const codeWidgetRanges: Array<{ from: number; to: number }> = []
+  if (codeBlocksAreWidgets) tree.iterate({ enter: (node) => {
+    if (node.name === 'FencedCode' && !overlapsFrontmatter(node, frontmatter)) codeWidgetRanges.push({ from: markdownCodeBlockFrom(state, node.from), to: node.to })
+  } })
 
   const addLineClass = (from: number, to: number, className: string) => {
     const firstLine = state.doc.lineAt(from)
@@ -136,6 +163,7 @@ export function buildMarkdownPreviewDecorations(
     const lastLine = state.doc.lineAt(Math.min(lastPosition, state.doc.length))
     for (let number = firstLine.number; number <= lastLine.number; number += 1) {
       const line = state.doc.line(number)
+      if (codeWidgetRanges.some((range) => line.from >= range.from && line.from < range.to)) continue
       const names = lineClasses.get(line.from) ?? new Set<string>()
       names.add(className)
       lineClasses.set(line.from, names)
@@ -169,23 +197,25 @@ export function buildMarkdownPreviewDecorations(
   const editingPosition = composingPosition ?? state.selection.main.head
   const activeLine = state.doc.lineAt(editingPosition)
   const editingLine = { from: activeLine.from, to: activeLine.to }
-  let editingRenderedTable = false
+  let editingRenderedBlock = false
   tree.iterate({ enter: (node) => {
-    if (node.name === 'Table' && editingPosition >= node.from && editingPosition <= node.to && !overlapsFrontmatter(node, frontmatter)) {
-      editingRenderedTable = true
+    if ((node.name === 'Table' || node.name === 'FencedCode') && editingPosition >= node.from && editingPosition <= node.to && !overlapsFrontmatter(node, frontmatter)) {
+      editingRenderedBlock = true
     }
   } })
-  if (!editingRenderedTable) addLineClass(editingLine.from, editingLine.to, 'cm-md-editing-block')
+  if (!editingRenderedBlock) addLineClass(editingLine.from, editingLine.to, 'cm-md-editing-block')
 
   const visit = (node: MarkdownNode, editingLine?: { from: number; to: number }): void => {
     const overlapsEditingLine = (from: number, to: number) => Boolean(editingLine && from < editingLine.to && to > editingLine.from)
     if (node.name === 'Table') return
     if (node.name === 'FencedCode') {
-      addLineClass(node.from, node.to, 'cm-md-code-block')
-      const firstLine = state.doc.lineAt(node.from)
-      const lastLine = state.doc.lineAt(Math.max(node.from, node.to - 1))
-      addLineClass(firstLine.from, firstLine.to, 'cm-md-code-block-start')
-      addLineClass(lastLine.from, lastLine.to, 'cm-md-code-block-end')
+      if (!codeBlocksAreWidgets) {
+        addLineClass(node.from, node.to, 'cm-md-code-block')
+        const firstLine = state.doc.lineAt(node.from)
+        const lastLine = state.doc.lineAt(Math.max(node.from, node.to - 1))
+        addLineClass(firstLine.from, firstLine.to, 'cm-md-code-block-start')
+        addLineClass(lastLine.from, lastLine.to, 'cm-md-code-block-end')
+      }
       return
     }
     if (node.name === 'Image') {
@@ -305,11 +335,61 @@ function markdownTableDecorations(theme: 'light' | 'dark') {
   })
 }
 
+interface MarkdownCodeBlockDecorationValue {
+  codeBlocks: Map<number, MarkdownCodeBlockState>
+  decorations: DecorationSet
+}
+
+function buildMarkdownCodeBlockDecorationValue(
+  state: EditorState,
+  theme: 'light' | 'dark',
+  undo: () => void,
+  redo: () => void,
+  previous = new Map<number, MarkdownCodeBlockState>(),
+  changes?: ChangeDesc
+): MarkdownCodeBlockDecorationValue {
+  const mappedPrevious = new Map<number, MarkdownCodeBlockState>()
+  for (const [from, codeBlock] of previous) mappedPrevious.set(changes ? changes.mapPos(from, -1) : from, codeBlock)
+  const codeBlocks = new Map<number, MarkdownCodeBlockState>()
+  const ranges: Range<Decoration>[] = []
+  const frontmatter = frontmatterRange(state)
+  const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
+
+  const visit = (node: MarkdownNode): void => {
+    if (node.name === 'FencedCode') {
+      if (overlapsFrontmatter(node, frontmatter)) return
+      const from = markdownCodeBlockFrom(state, node.from)
+      const source = state.doc.sliceString(from, node.to)
+      if (!source.trim()) return
+      const context = markdownCodeBlockContext(state, node)
+      const codeBlock = mappedPrevious.get(from) ?? new MarkdownCodeBlockState(from, node.to, source, theme, undo, redo, context)
+      codeBlock.update(from, node.to, source, theme, context)
+      codeBlocks.set(from, codeBlock)
+      if (node.to > from) ranges.push(Decoration.replace({ widget: new MarkdownCodeBlockWidget(codeBlock), inclusive: false, block: true }).range(from, node.to))
+      return
+    }
+    for (let child = node.firstChild; child; child = child.nextSibling) visit(child)
+  }
+  for (let node = tree.topNode.firstChild; node; node = node.nextSibling) visit(node)
+
+  return { codeBlocks, decorations: Decoration.set(ranges, true) }
+}
+
+function markdownCodeBlockDecorations(theme: 'light' | 'dark', undo: () => void, redo: () => void) {
+  return StateField.define<MarkdownCodeBlockDecorationValue>({
+    create: (state) => buildMarkdownCodeBlockDecorationValue(state, theme, undo, redo),
+    update: (value, transaction) => transaction.docChanged
+      ? buildMarkdownCodeBlockDecorationValue(transaction.state, theme, undo, redo, value.codeBlocks, transaction.changes)
+      : value,
+    provide: (field) => EditorView.decorations.from(field, (value) => value.decorations)
+  })
+}
+
 class MarkdownPreviewPlugin {
   decorations: DecorationSet
   private composingPosition: number | null = null
 
-  constructor(view: EditorView) { this.decorations = buildMarkdownPreviewDecorations(view.state) }
+  constructor(view: EditorView) { this.decorations = buildMarkdownPreviewDecorations(view.state, null, true) }
 
   update(update: ViewUpdate): void {
     if (update.docChanged && this.composingPosition !== null) this.composingPosition = update.changes.mapPos(this.composingPosition, 1)
@@ -322,13 +402,14 @@ class MarkdownPreviewPlugin {
         }
       }
     }
-    if (needsRefresh) this.decorations = buildMarkdownPreviewDecorations(update.state, this.composingPosition)
+    if (needsRefresh) this.decorations = buildMarkdownPreviewDecorations(update.state, this.composingPosition, true)
   }
 }
 
-export function markdownLivePreview(theme: 'light' | 'dark') {
+export function markdownLivePreview(theme: 'light' | 'dark', undo: () => void = () => {}, redo: () => void = () => {}) {
   return [
     markdownTableDecorations(theme),
+    markdownCodeBlockDecorations(theme, undo, redo),
     ViewPlugin.fromClass(MarkdownPreviewPlugin, { decorations: (plugin) => plugin.decorations }),
     EditorView.domEventHandlers({
       compositionstart(_event, view) {
