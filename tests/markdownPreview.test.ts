@@ -145,16 +145,18 @@ describe('Markdown live preview decorations', () => {
     expect(collectDecorations(selectedFirst).some((item) => item.className === 'cm-md-bold')).toBe(true)
   })
 
-  it('leaves tables, fenced code, and frontmatter source intact while rendering blocked images safely', () => {
+  it('renders frontmatter while keeping tables and fenced code intact and blocking images safely', () => {
     const text = '---\ntitle: Note\n---\n\n| a | b |\n| - | - |\n| x | y |\n\n```ts\nconst x = 1\n```\n\n![cat](https://example.com/cat.png)\n'
     const state = makeState(text)
     const decorations = collectDecorations(state)
-    const frontmatterEnd = text.indexOf('\n\n')
+    const frontmatterEnd = text.indexOf('\n\n') + 2
     const tableStart = text.indexOf('| a')
     const tableEnd = text.indexOf('\n\n', tableStart)
     const codeStart = text.indexOf('```')
     const codeEnd = text.indexOf('\n\n', codeStart)
-    expect(decorations.some((item) => item.from < frontmatterEnd && item.to > 0)).toBe(false)
+    expect(decorations.filter((item) => item.from < frontmatterEnd && item.to > 0)).toEqual([
+      expect.objectContaining({ from: 0, to: frontmatterEnd, hasWidget: true })
+    ])
     expect(decorations.some((item) => item.from < tableEnd && item.to > tableStart && !item.className)).toBe(false)
     expect(decorations.some((item) => item.from < codeEnd && item.to > codeStart && !item.className)).toBe(false)
     expect(decorations.some((item) => item.hasWidget && item.from === text.indexOf('!['))).toBe(true)
@@ -182,12 +184,14 @@ describe('Markdown live preview decorations', () => {
     expect(state.doc.toString()).toBe(text)
   })
 
-  it('keeps BOM-prefixed frontmatter raw while previewing following blocks', () => {
+  it('renders BOM-prefixed frontmatter while previewing following blocks', () => {
     const text = '\uFEFF---\ntitle: **raw**\n---\n\nfocus\n\n**outside**\n'
     const state = makeState(text, text.indexOf('focus') + 2)
-    const frontmatterEnd = text.indexOf('\n\n')
+    const frontmatterEnd = text.indexOf('\n\n') + 2
     const decorations = collectDecorations(state)
-    expect(decorations.filter((item) => item.from < frontmatterEnd && item.to > 0)).toEqual([])
+    expect(decorations.filter((item) => item.from < frontmatterEnd && item.to > 0)).toEqual([
+      expect.objectContaining({ from: 0, to: frontmatterEnd, hasWidget: true })
+    ])
     expect(decorations.some((item) => item.className === 'cm-md-bold')).toBe(true)
     expect(state.doc.toString()).toBe(text)
   })

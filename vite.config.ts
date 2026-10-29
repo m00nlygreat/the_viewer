@@ -110,7 +110,7 @@ export default defineConfig(({ mode }) => {
       }
     },
     worker: { format: 'es' },
-    server: { host: '0.0.0.0' },
+    server: { host: '0.0.0.0', allowedHosts: true },
     preview: { host: '0.0.0.0' }
   }
 })

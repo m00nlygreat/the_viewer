@@ -2,6 +2,7 @@ import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
 import { StateEffect, StateField, type ChangeDesc, type EditorState, type Range } from '@codemirror/state'
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view'
 import { markdownLinkAttributes, renderMarkdown } from '../domain/markdown'
+import { detectMarkdownFrontmatter } from '../domain/formats/markdownFrontmatter'
 import { parseMarkdownTable } from '../domain/formats/markdownTable'
 import { MarkdownCodeBlockState, type MarkdownCodeBlockContext } from './markdownCodeBlockState'
 import { MarkdownCodeBlockWidget } from './MarkdownCodeBlockWidget'
@@ -31,6 +32,41 @@ class ImagePreviewWidget extends WidgetType {
     image.className = 'cm-md-image-preview'
     image.innerHTML = renderMarkdown(this.source)
     return image
+  }
+}
+
+class MarkdownFrontmatterWidget extends WidgetType {
+  constructor(private readonly content: string, private readonly from: number) { super() }
+  eq(other: WidgetType): boolean { return other instanceof MarkdownFrontmatterWidget && other.content === this.content && other.from === this.from }
+  toDOM(view: EditorView): HTMLElement {
+    const section = document.createElement('section')
+    section.className = 'markdown-frontmatter cm-md-frontmatter-widget'
+    section.setAttribute('aria-label', 'YAML frontmatter')
+
+    const label = document.createElement('div')
+    label.className = 'markdown-frontmatter-label'
+    label.textContent = 'YAML'
+
+    const edit = document.createElement('button')
+    edit.type = 'button'
+    edit.className = 'toolbar-button'
+    edit.textContent = 'YAML 원문 편집'
+    edit.addEventListener('mousedown', (event) => event.preventDefault())
+    edit.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      view.dispatch({ selection: { anchor: this.from } })
+      view.focus()
+    })
+    label.append(edit)
+
+    const pre = document.createElement('pre')
+    const code = document.createElement('code')
+    code.className = 'language-yaml'
+    code.textContent = this.content
+    pre.append(code)
+    section.append(label, pre)
+    return section
   }
 }
 
@@ -68,17 +104,8 @@ function descendants(node: MarkdownNode): MarkdownNode[] {
   return result
 }
 
-function frontmatterRange(state: EditorState): { from: number; to: number } | null {
-  if (!state.doc.lines) return null
-  const first = state.doc.line(1)
-  if (first.text.replace(/^\uFEFF/u, '').trim() !== '---') return null
-  for (let number = 2; number <= state.doc.lines; number += 1) {
-    const line = state.doc.line(number)
-    if (line.text.trim() !== '---' && line.text.trim() !== '...') continue
-    const next = number < state.doc.lines ? state.doc.line(number + 1).from : line.to
-    return { from: first.from, to: next }
-  }
-  return { from: first.from, to: state.doc.length }
+function frontmatterRange(state: EditorState) {
+  return detectMarkdownFrontmatter(state.doc.toString())
 }
 
 function overlapsFrontmatter(node: { from: number; to: number }, frontmatter: { from: number; to: number } | null): boolean {
@@ -149,12 +176,19 @@ export function buildMarkdownPreviewDecorations(
 ): DecorationSet {
   const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
   const frontmatter = frontmatterRange(state)
+  const editingPosition = composingPosition ?? state.selection.main.head
+  const activeLine = state.doc.lineAt(editingPosition)
+  const editingLine = { from: activeLine.from, to: activeLine.to }
   const lineClasses = new Map<number, Set<string>>()
   const decorations: Range<Decoration>[] = []
   const hidden = new Set<string>()
-  const codeWidgetRanges: Array<{ from: number; to: number }> = []
+  const widgetRanges: Array<{ from: number; to: number }> = []
+  if (frontmatter && (editingPosition < frontmatter.from || editingPosition >= frontmatter.to)) {
+    decorations.push(Decoration.replace({ widget: new MarkdownFrontmatterWidget(frontmatter.content, frontmatter.from), inclusive: false, block: true }).range(frontmatter.from, frontmatter.to))
+    widgetRanges.push(frontmatter)
+  }
   if (codeBlocksAreWidgets) tree.iterate({ enter: (node) => {
-    if (node.name === 'FencedCode' && !overlapsFrontmatter(node, frontmatter)) codeWidgetRanges.push({ from: markdownCodeBlockFrom(state, node.from), to: node.to })
+    if (node.name === 'FencedCode' && !overlapsFrontmatter(node, frontmatter)) widgetRanges.push({ from: markdownCodeBlockFrom(state, node.from), to: node.to })
   } })
 
   const addLineClass = (from: number, to: number, className: string) => {
@@ -163,11 +197,27 @@ export function buildMarkdownPreviewDecorations(
     const lastLine = state.doc.lineAt(Math.min(lastPosition, state.doc.length))
     for (let number = firstLine.number; number <= lastLine.number; number += 1) {
       const line = state.doc.line(number)
-      if (codeWidgetRanges.some((range) => line.from >= range.from && line.from < range.to)) continue
+      if (widgetRanges.some((range) => line.from >= range.from && line.from < range.to)) continue
       const names = lineClasses.get(line.from) ?? new Set<string>()
       names.add(className)
       lineClasses.set(line.from, names)
     }
+  }
+
+  const addNestedListLineClasses = (node: MarkdownNode, depth = 0): void => {
+    const isList = node.name === 'BulletList' || node.name === 'OrderedList'
+    const currentDepth = depth + (isList ? 1 : 0)
+    if (isList && currentDepth > 1) {
+      const firstLine = state.doc.lineAt(node.from)
+      const lastPosition = node.to > node.from ? node.to - 1 : node.to
+      const lastLine = state.doc.lineAt(Math.min(lastPosition, state.doc.length))
+      for (let number = firstLine.number; number <= lastLine.number; number += 1) {
+        const line = state.doc.line(number)
+        if (line.from === editingLine.from) continue
+        addLineClass(line.from, line.to, `cm-md-list-depth-${Math.min(currentDepth, 6)}`)
+      }
+    }
+    for (let child = node.firstChild; child; child = child.nextSibling) addNestedListLineClasses(child, currentDepth)
   }
 
   const hide = (from: number, to: number) => {
@@ -194,9 +244,6 @@ export function buildMarkdownPreviewDecorations(
     hide(from, end)
   }
 
-  const editingPosition = composingPosition ?? state.selection.main.head
-  const activeLine = state.doc.lineAt(editingPosition)
-  const editingLine = { from: activeLine.from, to: activeLine.to }
   let editingRenderedBlock = false
   tree.iterate({ enter: (node) => {
     if ((node.name === 'Table' || node.name === 'FencedCode') && editingPosition >= node.from && editingPosition <= node.to && !overlapsFrontmatter(node, frontmatter)) {
@@ -281,6 +328,7 @@ export function buildMarkdownPreviewDecorations(
   for (let block = tree.topNode.firstChild; block; block = block.nextSibling) {
     const canPreviewBlock = !overlapsFrontmatter(block, frontmatter) && supportsPreview(block.name) && !startsUnknownContainerDirective(state, block)
     if (canPreviewBlock) addBlockLineClasses(block)
+    if (canPreviewBlock && (block.name === 'BulletList' || block.name === 'OrderedList' || block.name === 'Blockquote')) addNestedListLineClasses(block)
 
     if (isPositionInBlock(state, block.from, block.to, editingPosition)) {
       if (canPreviewBlock) visit(block, editingLine)

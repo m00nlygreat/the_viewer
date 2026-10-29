@@ -1,5 +1,6 @@
 import DOMPurify from 'dompurify'
 import MarkdownIt from 'markdown-it'
+import { detectMarkdownFrontmatter } from './formats/markdownFrontmatter'
 
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: false, typographer: false })
 const safeLinkTarget = '_blank'
@@ -26,7 +27,15 @@ markdown.core.ruler.after('inline', 'gfm-task-markers', (state) => {
   }
 })
 
-export function renderMarkdownMarkup(source: string): string { return markdown.render(source) }
+function renderMarkdownFrontmatter(content: string): string {
+  return `<section class="markdown-frontmatter" aria-label="YAML frontmatter"><div class="markdown-frontmatter-label">YAML</div><pre><code class="language-yaml">${markdown.utils.escapeHtml(content)}</code></pre></section>`
+}
+
+export function renderMarkdownMarkup(source: string): string {
+  const frontmatter = detectMarkdownFrontmatter(source)
+  if (!frontmatter) return markdown.render(source)
+  return `${renderMarkdownFrontmatter(frontmatter.content)}${markdown.render(source.slice(frontmatter.to))}`
+}
 
 export function markdownLinkAttributes(url: string): { href: string; target: string; rel: string } | null {
   try {
