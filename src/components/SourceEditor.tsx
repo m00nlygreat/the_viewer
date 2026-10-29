@@ -6,6 +6,7 @@ import '../../node_modules/monaco-editor/min/vs/editor/editor.main.css'
 import type { ParseDiagnostic } from '../domain/types'
 import type { Format } from '../platform/fileTypes'
 import { CodeEditor } from './CodeEditor'
+import { registerCsvMonacoLanguage } from './csvMonacoLanguage'
 import { normalizeMonacoThemeColor } from './monacoThemeColors'
 import { registerSourceEditorDisposer } from './sourceEditorRegistry'
 import { applyLineBasedTextChanges, createTextPositionMapper, findTextChanges, mergeTextDuringComposition, normalizeLineEndings } from './editorText'
@@ -13,6 +14,7 @@ import { applyLineBasedTextChanges, createTextPositionMapper, findTextChanges, m
 interface Props {
   documentId: string
   format: Format
+  csvDelimiter?: string
   value: string
   diagnostics: ParseDiagnostic[]
   theme: 'light' | 'dark'
@@ -89,7 +91,7 @@ function syncModelText(model: monaco.editor.ITextModel, value: string, editor: m
   if (saved) editorStates.set(documentId, { ...editorStates.get(documentId) ?? saved, scrollTop: scrollTop ?? saved.scrollTop, scrollLeft: scrollLeft ?? saved.scrollLeft })
 }
 
-export default function SourceEditor({ documentId, format, value, diagnostics, theme, onChange, onUndo, onRedo, label }: Props) {
+export default function SourceEditor({ documentId, format, csvDelimiter = ',', value, diagnostics, theme, onChange, onUndo, onRedo, label }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const changeRef = useRef(onChange)
@@ -121,20 +123,26 @@ export default function SourceEditor({ documentId, format, value, diagnostics, t
       ;(globalThis as typeof globalThis & { MonacoEnvironment?: { getWorker: () => Worker } }).MonacoEnvironment = { getWorker: () => new EditorWorker() }
       workerConfigured = true
     }
+    const language = format === 'md' ? 'markdown' : format === 'csv' ? registerCsvMonacoLanguage(csvDelimiter) : 'plaintext'
     const uri = monaco.Uri.parse(`inmemory://the-viewer/${encodeURIComponent(documentId)}.${format}`)
     let model = models.get(documentId)
     if (!model || model.isDisposed()) {
-      model = monaco.editor.createModel(valueRef.current, format === 'md' ? 'markdown' : 'plaintext', uri)
+      model = monaco.editor.createModel(valueRef.current, language, uri)
       models.set(documentId, model)
     } else {
       if (normalizeLineEndings(model.getValue()) !== normalizeLineEndings(valueRef.current)) syncModelText(model, valueRef.current, null, documentId)
-      monaco.editor.setModelLanguage(model, format === 'md' ? 'markdown' : 'plaintext')
+      monaco.editor.setModelLanguage(model, language)
     }
     editorText.current = valueRef.current
     registerSourceEditorDisposer(documentId, () => disposeSourceEditorModel(documentId))
 
     monaco.editor.defineTheme('the-viewer-dark', {
-      base: 'vs-dark', inherit: true, rules: [], colors: {
+      base: 'vs-dark', inherit: true, rules: [
+        { token: 'separator.csv', foreground: 'A4AAF7' },
+        { token: 'string.csv', foreground: 'CE9178' },
+        { token: 'string.quote.csv', foreground: 'E0A33A' },
+        { token: 'string.escape.csv', foreground: 'E0A33A' }
+      ], colors: {
         'editor.background': cssColor('--panel', '#0B0B0C'),
         'editor.foreground': cssColor('--text', '#E6E6E8'),
         'editorLineNumber.foreground': cssColor('--text-weak', '#777980'),
@@ -144,7 +152,12 @@ export default function SourceEditor({ documentId, format, value, diagnostics, t
       }
     })
     monaco.editor.defineTheme('the-viewer-light', {
-      base: 'vs', inherit: true, rules: [], colors: {
+      base: 'vs', inherit: true, rules: [
+        { token: 'separator.csv', foreground: '4A52C4' },
+        { token: 'string.csv', foreground: '287A46' },
+        { token: 'string.quote.csv', foreground: 'A0650F' },
+        { token: 'string.escape.csv', foreground: 'A0650F' }
+      ], colors: {
         'editor.background': cssColor('--panel', '#FCFCFD'),
         'editor.foreground': cssColor('--text', '#1C1D21'),
         'editorLineNumber.foreground': cssColor('--text-weak', '#8A8B91'),
@@ -253,7 +266,7 @@ export default function SourceEditor({ documentId, format, value, diagnostics, t
       compositionListener.dispose()
       editor.dispose()
     }
-  }, [documentId, format, label, mobile])
+  }, [csvDelimiter, documentId, format, label, mobile])
 
   useEffect(() => {
     const model = models.get(documentId)
@@ -312,7 +325,7 @@ export default function SourceEditor({ documentId, format, value, diagnostics, t
   }, [documentId, value])
 
   return <div className="source-editor-host" ref={host} aria-label={label}>
-    {mobile && <CodeEditor stateKey={`source:${documentId}`} value={value} onChange={onChange} markdownMode={format === 'md'} label={label} onUndo={onUndo} onRedo={onRedo} />}
+    {mobile && <CodeEditor stateKey={`source:${documentId}`} value={value} onChange={onChange} markdownMode={format === 'md'} csvMode={format === 'csv'} csvDelimiter={csvDelimiter} label={label} onUndo={onUndo} onRedo={onRedo} />}
   </div>
 }
 

@@ -4,6 +4,7 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirro
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { markdownLivePreview, taskMarkerRangesForSelection } from './markdownPreview'
+import { csvEditorLanguage } from './csvLanguage'
 import { applyCodeMirrorChanges, findTextChanges, mergeTextDuringComposition, normalizeLineEndings } from './editorText'
 import { readCodeEditorState, remapCodeEditorState, saveCodeEditorState } from './codeEditorState'
 
@@ -19,6 +20,8 @@ interface CodeEditorProps {
   value: string
   onChange: (value: string, group?: ChangeGroup) => void
   markdownMode?: boolean
+  csvMode?: boolean
+  csvDelimiter?: string
   livePreview?: boolean
   label: string
   onUndo?: () => void
@@ -105,7 +108,7 @@ function applyChecklist(view: EditorView): void {
 }
 
 export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEditor({
-  value, onChange, markdownMode = false, livePreview = false, label, onUndo, onRedo, stateKey
+  value, onChange, markdownMode = false, csvMode = false, csvDelimiter = ',', livePreview = false, label, onUndo, onRedo, stateKey
 }, ref) {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
@@ -180,6 +183,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
         ]))] : []),
         highlightActiveLine(),
         ...(markdownMode ? [markdown({ base: markdownLanguage })] : []),
+        ...(csvMode ? csvEditorLanguage(csvDelimiter) : []),
         ...(livePreview ? [EditorView.lineWrapping] : []),
         ...(livePreview ? [markdownLivePreview] : []),
         EditorView.updateListener.of((update) => {
@@ -259,7 +263,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
       pendingExternalValue.current = null
       compositionBaseValue.current = null
     }
-  }, [hasExternalHistory, livePreview, markdownMode, stateKey])
+  }, [csvDelimiter, csvMode, hasExternalHistory, livePreview, markdownMode, stateKey])
 
   useEffect(() => {
     const editor = view.current

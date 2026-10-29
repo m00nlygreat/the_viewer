@@ -714,7 +714,7 @@ flowchart LR
 
 - React의 작은 래퍼에서 `monaco-editor`의 ESM API를 직접 사용한다. 원본 탭 진입 때 지연 로드하고 Worker·폰트·스타일을 앱과 함께 묶는다. 기본 언어 기능에 필요한 Worker만 연결한다. [공식 ESM·Vite 통합 문서](https://github.com/microsoft/monaco-editor/blob/main/docs/integrate-esm.md)를 기준으로 한다.
 - 줄 번호, 검색/바꾸기, 줄바꿈, 들여쓰기, 선택·커서 상태, 앱의 라이트/다크 테마를 제공한다. 기본 미니맵과 입력 시 자동 서식 변경은 끈다.
-- Markdown은 제공되는 문법 강조를 사용한다. CSV·EML·ICS·VCF는 plain text에서 시작하고 필요한 가벼운 토큰 강조를 추가한다. 형식 검증은 앱 파서의 진단을 Monaco 표시로 연결한다.
+- Markdown은 제공되는 문법 강조를 사용한다. CSV 원본은 감지한 구분자와 인용 필드·이스케이프 따옴표를 Monaco·CodeMirror에서 강조한다. EML·ICS·VCF는 plain text에서 시작하고 필요한 가벼운 토큰 강조를 추가한다. 형식 검증은 앱 파서의 진단을 Monaco 표시로 연결한다.
 - Monaco는 공식적으로 모바일 브라우저를 지원하지 않는다. **권고안은 데스크톱 원본에 Monaco, 모바일 원본에 기존 CodeMirror를 사용하는 것**이다. 같은 두 탭·텍스트·진단·Undo 계약을 유지한다. 실기기에서 한글 조합·선택·가상 키보드를 검증한다. [공식 지원 범위](https://github.com/microsoft/monaco-editor#faq)
 - PWA 사전 캐시에 지연 로드 청크·Worker·사용 폰트를 포함한다. 현재 캐시 패턴의 `woff2` 외에 Monaco가 실제 출력하는 폰트 형식도 확인한다. 준비 후 원본을 한 번도 열지 않은 상태에서도 오프라인 편집이 가능해야 한다.
 - GitHub Pages 하위 경로와 루트 배포에서 Worker·폰트 경로를 확인한다. Chrome 확장은 중계 역할을 유지하며 Monaco와 앱 편집기를 확장 번들에 포함하지 않는다.
@@ -752,4 +752,5 @@ flowchart LR
 - Markdown 보기 자동 줄바꿈, 활성 편집 블록·현재 행 강조, 비활성 코드 블록 경계 표시와 Monaco 테마 색상 정규화를 추가했다. Markdown Decoration·원문 개행 보존·세션 Undo/Redo·내보내기·다중 외부 변경 위치 매핑·IME 변경 병합·탭 복원 선택·단축 색상 정규화 회귀 테스트를 추가했다. `npm run lint:app`, `npm run typecheck:app`, `npm run test:app`(5개 파일, 42개 테스트), 루트 및 `/the_viewer/` 경로의 `npm run build:app`과 `npm run verify:pwa-build`가 통과했다.
 - 보기·원본 왕복, Undo/Redo, 입력 직후 내보내기 동작과 IME 중 외부 변경 병합 로직은 회귀 테스트로 확인했다. Computer Use가 Windows 브라우저 URL을 안전하게 판별하지 못해 중단되어, 실제 브라우저 시각·클릭 입력과 한글 IME 실기기 동작은 아직 수동 확인하지 못했다.
 - [GitHub Pages PWA](https://m00nlygreat.github.io/the_viewer/)의 Markdown 화면 및 Monaco 오류 수정 배포가 완료됐다. [Pages Actions #19](https://github.com/m00nlygreat/the_viewer/actions/runs/40849188214)의 PWA 검증·배포가 통과했고, 공개 페이지·version.json·index.js·Monaco SourceEditor 청크가 200으로 응답하며 공개 청크가 `/the_viewer/` 빌드와 일치한다.
+- CSV 원본에 감지 구분자·인용 필드·여러 줄 필드·이스케이프된 큰따옴표 구문 강조를 데스크톱 Monaco와 모바일 CodeMirror로 추가했다. 문법 강조는 토큰 표현만 바꾸며 CSV 텍스트는 수정하지 않는다. PWA 전용 린트·타입 검사, 6개 파일 44개 테스트, 루트·`/the_viewer/` 빌드 검사가 통과했다. 공개 배포는 main 푸시 후 확인한다.
 - Chrome 확장 설치·파일 전달·확장 번들 검증은 사용자가 수행한다. Pages workflow는 PWA만 빌드·검증·배포한다.

@@ -689,7 +689,7 @@ export function App() {
 }
 
 function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel, group?: 'typing' | 'command') => void, onText: (text: string, group?: 'typing' | 'command') => void, onOpenAttachment: (index: number) => void, onDownloadAttachment: (index: number) => void, onAddAttachment: () => void, onRemoveAttachment: (index: number) => void, theme: 'light' | 'dark', onUndo: () => void, onRedo: () => void, onOpenSource: () => void) {
-  if (document.mode === 'source') return <SourceEditor documentId={document.id} format={document.format} value={document.text} diagnostics={document.diagnostics} theme={theme} onChange={onText} onUndo={onUndo} onRedo={onRedo} label={`${document.name} 원본 편집기`} />
+  if (document.mode === 'source') return <SourceEditor documentId={document.id} format={document.format} csvDelimiter={document.format === 'csv' ? (document.model as CsvModel).delimiter : ','} value={document.text} diagnostics={document.diagnostics} theme={theme} onChange={onText} onUndo={onUndo} onRedo={onRedo} label={`${document.name} 원본 편집기`} />
   switch (document.format) {
     case 'csv': return <CsvEditor document={document} model={document.model as CsvModel} onChange={(model, group) => onModel(model, group)} theme={theme} />
     case 'md': return <MarkdownEditor document={document} text={document.text} onChange={onText} onUndo={onUndo} onRedo={onRedo} />
