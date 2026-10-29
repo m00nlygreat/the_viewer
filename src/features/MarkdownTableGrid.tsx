@@ -30,6 +30,38 @@ function createMarkdownColumnId(): string {
   return `markdown-column-${nextMarkdownColumnId}`
 }
 
+function renderMarkdownTable(source: string): string {
+  let marker = 'MARKDOWN_TABLE_BREAK_TOKEN'
+  while (source.includes(marker)) marker += '_'
+  const markedSource = source.replace(/<br\s*\/?\s*>/giu, marker)
+  const template = document.createElement('template')
+  template.innerHTML = renderMarkdown(markedSource)
+
+  const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT)
+  const replacements: Text[] = []
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text
+    if (!node.data.includes(marker)) continue
+    if (node.parentElement?.closest('code, pre')) {
+      node.data = node.data.replaceAll(marker, '<br>')
+      continue
+    }
+    replacements.push(node)
+  }
+
+  for (const node of replacements) {
+    const pieces = node.data.split(marker)
+    const fragment = document.createDocumentFragment()
+    pieces.forEach((piece, index) => {
+      if (piece) fragment.append(document.createTextNode(piece))
+      if (index < pieces.length - 1) fragment.append(document.createElement('br'))
+    })
+    node.replaceWith(fragment)
+  }
+
+  return template.innerHTML
+}
+
 // Glide 6.0.4 alpha exposes fillHandle at runtime before including it in its public prop types.
 const SpreadsheetGrid = DataEditor as unknown as ComponentType<DataEditorProps & { fillHandle?: boolean } & RefAttributes<DataEditorRef>>
 
@@ -57,7 +89,7 @@ function RenderedMarkdownTable({ table }: Props) {
     <div className="cm-md-table-actions">
       <button type="button" className="toolbar-button" aria-label="표 편집" title="표 편집" onMouseDown={(event) => event.preventDefault()} onClick={() => table.setEditing(true)}>표 편집</button>
     </div>
-    <div ref={content} className="cm-md-table-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(snapshot.source) }} />
+    <div ref={content} className="cm-md-table-content" dangerouslySetInnerHTML={{ __html: renderMarkdownTable(snapshot.source) }} />
   </section>
 }
 
