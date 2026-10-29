@@ -1,46 +1,38 @@
 import { HighlightStyle, StreamLanguage, syntaxHighlighting, type StreamParser } from '@codemirror/language'
-import { tags } from '@lezer/highlight'
+import { Tag, tags } from '@lezer/highlight'
+import { CSV_COLUMN_COLOR_COUNT } from './csvColumnColors'
+import { nextCsvToken, type CsvLexerState } from './csvTokenizer'
 
-interface CsvStreamState {
-  inQuotes: boolean
-}
+const csvColumnTags = Array.from({ length: CSV_COLUMN_COLOR_COUNT }, (_, index) => Tag.define(`csv-column-${index}`, tags.string))
+const csvColumnTokenTable = Object.fromEntries(csvColumnTags.map((tag, index) => [`csv-column-${index}`, tag]))
 
-export function createCsvStreamParser(delimiter: string): StreamParser<CsvStreamState> {
+export function createCsvStreamParser(delimiter: string): StreamParser<CsvLexerState> {
   const separator = [...delimiter][0] ?? ','
 
   return {
-    startState: () => ({ inQuotes: false }),
+    startState: () => ({ inQuotes: false, column: 0 }),
+    copyState: (state) => ({ ...state }),
     token(stream, state) {
-      if (state.inQuotes) {
-        if (stream.match('""')) return 'csv-escape'
-        if (stream.match('"')) {
-          state.inQuotes = false
-          return 'csv-quote'
-        }
-        stream.eatWhile((character) => character !== '"')
-        return 'csv-string'
-      }
-
-      if (stream.match(separator)) return 'csv-separator'
-      if (stream.match('"')) {
-        state.inQuotes = true
-        return 'csv-quote'
-      }
-      stream.eatWhile((character) => character !== separator && character !== '"')
-      return null
+      const token = nextCsvToken(stream.string, stream.pos, separator, state)
+      if (!token) return null
+      stream.pos = token.to
+      if (token.kind === 'separator') return 'csv-separator'
+      if (token.kind === 'quote') return 'csv-quote'
+      if (token.kind === 'escape') return 'csv-escape'
+      return `csv-column-${token.column}`
     },
     tokenTable: {
+      ...csvColumnTokenTable,
       'csv-separator': tags.separator,
       'csv-quote': tags.special(tags.string),
-      'csv-string': tags.string,
       'csv-escape': tags.escape
     }
   }
 }
 
 const csvHighlightStyle = HighlightStyle.define([
+  ...csvColumnTags.map((tag, index) => ({ tag, color: `var(--csv-column-${index})` })),
   { tag: tags.separator, color: 'var(--accent)', fontWeight: '600' },
-  { tag: tags.string, color: 'var(--text-secondary)' },
   { tag: tags.special(tags.string), color: 'var(--accent)' },
   { tag: tags.escape, color: 'var(--warning)' }
 ])

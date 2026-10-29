@@ -6,6 +6,7 @@ import '../../node_modules/monaco-editor/min/vs/editor/editor.main.css'
 import type { ParseDiagnostic } from '../domain/types'
 import type { Format } from '../platform/fileTypes'
 import { CodeEditor } from './CodeEditor'
+import { CSV_COLUMN_DARK_COLORS, CSV_COLUMN_LIGHT_COLORS } from './csvColumnColors'
 import { registerCsvMonacoLanguage } from './csvMonacoLanguage'
 import { normalizeMonacoThemeColor } from './monacoThemeColors'
 import { registerSourceEditorDisposer } from './sourceEditorRegistry'
@@ -138,6 +139,7 @@ export default function SourceEditor({ documentId, format, csvDelimiter = ',', v
 
     monaco.editor.defineTheme('the-viewer-dark', {
       base: 'vs-dark', inherit: true, rules: [
+        ...CSV_COLUMN_DARK_COLORS.map((color, index) => ({ token: `column${index}.csv`, foreground: color.slice(1) })),
         { token: 'separator.csv', foreground: 'A4AAF7' },
         { token: 'string.csv', foreground: 'CE9178' },
         { token: 'string.quote.csv', foreground: 'E0A33A' },
@@ -153,6 +155,7 @@ export default function SourceEditor({ documentId, format, csvDelimiter = ',', v
     })
     monaco.editor.defineTheme('the-viewer-light', {
       base: 'vs', inherit: true, rules: [
+        ...CSV_COLUMN_LIGHT_COLORS.map((color, index) => ({ token: `column${index}.csv`, foreground: color.slice(1) })),
         { token: 'separator.csv', foreground: '4A52C4' },
         { token: 'string.csv', foreground: '287A46' },
         { token: 'string.quote.csv', foreground: 'A0650F' },
