@@ -79,7 +79,7 @@ function frontmatterRange(state: EditorState): { from: number; to: number } | nu
   return { from: first.from, to: state.doc.length }
 }
 
-function overlapsFrontmatter(node: MarkdownNode, frontmatter: { from: number; to: number } | null): boolean {
+function overlapsFrontmatter(node: { from: number; to: number }, frontmatter: { from: number; to: number } | null): boolean {
   return Boolean(frontmatter && node.from < frontmatter.to && node.to > frontmatter.from)
 }
 
