@@ -26,7 +26,7 @@ export function ViewerZoom({ children }: Props) {
       if (!first || !second) return 0
       return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY)
     }
-    const isInteractive = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest('input, textarea, select, button, a, [contenteditable="true"], .cm-editor, .monaco-editor, .csv-data-grid, [role="grid"]'))
+    const isInteractive = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest('input, textarea, select, button, a, [contenteditable="true"], .cm-editor, .monaco-editor, .csv-data-grid, .cm-md-table-data-grid, [role="grid"]'))
     const onWheel = (event: WheelEvent) => {
       if (!event.ctrlKey || isInteractive(event.target)) return
       event.preventDefault()

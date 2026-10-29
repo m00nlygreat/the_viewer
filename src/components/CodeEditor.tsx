@@ -23,6 +23,7 @@ interface CodeEditorProps {
   csvMode?: boolean
   csvDelimiter?: string
   livePreview?: boolean
+  markdownTheme?: 'light' | 'dark'
   label: string
   onUndo?: () => void
   onRedo?: () => void
@@ -108,7 +109,7 @@ function applyChecklist(view: EditorView): void {
 }
 
 export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEditor({
-  value, onChange, markdownMode = false, csvMode = false, csvDelimiter = ',', livePreview = false, label, onUndo, onRedo, stateKey
+  value, onChange, markdownMode = false, csvMode = false, csvDelimiter = ',', livePreview = false, markdownTheme = 'dark', label, onUndo, onRedo, stateKey
 }, ref) {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
@@ -185,7 +186,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
         ...(markdownMode ? [markdown({ base: markdownLanguage })] : []),
         ...(csvMode ? csvEditorLanguage(csvDelimiter) : []),
         ...(livePreview ? [EditorView.lineWrapping] : []),
-        ...(livePreview ? [markdownLivePreview] : []),
+        ...(livePreview ? markdownLivePreview(markdownTheme) : []),
         EditorView.updateListener.of((update) => {
           if (!update.docChanged || syncing.current) return
           const localText = applyCodeMirrorChanges(update.startState, update.changes, editorText.current)
@@ -263,7 +264,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
       pendingExternalValue.current = null
       compositionBaseValue.current = null
     }
-  }, [csvDelimiter, csvMode, hasExternalHistory, livePreview, markdownMode, stateKey])
+  }, [csvDelimiter, csvMode, hasExternalHistory, livePreview, markdownMode, markdownTheme, stateKey])
 
   useEffect(() => {
     const editor = view.current

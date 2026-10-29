@@ -6,12 +6,13 @@ import { CodeEditor, type CodeEditorHandle } from '../components/CodeEditor'
 interface Props {
   document: ViewerDocument
   text: string
+  theme: 'light' | 'dark'
   onChange: (text: string, group?: 'typing' | 'command') => void
   onUndo: () => void
   onRedo: () => void
 }
 
-export function MarkdownEditor({ document, text, onChange, onUndo, onRedo }: Props) {
+export function MarkdownEditor({ document, text, theme, onChange, onUndo, onRedo }: Props) {
   const editorRef = useRef<CodeEditorHandle>(null)
   const lines = text.split(/\r\n|\r|\n/u).length
   const words = text.trim() ? text.trim().split(/\s+/u).length : 0
@@ -48,6 +49,7 @@ export function MarkdownEditor({ document, text, onChange, onUndo, onRedo }: Pro
         onChange={onChange}
         markdownMode
         livePreview
+        markdownTheme={theme}
         stateKey={`markdown-view:${document.id}`}
         label={`${document.name} Markdown 편집기`}
         onUndo={onUndo}

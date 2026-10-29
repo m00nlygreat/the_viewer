@@ -692,7 +692,7 @@ function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel
   if (document.mode === 'source') return <SourceEditor documentId={document.id} format={document.format} csvDelimiter={document.format === 'csv' ? (document.model as CsvModel).delimiter : ','} value={document.text} diagnostics={document.diagnostics} theme={theme} onChange={onText} onUndo={onUndo} onRedo={onRedo} label={`${document.name} 원본 편집기`} />
   switch (document.format) {
     case 'csv': return <CsvEditor document={document} model={document.model as CsvModel} onChange={(model, group) => onModel(model, group)} theme={theme} />
-    case 'md': return <MarkdownEditor document={document} text={document.text} onChange={onText} onUndo={onUndo} onRedo={onRedo} />
+    case 'md': return <MarkdownEditor document={document} text={document.text} theme={theme} onChange={onText} onUndo={onUndo} onRedo={onRedo} />
     case 'eml': return <EmailEditor document={document} model={document.model as EmailModel} onChange={(model, group) => onModel(model, group)} onOpenAttachment={onOpenAttachment} onDownloadAttachment={onDownloadAttachment} onAddAttachments={onAddAttachment} onRemoveAttachment={onRemoveAttachment} onOpenSource={onOpenSource} />
     case 'ics': return <CalendarEditor document={document} model={document.model as CalendarModel} onChange={(model, group) => onModel(model, group)} />
     case 'vcf': return <ContactsEditor document={document} model={document.model as ContactModel} onChange={(model, group) => onModel(model, group)} />
