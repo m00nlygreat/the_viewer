@@ -361,7 +361,7 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .code-editor-live-preview .cm-line.cm-md-code-block { padding-right: 12px; padding-left: 12px; border-right: 1px solid var(--line); border-left: 1px solid var(--line); color: var(--body); background: color-mix(in srgb, var(--control) 72%, transparent); font-family: var(--font-mono); font-size: var(--markdown-code-block-size); }
 .code-editor-live-preview .cm-line.cm-md-code-block-start { padding-top: 21px; border-top: 1px solid var(--line); border-radius: 0; }
 .code-editor-live-preview .cm-line.cm-md-code-block-end { padding-bottom: 9px; border-bottom: 1px solid var(--line); border-radius: 0; }
-.code-editor-live-preview .cm-line.cm-md-editing-block { padding-left: 10px; border-left: 2px solid color-mix(in srgb, var(--accent) 48%, transparent); background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.code-editor-live-preview .cm-line.cm-md-editing-block { padding-left: 10px; border-left: 2px solid color-mix(in srgb, var(--accent) 48%, transparent); background: color-mix(in srgb, var(--accent) 5%, transparent); font-family: var(--font-mono); }
 .code-editor-live-preview .cm-line.cm-md-blockquote.cm-md-editing-block:not(.cm-md-list-line) { padding-left: 15px; }
 .code-editor-live-preview .cm-md-image-preview { display: inline-block; padding: 2px 5px; border: 1px solid var(--line); border-radius: 0; color: var(--text-weak); background: var(--control); font-size: var(--markdown-image-label-size); vertical-align: baseline; }
 .code-editor-live-preview .cm-md-image-preview p { display: inline; margin: 0; }
