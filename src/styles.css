@@ -330,8 +330,8 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .markdown-frontmatter { box-sizing: border-box; width: 100%; max-width: 720px; min-width: 0; margin: 0 auto 20px; overflow: hidden; border: 1px solid var(--line); background: color-mix(in srgb, var(--control) 72%, var(--panel)); }
 .markdown-frontmatter-label { min-height: 30px; padding: 0 10px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); color: var(--text-weak); background: color-mix(in srgb, var(--panel) 78%, var(--control)); font: 11px var(--font-mono); }
 .markdown-frontmatter-label .toolbar-button { height: 24px; padding: 0 7px; color: var(--text-weak); font-family: 'Geist Variable', 'Noto Sans KR Variable', sans-serif; font-size: 11px; }
-.markdown-frontmatter pre { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; margin: 0; padding: 11px 12px; overflow: auto; border: 0; border-radius: 0; background: transparent; }
-.markdown-frontmatter code { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; padding: 0; display: block; border: 0; color: var(--body); background: transparent; font: var(--markdown-code-block-size) / 1.65 var(--font-mono); }
+.markdown-frontmatter pre { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; margin: 0; padding: 11px 12px; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; border: 0; border-radius: 0; background: transparent; }
+.markdown-frontmatter code { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; padding: 0; display: block; overflow-wrap: anywhere; white-space: inherit; border: 0; color: var(--body); background: transparent; font: var(--markdown-code-block-size) / 1.65 var(--font-mono); }
 .document-stats { width: min(720px, 100%); margin: 18px auto 0; color: var(--text-weak); font: 12px var(--font-mono); }
 .markdown-toolbar { height: 39px; flex: 0 0 auto; padding: 0 12px; display: flex; align-items: center; gap: 2px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .markdown-toolbar .icon-only { border: 1px solid transparent; }
