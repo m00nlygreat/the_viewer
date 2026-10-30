@@ -1,6 +1,7 @@
 import { lazy, Suspense, useSyncExternalStore } from 'react'
 import { Check, Code2 } from 'lucide-react'
 import type { MarkdownFrontmatterState } from './markdownFrontmatterState'
+import { useOutsideClick } from './useOutsideClick'
 
 const MarkdownCodeBlockMonacoEditor = lazy(() => import('../features/MarkdownCodeBlockMonacoEditor'))
 
@@ -8,8 +9,9 @@ interface Props { frontmatter: MarkdownFrontmatterState }
 
 export function MarkdownFrontmatterBlock({ frontmatter }: Props) {
   const snapshot = useSyncExternalStore(frontmatter.subscribe, frontmatter.getSnapshot, frontmatter.getSnapshot)
+  const editorRoot = useOutsideClick<HTMLElement>(snapshot.editing, () => frontmatter.setEditing(false))
   if (snapshot.editing) {
-    return <section className="cm-md-code-editor cm-md-frontmatter-editor" aria-label="YAML frontmatter 편집기">
+    return <section ref={editorRoot} className="cm-md-code-editor cm-md-frontmatter-editor" aria-label="YAML frontmatter 편집기">
       <div className="cm-md-code-toolbar">
         <span><Code2 size={14} />YAML frontmatter</span>
         <span className="toolbar-spacer" />

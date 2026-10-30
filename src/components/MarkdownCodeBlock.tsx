@@ -3,6 +3,7 @@ import DOMPurify from 'dompurify'
 import { Check, Code2 } from 'lucide-react'
 import { highlightMarkdownCode } from './markdownCodeHighlight'
 import type { MarkdownCodeBlockState } from './markdownCodeBlockState'
+import { useOutsideClick } from './useOutsideClick'
 
 const MarkdownCodeBlockMonacoEditor = lazy(() => import('../features/MarkdownCodeBlockMonacoEditor'))
 
@@ -10,8 +11,9 @@ interface Props { block: MarkdownCodeBlockState }
 
 export function MarkdownCodeBlock({ block }: Props) {
   const snapshot = useSyncExternalStore(block.subscribe, block.getSnapshot, block.getSnapshot)
+  const editorRoot = useOutsideClick<HTMLElement>(snapshot.editing, () => block.setEditing(false))
   if (snapshot.editing) {
-    return <section className="cm-md-code-editor" aria-label="Markdown 코드 블록 편집기">
+    return <section ref={editorRoot} className="cm-md-code-editor" aria-label="Markdown 코드 블록 편집기">
       <div className="cm-md-code-toolbar">
         <span><Code2 size={14} />{snapshot.languageLabel}</span>
         <span className="toolbar-spacer" />

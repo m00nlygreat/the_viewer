@@ -16,6 +16,7 @@ import {
 } from '@glideapps/glide-data-grid'
 import '@glideapps/glide-data-grid/dist/index.css'
 import { renderMarkdown } from '../domain/markdown'
+import { useOutsideClick } from '../components/useOutsideClick'
 import type { MarkdownTableState } from '../components/markdownTableState'
 import type { MarkdownTableModel } from '../domain/formats/markdownTable'
 
@@ -86,16 +87,18 @@ function RenderedMarkdownTable({ table }: Props) {
   }, [snapshot.model.alignments, snapshot.source])
 
   return <section className="cm-md-table-preview" onDoubleClick={() => table.setEditing(true)}>
-    <div className="cm-md-table-actions">
-      <button type="button" className="toolbar-button" aria-label="표 편집" title="표 편집" onMouseDown={(event) => event.preventDefault()} onClick={() => table.setEditing(true)}>표 편집</button>
+    <div className="cm-md-table-frame">
+      <div className="cm-md-table-actions">
+        <button type="button" className="toolbar-button" aria-label="표 편집" title="표 편집" onMouseDown={(event) => event.preventDefault()} onClick={() => table.setEditing(true)}>표 편집</button>
+      </div>
+      <div ref={content} className="cm-md-table-content" dangerouslySetInnerHTML={{ __html: renderMarkdownTable(snapshot.source) }} />
     </div>
-    <div ref={content} className="cm-md-table-content" dangerouslySetInnerHTML={{ __html: renderMarkdownTable(snapshot.source) }} />
   </section>
 }
 
 function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableState; model: MarkdownTableModel; theme: 'light' | 'dark' }) {
   const gridRef = useRef<DataEditorRef>(null)
-  const editorRoot = useRef<HTMLElement>(null)
+  const editorRoot = useOutsideClick<HTMLElement>(true, () => table.setEditing(false))
   const [selection, setSelection] = useState<GridSelection>(() => ({
     ...emptyGridSelection,
     current: { cell: [0, 0], range: { x: 0, y: 0, width: 1, height: 1 }, rangeStack: [] }
@@ -145,7 +148,7 @@ function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableStat
     }
     document.addEventListener('keydown', keepEnterInGrid, true)
     return () => document.removeEventListener('keydown', keepEnterInGrid, true)
-  }, [])
+  }, [editorRoot])
 
   const gridTheme = useMemo<GridTheme>(() => {
     const light = theme === 'light'
