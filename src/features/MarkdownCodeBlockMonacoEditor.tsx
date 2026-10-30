@@ -77,7 +77,7 @@ export default function MarkdownCodeBlockMonacoEditor({ code, language, theme, o
         ariaLabel: `${language} 코드 편집기`,
         automaticLayout: true,
         lineNumbers: 'on',
-        wordWrap: 'off',
+        wordWrap: 'on',
         minimap: { enabled: false },
         contextmenu: false,
         formatOnPaste: false,
