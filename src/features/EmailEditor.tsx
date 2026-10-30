@@ -81,7 +81,6 @@ export function EmailEditor({ document, model, onChange, onOpenAttachment, onDow
       <h2>속성</h2>
       {details.map(([key, value]) => <div className="property-row" key={key}><span>{key}</span><strong title={value}>{value}</strong></div>)}
       <AttachmentList model={model} editable={editing && canEdit} onAdd={onAddAttachments} onRemove={onRemoveAttachment} onOpen={onOpenAttachment} onDownload={onDownloadAttachment} />
-      {!safeMimeStructure && <div className="inline-warning">기존 MIME 파트를 안전하게 연결할 수 없는 구조입니다. 원본 탭에서만 편집할 수 있고, 보기에서는 원문을 유지합니다.</div>}
       {model.headers.length > 0 && <details className="headers-details"><summary>전체 헤더</summary>{model.headers.map((header, index) => <div className="header-detail" key={`${header.key}-${index}`}><span>{header.key}</span><code>{header.value}</code></div>)}</details>}
     </aside>
   </section>

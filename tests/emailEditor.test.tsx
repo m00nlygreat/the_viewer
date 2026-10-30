@@ -24,7 +24,10 @@ describe('email rendering', () => {
       subject: '테스트', from: [], to: [], cc: [], date: '', text: '', html: '<p>본문</p>',
       attachments: [{ filename: 'report.pdf', mimeType: 'application/pdf', content: [1, 2, 3] }], headers: []
     }
-    const source = 'Content-Type: text/html; charset=UTF-8\r\n\r\n<p>본문</p>'
+    const source = [
+      'Content-Type: multipart/mixed; boundary="sample"', '', '--sample',
+      'Content-Type: text/html; charset=UTF-8', '', '<p>본문</p>', '--sample--', ''
+    ].join('\r\n')
     const document: ViewerDocument = {
       id: 'email-test', name: 'test.eml', format: 'eml', mimeType: 'message/rfc822', size: source.length,
       savedBytes: new ArrayBuffer(0), sourceText: source, text: source, model, mode: 'view', revision: 1,
@@ -40,6 +43,7 @@ describe('email rendering', () => {
 
     expect(detailsPanel).toContain('report.pdf')
     expect(detailsPanel).toContain('첨부 파일')
+    expect(detailsPanel).not.toContain('기존 MIME 파트를 안전하게 연결할 수 없는 구조입니다')
     expect(messageBody).not.toContain('report.pdf')
   })
 })
