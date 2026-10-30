@@ -1,7 +1,7 @@
 import './relay.css'
 import { fetchAutoOpenedFile, fetchRemoteLinkFile, readRemoteLinkTicket, deleteRemoteLinkTicket } from './links'
 import { createLegacySnapshot, readLegacyDocuments } from './legacyMigration'
-import { createTicket, readTicket } from './relayStore'
+import { createTicket, readTicket, RelayStoreError } from './relayStore'
 import { isTicketId, SNAPSHOT_MIME, type RelayKind } from '../relay/protocol'
 import { getFormat } from '../fileTypes'
 import { isAutoOpenTokenValid, isLocalFileAccessAllowed, openExtensionDetails } from './autoOpen'
@@ -134,7 +134,12 @@ async function reopenTicket(id: string): Promise<void> {
   }
 }
 
-interface MigrationState { documentIds: string[]; completedIds: string[] }
+interface MigrationJob {
+  state: 'pending' | 'tab-created' | 'preparing-ticket' | 'prepared' | 'launched'
+  tabId?: number
+  ticketId?: string
+}
+interface MigrationState { documentIds: string[]; completedIds: string[]; jobs?: Record<string, MigrationJob> }
 
 async function showLanding(): Promise<void> {
   let documents: Awaited<ReturnType<typeof readLegacyDocuments>> = []
@@ -157,28 +162,77 @@ async function showLanding(): Promise<void> {
 
 async function migrateLegacyDocuments(documents: Awaited<ReturnType<typeof readLegacyDocuments>>, current: MigrationState | null): Promise<void> {
   const allIds = [...new Set([...(current?.documentIds ?? []), ...documents.map((document) => document.id)])]
-  const completedIds = current?.completedIds ?? []
-  const prepared: Array<{ tabId: number; ticketId: string }> = []
+  const state: MigrationState = {
+    documentIds: allIds,
+    completedIds: [...new Set(current?.completedIds ?? [])],
+    jobs: { ...(current?.jobs ?? {}) }
+  }
+  const errors: string[] = []
+  const persistState = () => chrome.storage.local.set({ [migrationKey]: state })
+  const prepared: Array<{ documentId: string; tabId: number; ticketId: string }> = []
   try {
+    await persistState()
     for (const document of documents) {
-      const tab = await chrome.tabs.create({ url: 'about:blank', active: false })
-      if (typeof tab.id !== 'number') throw new Error('PWA 탭을 만들지 못했습니다.')
-      const snapshot = createLegacySnapshot(document)
-      const ticket = await createTicket({
-        kind: 'workspace-snapshot', tabId: tab.id, name: `legacy:${document.id}`,
-        mimeType: SNAPSHOT_MIME, bytes: snapshot.bytes
-      })
-      prepared.push({ tabId: tab.id, ticketId: ticket.id })
+      if (state.completedIds.includes(document.id)) continue
+      let job = state.jobs![document.id] ?? { state: 'pending' as const }
+      try {
+        if (typeof job.tabId !== 'number') {
+          const tab = await chrome.tabs.create({ url: 'about:blank', active: false })
+          if (typeof tab.id !== 'number') throw new Error('PWA 탭을 만들지 못했습니다.')
+          job = { state: 'tab-created', tabId: tab.id }
+          state.jobs![document.id] = job
+          try { await persistState() } catch (error) { await chrome.tabs.remove(tab.id).catch(() => undefined); throw error }
+        }
+
+        let existingTicket = false
+        if (job.ticketId) {
+          try {
+            await readTicket(job.ticketId, job.tabId)
+            existingTicket = true
+          } catch (error) {
+            if (!(error instanceof RelayStoreError) || !['INVALID_TICKET', 'EXPIRED'].includes(error.code)) throw error
+          }
+        }
+
+        if (!existingTicket) {
+          const ticketId = job.ticketId ?? crypto.randomUUID()
+          job = { state: 'preparing-ticket', tabId: job.tabId, ticketId }
+          state.jobs![document.id] = job
+          await persistState()
+          const snapshot = createLegacySnapshot(document)
+          await createTicket({
+            id: ticketId, kind: 'workspace-snapshot', tabId: job.tabId!, name: `legacy:${document.id}`,
+            mimeType: SNAPSHOT_MIME, bytes: snapshot.bytes
+          })
+          job.state = 'prepared'
+          await persistState()
+        }
+
+        job.state = 'prepared'
+        state.jobs![document.id] = job
+        await persistState()
+        prepared.push({ documentId: document.id, tabId: job.tabId!, ticketId: job.ticketId! })
+      } catch (error) {
+        errors.push(`${document.name}: ${error instanceof Error ? error.message : '저장된 작업을 전달하지 못했습니다.'}`)
+      }
     }
-    await chrome.storage.local.set({ [migrationKey]: { documentIds: allIds, completedIds } satisfies MigrationState })
     for (const item of prepared) {
       await chrome.tabs.update(item.tabId, { url: `${PWA_URL}#/relay/${chrome.runtime.id}/${item.ticketId}` })
+      const job = state.jobs![item.documentId]
+      if (job) { job.state = 'launched'; await persistState() }
+    }
+    if (errors.length) {
+      render('일부 작업을 준비하지 못했습니다', errors.join('\n'), {
+        error: true,
+        actions: [{ label: '남은 작업 다시 시도', primary: true, run: () => showLanding() }, { label: 'PWA 열기', run: () => goToPwa() }]
+      })
+      return
     }
     await goToPwa()
   } catch (error) {
     render('일부 작업을 준비하지 못했습니다', error instanceof Error ? error.message : '저장된 작업을 전달하지 못했습니다.', {
       error: true,
-      actions: [{ label: '다시 시도', primary: true, run: () => showLanding() }, { label: 'PWA 열기', run: () => goToPwa() }]
+      actions: [{ label: '남은 작업 다시 시도', primary: true, run: () => showLanding() }, { label: 'PWA 열기', run: () => goToPwa() }]
     })
   }
 }

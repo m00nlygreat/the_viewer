@@ -1,20 +1,23 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Check, ChevronDown, ClipboardPaste, Command, FilePlus2, FileText,
-  FolderOpen, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Redo2, Settings2, Share2,
-  Sun, Undo2, Upload, X
+  Check, ClipboardPaste, FilePlus2, FolderOpen, X
 } from 'lucide-react'
 import { CommandMenu, type CommandItem } from '../components/CommandMenu'
 import { SettingsDialog } from '../components/SettingsDialog'
 import { useFocusTrap } from '../components/useFocusTrap'
 import { ViewerZoom } from '../components/ViewerZoom'
-import { disposeSourceEditor } from '../components/sourceEditorRegistry'
-import { disposeCodeEditorState } from '../components/codeEditorState'
-import { FORMAT_MIME, FORMATS, getFormat, type CalendarModel, type ContactModel, type CsvModel, type DocumentModel, type EmailModel, type Format, type ThemePreference, type ViewerDocument } from '../domain/types'
-import { applySourceEdit, applyViewCommand, buildExportSnapshot, diagnosticsFromMessages, flushDocument, historyEntry, makeDocumentFromBytes, undoDocument, redoDocument, type HistoryEntry } from '../domain/session'
+import { FeatureLoadBoundary } from '../components/FeatureLoadBoundary'
+import { clearDocumentResources, disposeDocumentResources } from './documentResources'
+import { DocumentActionBar, DocumentHeader } from './DocumentHeader'
+import { safeDisplayFileName } from './displayName'
+import { WorkspaceSidebar } from './WorkspaceSidebar'
+import { FORMAT_LABEL, FORMAT_MIME, FORMATS, getFormat, type CalendarModel, type ContactModel, type CsvModel, type DocumentModel, type EmailModel, type Format, type ThemePreference, type ViewerDocument } from '../domain/types'
+import { DocumentController } from '../domain/documentController'
+import { buildExportSnapshot, diagnosticsFromMessages, documentIsDirty, flushDocument, hasByteOrderMark, makeDocumentFromBytes } from '../domain/session'
 import { parseWithWorker } from '../domain/workerClient'
-import { hasFatalDiagnostics } from '../domain/formatParsing'
-import { clearAllData, clearDocuments, loadDocuments, loadTheme, readSetting, removeDocument, saveDocument, takeShareTicket, writeSetting } from '../platform/storage'
+import { hasFatalDiagnostics } from '../domain/parseDiagnostics'
+import { clearAllData, clearDocuments, completeShareTicketFile, loadDocuments, loadTheme, readSetting, readShareTicket, removeDocument, saveDocument, writeSetting } from '../platform/storage'
+import { DocumentWriteQueue } from '../platform/documentWriteQueue'
 import { FilePicker, type FilePickerHandle } from '../platform/FilePicker'
 import type { PickedFile } from '../platform/fileTypes'
 import { downloadLocalFile, readClipboardText, readDroppedFiles, receiveLaunchedFiles, saveLocalFile, shareLocalFile } from '../platform/browserFiles'
@@ -30,26 +33,7 @@ const SourceEditor = lazy(() => import('../components/SourceEditor'))
 interface Notice { id: number; tone: 'success' | 'error' | 'info'; message: string }
 interface BeforeInstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
 const fileAccept = FORMATS.map((format) => `.${format}`).join(',')
-const labels = { eml: '이메일', csv: '표', md: '문서', ics: '일정', vcf: '연락처' } satisfies Record<Format, string>
-const MAX_HISTORY_ENTRIES = 80
-const MAX_HISTORY_BYTES = 24 * 1024 * 1024
-
-function historyEntryBytes(entry: HistoryEntry): number {
-  let bytes = entry.text.length * 2
-  if ('attachments' in entry.model) for (const attachment of entry.model.attachments) bytes += attachment.content.length
-  return bytes
-}
-
-function trimHistory(history: { undo: HistoryEntry[]; redo: HistoryEntry[] }): void {
-  const entries = () => [...history.undo, ...history.redo]
-  const totalBytes = () => entries().reduce((sum, entry) => sum + historyEntryBytes(entry), 0)
-  while (history.undo.length + history.redo.length > MAX_HISTORY_ENTRIES || (history.undo.length + history.redo.length > 1 && totalBytes() > MAX_HISTORY_BYTES)) {
-    if (history.undo.length > 1) history.undo.shift()
-    else if (history.redo.length > 1) history.redo.shift()
-    else if (history.undo.length && history.redo.length) history.redo.shift()
-    else break
-  }
-}
+const labels = FORMAT_LABEL
 
 export function App() {
   const [documents, setDocuments] = useState<ViewerDocument[]>([])
@@ -73,11 +57,18 @@ export function App() {
   const [relayRoute, setRelayRoute] = useState<RelayRoute | null>(() => parseRelayRoute(window.location.hash))
   const [relayError, setRelayError] = useState('')
   const inputRef = useRef<FilePickerHandle>(null)
-  const historyRef = useRef(new Map<string, { undo: HistoryEntry[]; redo: HistoryEntry[] }>())
-  const historyGroupRef = useRef(new Map<string, { group: 'typing' | 'command'; at: number }>())
+  const documentController = useRef(new DocumentController())
   const sourceParseTimers = useRef(new Map<string, { revision: number; timer: number }>())
   const sourceRequestTokens = useRef(new Map<string, number>())
   const pendingSerializations = useRef(new Map<string, Promise<void>>())
+  const recoveryWriteQueue = useRef(new DocumentWriteQueue())
+  const recoveryTimers = useRef(new Map<string, number>())
+  const recoveryObservedDocuments = useRef(new Map<string, ViewerDocument>())
+  const recoveryEnabledRef = useRef(true)
+  const recoveryWasEnabled = useRef(false)
+  const closingDocumentIds = useRef(new Set<string>())
+  const resettingData = useRef(false)
+  const launchedFileQueue = useRef<PickedFile[][]>([])
   const noticeTimer = useRef(new Map<number, number>())
   const relayRuns = useRef(new Set<string>())
   const receivedRelayFiles = useRef(new Map<string, ReceivedExtensionFile>())
@@ -87,27 +78,16 @@ export function App() {
   const notify = useCallback((message: string, tone: Notice['tone'] = 'info') => {
     const id = Date.now() + Math.random()
     setNotices((items) => [...items.slice(-2), { id, tone, message }])
-    const timer = window.setTimeout(() => setNotices((items) => items.filter((item) => item.id !== id)), 4200)
+    const timer = window.setTimeout(() => {
+      noticeTimer.current.delete(id)
+      setNotices((items) => items.filter((item) => item.id !== id))
+    }, 4200)
     noticeTimer.current.set(id, timer)
   }, [])
 
   const publishDocument = useCallback((updated: ViewerDocument) => {
     documentsRef.current = documentsRef.current.map((item) => item.id === updated.id ? updated : item)
     setDocuments((items) => items.map((item) => item.id === updated.id ? updated : item))
-  }, [])
-
-  const recordHistory = useCallback((document: ViewerDocument, group: 'typing' | 'command' = 'command') => {
-    const history = historyRef.current.get(document.id) ?? { undo: [], redo: [] }
-    const now = Date.now()
-    const previousGroup = historyGroupRef.current.get(document.id)
-    const coalesce = group === 'typing' && previousGroup?.group === 'typing' && now - previousGroup.at < 800
-    if (!coalesce) {
-      history.undo.push(historyEntry(document))
-    }
-    history.redo = []
-    trimHistory(history)
-    historyRef.current.set(document.id, history)
-    historyGroupRef.current.set(document.id, { group, at: now })
   }, [])
 
   const parseNow = useCallback(async (id: string, revision: number) => {
@@ -135,6 +115,18 @@ export function App() {
     }
   }, [publishDocument])
 
+  const enqueueRecoverySave = useCallback((id: string): Promise<void> => recoveryWriteQueue.current.enqueue(id, async () => {
+    let pending = pendingSerializations.current.get(id)
+    while (pending) {
+      await pending
+      const next = pendingSerializations.current.get(id)
+      pending = next && next !== pending ? next : undefined
+    }
+    const current = documentsRef.current.find((item) => item.id === id)
+    if (!recoveryEnabledRef.current || closingDocumentIds.current.has(id) || !current || current.textRevision !== current.revision) return
+    await saveDocument(current)
+  }), [])
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -144,6 +136,10 @@ export function App() {
         if (cancelled) return
         setTheme(storedTheme)
         setRecoveryEnabled(recover)
+        recoveryEnabledRef.current = recover
+        recoveryWasEnabled.current = recover
+        documentsRef.current = saved
+        recoveryObservedDocuments.current = new Map(saved.map((item) => [item.id, item]))
         setDocuments(saved)
         setActiveId(saved[0]?.id ?? '')
       } catch {
@@ -168,12 +164,34 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    if (!loaded || !recoveryEnabled) return
-    const timer = window.setTimeout(() => {
-      for (const item of documents) void saveDocument(item).catch(() => notify('로컬 작업 복구에 저장하지 못했습니다.', 'error'))
-    }, 180)
-    return () => clearTimeout(timer)
-  }, [documents, loaded, recoveryEnabled, notify])
+    if (!loaded) return
+    const currentIds = new Set(documents.map((item) => item.id))
+    for (const id of recoveryObservedDocuments.current.keys()) if (!currentIds.has(id)) recoveryObservedDocuments.current.delete(id)
+    for (const [id, timer] of recoveryTimers.current) {
+      if (currentIds.has(id)) continue
+      window.clearTimeout(timer)
+      recoveryTimers.current.delete(id)
+    }
+    if (!recoveryEnabled) { recoveryWasEnabled.current = false; return }
+    const enabledAgain = !recoveryWasEnabled.current
+    recoveryWasEnabled.current = true
+    for (const item of documents) {
+      if (!enabledAgain && recoveryObservedDocuments.current.get(item.id) === item) continue
+      recoveryObservedDocuments.current.set(item.id, item)
+      const previous = recoveryTimers.current.get(item.id)
+      if (previous !== undefined) window.clearTimeout(previous)
+      const timer = window.setTimeout(() => {
+        recoveryTimers.current.delete(item.id)
+        void enqueueRecoverySave(item.id).catch(() => notify('로컬 작업 복구에 저장하지 못했습니다.', 'error'))
+      }, 180)
+      recoveryTimers.current.set(item.id, timer)
+    }
+  }, [documents, loaded, recoveryEnabled, notify, enqueueRecoverySave])
+
+  useEffect(() => () => {
+    for (const timer of recoveryTimers.current.values()) window.clearTimeout(timer)
+    recoveryTimers.current.clear()
+  }, [])
 
   useEffect(() => {
     if (loaded && !relayRoute && documents.length === 0 && !sessionStorage.getItem('viewer-command-shown')) {
@@ -213,18 +231,27 @@ export function App() {
     sourceParseTimers.current.clear()
   }, [])
 
-  const openFiles = useCallback(async (files: PickedFile[], forcedFormat?: Format): Promise<{ opened: ViewerDocument[]; errors: string[] }> => {
+  const openFiles = useCallback(async (files: PickedFile[], forcedFormat?: Format, origin?: { shareTicketId: string; shareFileIndex: number }): Promise<{ opened: ViewerDocument[]; errors: string[] }> => {
+    if (resettingData.current) return { opened: [], errors: ['저장 데이터 정리 중에는 파일을 열 수 없습니다.'] }
     if (!files.length) return { opened: [], errors: [] }
     const opened: ViewerDocument[] = []
     const errors: string[] = []
     let first: ViewerDocument | null = null
     for (const file of files) {
       try {
+        const existing = origin && documentsRef.current.find((item) => item.shareTicketId === origin.shareTicketId && item.shareFileIndex === origin.shareFileIndex)
+        if (existing) {
+          opened.push(existing)
+          if (!first) first = existing
+          continue
+        }
         const document = await makeDocumentFromBytes(file.name, file.type, file.bytes, undefined)
         if (forcedFormat && document.format !== forcedFormat) throw new Error(`선택한 형식 ${forcedFormat.toUpperCase()}과 파일 내용이 다릅니다.`)
-        setDocuments((items) => [document, ...items.filter((item) => item.id !== document.id)])
-        opened.push(document)
-        if (!first) first = document
+        const openedDocument = origin ? { ...document, ...origin } : document
+        documentsRef.current = [openedDocument, ...documentsRef.current.filter((item) => item.id !== openedDocument.id)]
+        setDocuments((items) => [openedDocument, ...items.filter((item) => item.id !== openedDocument.id)])
+        opened.push(openedDocument)
+        if (!first) first = openedDocument
       } catch (error) {
         const message = `${file.name}: ${error instanceof Error ? error.message : '파일을 열지 못했습니다.'}`
         errors.push(message)
@@ -236,8 +263,17 @@ export function App() {
   }, [notify])
 
   useEffect(() => {
-    receiveLaunchedFiles((files) => { void openFiles(files) })
-  }, [openFiles])
+    receiveLaunchedFiles((files) => {
+      if (!loaded) { launchedFileQueue.current.push(files); return }
+      void openFiles(files)
+    }, (message) => notify(message, 'error'))
+  }, [loaded, notify, openFiles])
+
+  useEffect(() => {
+    if (!loaded) return
+    const queued = launchedFileQueue.current.splice(0)
+    for (const files of queued) void openFiles(files)
+  }, [loaded, openFiles])
 
   const runRelay = useCallback(async (route: RelayRoute) => {
     if (relayRuns.current.has(route.ticketId)) return
@@ -291,40 +327,55 @@ export function App() {
   }, [loaded, relayRoute, runRelay])
 
   useEffect(() => {
+    if (!loaded) return
     const match = location.hash.match(/^#\/?share\/([0-9a-f-]+)$/i)
     if (!match) return
-    void takeShareTicket(match[1]).then(async (files) => {
-      if (!files?.length) { notify('공유한 파일이 없거나 보관 시간이 지났습니다.', 'error'); return }
-      for (const item of files) {
-        try { await openFiles([{ name: item.name, type: item.type, bytes: new Uint8Array(item.bytes) }]) }
-        catch (error) { notify(error instanceof Error ? error.message : '공유한 파일을 열지 못했습니다.', 'error') }
+    const ticketId = match[1]!
+    void readShareTicket(ticketId).then(async (ticket) => {
+      if (!ticket?.files.length) { notify('공유한 파일이 없거나 보관 시간이 지났습니다.', 'error'); return }
+      let failed = false
+      for (const [index, item] of ticket.files.entries()) {
+        if (ticket.completed[index]) continue
+        const result = await openFiles([{ name: item.name, type: item.type, bytes: new Uint8Array(item.bytes) }], undefined, { shareTicketId: ticketId, shareFileIndex: index })
+        const opened = result.opened[0]
+        if (!opened || result.errors.length) { failed = true; continue }
+        try {
+          if (recoveryEnabled) await enqueueRecoverySave(opened.id)
+          await completeShareTicketFile(ticketId, index)
+        } catch (error) {
+          failed = true
+          notify(error instanceof Error ? error.message : '공유한 파일을 저장하지 못했습니다.', 'error')
+        }
       }
-    }).catch(() => notify('공유한 파일을 복구하지 못했습니다.', 'error'))
-  }, [notify, openFiles])
+      if (failed) history.replaceState(null, '', `#/share/${ticketId}`)
+    }).catch((error: unknown) => notify(error instanceof Error ? error.message : '공유한 파일을 복구하지 못했습니다.', 'error'))
+  }, [loaded, recoveryEnabled, notify, openFiles, enqueueRecoverySave])
 
   const pickFiles = useCallback((format?: Format) => {
     inputRef.current?.open(format)
   }, [])
 
   const changeModel = useCallback((id: string, baseRevision: number, model: DocumentModel, group: 'typing' | 'command' = 'command') => {
+    if (resettingData.current) return
     const current = documentsRef.current.find((item) => item.id === id)
     if (!current) return
     if (current.revision !== baseRevision || current.parseState !== 'ready' || current.modelRevision !== current.revision) {
       notify('원본을 해석 중이거나 문서가 바뀌어 구조 편집을 잠시 사용할 수 없습니다.', 'info')
       return
     }
-    if (model === current.model) return
-    recordHistory(current, group)
-    const nextRevision = current.revision + 1
-    publishDocument({ ...current, model, revision: nextRevision, modelRevision: nextRevision, parseState: 'ready', diagnostics: [], sourceError: undefined, isDirty: true, lastEditedAt: Date.now() })
+    let command
+    try { command = documentController.current.prepareViewCommand(current, baseRevision, model, group) }
+    catch (error) { notify(error instanceof Error ? error.message : '보기 편집을 적용하지 못했습니다.', 'info'); return }
+    if (!command) return
+    publishDocument(command.optimisticDocument)
 
-    const pending = applyViewCommand(id, baseRevision, model, current).then((serialized) => {
+    const pending = command.serializedDocument.then((serialized) => {
       const latest = documentsRef.current.find((item) => item.id === id)
       if (!latest || latest.revision !== serialized.revision || latest.model !== model) return
-      publishDocument({ ...serialized, mode: latest.mode, savedText: latest.savedText, savedBytes: latest.savedBytes, sourceText: latest.sourceText, initialBytes: latest.initialBytes, isDirty: serialized.text !== latest.savedText })
+      publishDocument({ ...serialized, mode: latest.mode, savedText: latest.savedText, savedBytes: latest.savedBytes, sourceText: latest.sourceText, initialBytes: latest.initialBytes, isDirty: documentIsDirty({ ...serialized, savedText: latest.savedText, savedBytes: latest.savedBytes }) })
     }).catch((error: unknown) => {
       const latest = documentsRef.current.find((item) => item.id === id)
-      if (!latest || latest.revision !== nextRevision || latest.model !== model) return
+      if (!latest || latest.revision !== command.optimisticDocument.revision || latest.model !== model) return
       const message = error instanceof Error ? error.message : '보기 변경을 원문으로 직렬화하지 못했습니다.'
       publishDocument({ ...latest, parseState: 'error', diagnostics: [{ severity: 'error', message }], sourceError: message })
       notify(message, 'error')
@@ -332,26 +383,26 @@ export function App() {
       if (pendingSerializations.current.get(id) === pending) pendingSerializations.current.delete(id)
     })
     pendingSerializations.current.set(id, pending)
-  }, [notify, publishDocument, recordHistory])
+  }, [notify, publishDocument])
 
   const applySourceText = useCallback((id: string, nextText: string, group: 'typing' | 'command' = 'typing') => {
+    if (resettingData.current) return
     const current = documentsRef.current.find((item) => item.id === id)
     if (!current || current.text === nextText) return
-    recordHistory(current, group)
     sourceRequestTokens.current.set(id, (sourceRequestTokens.current.get(id) ?? 0) + 1)
-    publishDocument(applySourceEdit(id, nextText, current))
-  }, [publishDocument, recordHistory])
+    publishDocument(documentController.current.applySourceText(current, nextText, group))
+  }, [publishDocument])
 
   const setMode = useCallback((mode: ViewerDocument['mode']) => {
     const current = documentsRef.current.find((item) => item.id === activeId)
     if (!current || current.mode === mode) return
     if (mode === 'source') {
       void flushDocument(current.id, () => documentsRef.current.find((item) => item.id === current.id) ?? null, () => pendingSerializations.current.get(current.id)).then((document) => {
-        publishDocument({ ...document, mode: 'source' })
+        publishDocument(documentController.current.changeMode(document, 'source'))
       }).catch((error: unknown) => notify(error instanceof Error ? error.message : '원본 편집기를 준비하지 못했습니다.', 'error'))
       return
     }
-    publishDocument({ ...current, mode: 'view' })
+    publishDocument(documentController.current.changeMode(current, 'view'))
     if (current.parseState === 'pending' && current.modelRevision !== current.revision) void parseNow(current.id, current.revision)
     else if (current.parseState === 'error') notify('원본 문법 오류가 있습니다. 마지막으로 유효했던 보기를 표시합니다.', 'info')
   }, [activeId, notify, parseNow, publishDocument])
@@ -359,22 +410,15 @@ export function App() {
   const undo = useCallback((redo = false) => {
     const current = documentsRef.current.find((item) => item.id === activeId)
     if (!current) return
-    const stack = historyRef.current.get(current.id) ?? { undo: [], redo: [] }
-    const from = redo ? stack.redo : stack.undo
-    const to = redo ? stack.undo : stack.redo
-    const previous = from.pop()
-    if (!previous) return
-    to.push(historyEntry(current))
-    trimHistory(stack)
-    historyRef.current.set(current.id, stack)
+    const next = documentController.current.restoreHistory(current, redo ? 'redo' : 'undo')
+    if (!next) return
     sourceRequestTokens.current.set(current.id, (sourceRequestTokens.current.get(current.id) ?? 0) + 1)
-    const next = redo ? redoDocument(current.id, current, previous) : undoDocument(current.id, current, previous)
-    historyGroupRef.current.delete(current.id)
     publishDocument(next)
     if (next.parseState === 'pending') void parseNow(current.id, next.revision)
   }, [activeId, parseNow, publishDocument])
 
   const createBlank = useCallback(async (format: Format) => {
+    if (resettingData.current) return
     const templates: Record<Format, string> = {
       eml: 'Subject: \r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n',
       csv: '', md: '',
@@ -385,6 +429,7 @@ export function App() {
     try {
       const document = await makeDocumentFromBytes(`Untitled.${format}`, FORMAT_MIME[format], bytes)
       document.mode = 'view'
+      documentsRef.current = [document, ...documentsRef.current.filter((item) => item.id !== document.id)]
       setDocuments((items) => [document, ...items])
       setActiveId(document.id)
       setShowCommand(false)
@@ -409,7 +454,9 @@ export function App() {
     }
     if (status === 'cancelled') return
     const current = documentsRef.current.find((document) => document.id === id)
-    if (current) publishDocument({ ...current, savedText: snapshot.text, savedBytes: snapshot.bytes.slice().buffer as ArrayBuffer, encoding: snapshot.encoding, isDirty: current.revision === snapshot.revision ? false : true })
+    if (current) {
+      publishDocument(documentController.current.markSaved(current, snapshot))
+    }
     notify(status === 'saved' ? '파일을 저장했습니다.' : '내려받기를 시작했습니다.', 'success')
   }, [activeDocument, notify, publishDocument])
 
@@ -420,53 +467,61 @@ export function App() {
       const parsed = await parseWithWorker(item.name, item.mimeType, new Uint8Array(item.savedBytes), item.format, { documentId: item.id, revision: item.revision, csvHasHeader: item.format === 'csv' ? (item.model as CsvModel).hasHeader : undefined })
       if (documentsRef.current.find((document) => document.id === item.id)?.revision !== item.revision) return
       const revision = item.revision + 1
-      publishDocument({ ...item, text: parsed.text, model: parsed.model, savedText: parsed.text, sourceError: undefined, isDirty: false, revision, modelRevision: revision, textRevision: revision, parseState: 'ready', diagnostics: diagnosticsFromMessages(parsed.diagnostics), encoding: parsed.encoding })
-      historyRef.current.set(item.id, { undo: [], redo: [] })
-      historyGroupRef.current.delete(item.id)
+      publishDocument({ ...item, text: parsed.text, model: parsed.model, savedText: parsed.text, bom: hasByteOrderMark(item.savedBytes), sourceError: undefined, isDirty: false, revision, modelRevision: revision, textRevision: revision, parseState: 'ready', diagnostics: diagnosticsFromMessages(parsed.diagnostics), encoding: parsed.encoding })
+      documentController.current.clearHistory(item.id)
       notify('마지막 저장본으로 복원했습니다.', 'success')
     } catch (error) {
       const message = error instanceof Error ? error.message : '원본 파일을 해석하지 못했습니다.'
       if (documentsRef.current.find((document) => document.id === item.id)?.revision !== item.revision) return
       const revision = item.revision + 1
-      publishDocument({ ...item, text: item.savedText, textRevision: revision, revision, parseState: 'error', diagnostics: [{ severity: 'error', message }], sourceError: message, isDirty: false })
-      historyRef.current.set(item.id, { undo: [], redo: [] })
-      historyGroupRef.current.delete(item.id)
+      publishDocument({ ...item, text: item.savedText, bom: hasByteOrderMark(item.savedBytes), textRevision: revision, revision, parseState: 'error', diagnostics: [{ severity: 'error', message }], sourceError: message, isDirty: false })
+      documentController.current.clearHistory(item.id)
       notify('저장된 원문으로 복원했습니다. 구조 편집에는 유효한 문서가 필요합니다.', 'info')
     }
   }, [activeDocument, notify, publishDocument])
 
   const closeDocument = useCallback(async (id: string) => {
-    const item = documents.find((document) => document.id === id)
+    const item = documentsRef.current.find((document) => document.id === id)
     if (!item) return
     if (item.isDirty && !window.confirm(`“${item.name}”에 내보내지 않은 변경이 있습니다. 닫을까요?`)) return
+    const recoveryTimer = recoveryTimers.current.get(id)
+    if (recoveryTimer !== undefined) { window.clearTimeout(recoveryTimer); recoveryTimers.current.delete(id) }
+    closingDocumentIds.current.add(id)
+    try {
+      await recoveryWriteQueue.current.enqueue(id, () => removeDocument(id))
+    } catch (error) {
+      closingDocumentIds.current.delete(id)
+      notify(error instanceof Error ? `“${item.name}”의 복구 데이터를 정리하지 못했습니다: ${error.message}` : '복구 데이터를 정리하지 못했습니다.', 'error')
+      return
+    }
+    closingDocumentIds.current.delete(id)
+    recoveryObservedDocuments.current.delete(id)
     setDocuments((items) => items.filter((document) => document.id !== id))
     documentsRef.current = documentsRef.current.filter((document) => document.id !== id)
-    await removeDocument(id).catch(() => undefined)
-    historyRef.current.delete(id)
-    historyGroupRef.current.delete(id)
-    disposeSourceEditor(id)
-    disposeCodeEditorState(`source:${id}`)
-    disposeCodeEditorState(`markdown-view:${id}`)
-    sourceRequestTokens.current.set(id, (sourceRequestTokens.current.get(id) ?? 0) + 1)
+    documentController.current.clearHistory(id)
+    sourceRequestTokens.current.delete(id)
     const scheduled = sourceParseTimers.current.get(id)
     if (scheduled) { window.clearTimeout(scheduled.timer); sourceParseTimers.current.delete(id) }
     pendingSerializations.current.delete(id)
+    window.setTimeout(() => disposeDocumentResources(id), 0)
     if (activeId === id) {
-      const next = documents.find((document) => document.id !== id)
+      const next = documentsRef.current[0]
       setActiveId(next?.id ?? '')
       if (next) location.hash = `/file/${next.id}`
       else location.hash = '/'
     }
-  }, [documents, activeId])
+  }, [activeId, notify])
 
   const openAttachment = useCallback(async (index: number) => {
+    if (resettingData.current) return
     if (!activeDocument || activeDocument.format !== 'eml') return
     const attachment = (activeDocument.model as EmailModel).attachments[index]
     if (!attachment) return
     const format = getFormat(attachment.filename, attachment.mimeType)
     if (!format) { notify('이 파일 형식은 뷰어에서 열 수 없습니다. 내려받기를 사용하세요.', 'info'); return }
     try {
-      const child = await makeDocumentFromBytes(attachment.filename, attachment.mimeType, new Uint8Array(attachment.content), activeDocument.id)
+      const child = await makeDocumentFromBytes(attachment.filename, attachment.mimeType, attachment.content, activeDocument.id)
+      documentsRef.current = [child, ...documentsRef.current.filter((item) => item.id !== child.id)]
       setDocuments((items) => [child, ...items])
       setActiveId(child.id)
       location.hash = `/file/${child.id}`
@@ -477,7 +532,7 @@ export function App() {
     if (!activeDocument || activeDocument.format !== 'eml') return
     const attachment = (activeDocument.model as EmailModel).attachments[index]
     if (!attachment) return
-    downloadLocalFile(attachment.filename || 'attachment.bin', attachment.mimeType, new Uint8Array(attachment.content))
+    downloadLocalFile(attachment.filename || 'attachment.bin', attachment.mimeType, attachment.content)
   }, [activeDocument])
 
   const handlePaste = useCallback(async () => {
@@ -498,24 +553,63 @@ export function App() {
 
   const changeTheme = useCallback((value: ThemePreference) => {
     setTheme(value)
-    void writeSetting('theme', value).catch(() => undefined)
-  }, [])
+    void writeSetting('theme', value).catch(() => notify('테마 설정을 이 기기에 저장하지 못했습니다.', 'error'))
+  }, [notify])
   const changeRecovery = useCallback(async (enabled: boolean) => {
-    setRecoveryEnabled(enabled)
-    await writeSetting('recovery', enabled).catch(() => undefined)
-    if (!enabled) await clearDocuments().catch(() => undefined)
-  }, [])
+    const wasEnabled = recoveryEnabledRef.current
+    try {
+      if (!enabled) {
+        recoveryEnabledRef.current = false
+        for (const timer of recoveryTimers.current.values()) window.clearTimeout(timer)
+        recoveryTimers.current.clear()
+        await recoveryWriteQueue.current.flush()
+        await clearDocuments()
+      }
+      await writeSetting('recovery', enabled)
+      recoveryEnabledRef.current = enabled
+      setRecoveryEnabled(enabled)
+    } catch (error) {
+      recoveryEnabledRef.current = wasEnabled
+      notify(error instanceof Error ? `복구 설정을 변경하지 못했습니다: ${error.message}` : '복구 설정을 변경하지 못했습니다.', 'error')
+    }
+  }, [notify])
   const clearData = useCallback(async () => {
-    await clearAllData().catch(() => undefined)
-    for (const document of documentsRef.current) disposeSourceEditor(document.id)
-    historyRef.current.clear()
-    historyGroupRef.current.clear()
+    if (resettingData.current) return
+    resettingData.current = true
+    const wasEnabled = recoveryEnabledRef.current
+    recoveryEnabledRef.current = false
+    for (const timer of recoveryTimers.current.values()) window.clearTimeout(timer)
+    recoveryTimers.current.clear()
+    try {
+      await Promise.all([...pendingSerializations.current.values()].map((pending) => pending.catch(() => undefined)))
+      await recoveryWriteQueue.current.flush().catch(() => undefined)
+      await clearAllData()
+    } catch (error) {
+      recoveryEnabledRef.current = wasEnabled
+      resettingData.current = false
+      notify(error instanceof Error ? `저장된 데이터를 삭제하지 못했습니다: ${error.message}` : '저장된 데이터를 삭제하지 못했습니다.', 'error')
+      return
+    }
+    const documentIds = documentsRef.current.map((document) => document.id)
+    documentController.current.clearHistory()
     documentsRef.current = []
     setDocuments([])
+    window.setTimeout(() => clearDocumentResources(documentIds), 0)
+    for (const scheduled of sourceParseTimers.current.values()) window.clearTimeout(scheduled.timer)
+    sourceParseTimers.current.clear()
+    sourceRequestTokens.current.clear()
+    pendingSerializations.current.clear()
+    for (const timer of noticeTimer.current.values()) window.clearTimeout(timer)
+    noticeTimer.current.clear()
+    setNotices([])
     setActiveId('')
     setTheme('system')
     setRecoveryEnabled(true)
+    recoveryEnabledRef.current = true
+    recoveryWasEnabled.current = true
+    recoveryObservedDocuments.current.clear()
     setShowSettings(false)
+    resettingData.current = false
     notify('이 기기에 저장된 작업 데이터를 삭제했습니다.', 'success')
   }, [notify])
 
@@ -540,7 +634,7 @@ export function App() {
   }, [activeDocument, notify])
 
   const commands = useMemo<CommandItem[]>(() => [
-    ...documents.map((item) => ({ id: `switch-${item.id}`, title: `열린 파일 · ${safeFilename(item.name)}`, detail: `${labels[item.format]}${item.isDirty ? ' · 수정됨' : ''}`, section: '열린 파일', icon: 'open' as const, run: () => { setActiveId(item.id); location.hash = `/file/${item.id}` } })),
+    ...documents.map((item) => ({ id: `switch-${item.id}`, title: `열린 파일 · ${safeDisplayFileName(item.name)}`, detail: `${labels[item.format]}${item.isDirty ? ' · 수정됨' : ''}`, section: '열린 파일', icon: 'open' as const, run: () => { setActiveId(item.id); location.hash = `/file/${item.id}` } })),
     { id: 'open', title: '파일 열기', detail: `지원 형식 ${fileAccept}`, section: '파일', icon: 'open', run: () => pickFiles() },
     ...FORMATS.map((format) => ({ id: `new-${format}`, title: `새 ${labels[format]} 만들기`, detail: `Untitled.${format}`, section: '새 파일', icon: 'new' as const, run: () => { void createBlank(format) } })),
     ...(activeDocument ? [{ id: 'revert', title: '처음 연 파일로 되돌리기', detail: activeDocument.name, section: '문서', icon: 'new' as const, run: () => { void revertCurrent() } }] : []),
@@ -573,22 +667,9 @@ export function App() {
 
   const onDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault()
-    void readDroppedFiles(event.dataTransfer.files).then((files) => openFiles(files)).catch(() => notify('놓은 파일을 읽지 못했습니다.', 'error'))
+    void readDroppedFiles(event.dataTransfer.files).then((files) => openFiles(files)).catch((error: unknown) => notify(error instanceof Error ? error.message : '놓은 파일을 읽지 못했습니다.', 'error'))
   }, [openFiles, notify])
-  const dirty = activeDocument?.isDirty ?? false
   const switchTab = (id: string) => { setActiveId(id); location.hash = `/file/${id}` }
-  const modeLabel: Record<ViewerDocument['mode'], string> = { view: '보기', source: '원본' }
-  const renderModeTabs = (placement: 'desktop' | 'mobile') => <div className="mode-switch" role="tablist" aria-label="문서 탭" onKeyDown={(event) => {
-    const modes: ViewerDocument['mode'][] = ['view', 'source']
-    const current = event.target instanceof HTMLButtonElement ? event.target.dataset.mode as ViewerDocument['mode'] | undefined : undefined
-    const index = current ? modes.indexOf(current) : -1
-    const next = event.key === 'ArrowRight' ? (index + 1) % modes.length : event.key === 'ArrowLeft' ? (index + modes.length - 1) % modes.length : event.key === 'Home' ? 0 : event.key === 'End' ? modes.length - 1 : -1
-    if (next < 0) return
-    event.preventDefault()
-    const target = modes[next]!
-    event.currentTarget.querySelector<HTMLButtonElement>(`[data-mode="${target}"]`)?.focus()
-    setMode(target)
-  }}>{(['view', 'source'] as const).map((mode) => <button key={mode} id={`document-${activeDocument!.id}-${placement}-tab-${mode}`} data-mode={mode} role="tab" aria-controls={`document-panel-${activeDocument!.id}`} aria-selected={activeDocument!.mode === mode} tabIndex={activeDocument!.mode === mode ? 0 : -1} className={activeDocument!.mode === mode ? 'active' : ''} onClick={() => setMode(mode)}>{modeLabel[mode]}</button>)}</div>
   const renderActiveDocument = (document: ViewerDocument) => renderDocument(
     document,
     (model, group) => changeModel(document.id, document.revision, model, group),
@@ -599,58 +680,26 @@ export function App() {
 
   return <div className="app-shell" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <FilePicker ref={inputRef} onFiles={(files, format) => { void openFiles(files, format) }} onError={notify} />
-    <aside id="document-sidebar" className={`sidebar${sidebarCollapsed ? ' collapsed' : ''}`}>
-      <div className="sidebar-brand"><img src={`${__APP_BASE__}icons/viewer.svg`} alt="" /><span>The Viewer</span><button className="sidebar-toggle" aria-label={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'} title={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'} aria-controls="document-sidebar" aria-expanded={!sidebarCollapsed} onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}>{sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
-      <button className="sidebar-open" aria-label="파일 열기" title="파일 열기" onClick={() => pickFiles()}><FolderOpen size={15} /><span>파일 열기</span><kbd>⌘ O</kbd></button>
-      <button className="sidebar-command" aria-label="명령 메뉴" title="명령 메뉴" onClick={() => setShowCommand(true)}><Command size={14} /><span>명령 메뉴</span><kbd>⌘ K</kbd></button>
-      <div className="sidebar-section-title"><span>열린 파일</span><button aria-label="파일 열기" onClick={() => pickFiles()}><FilePlus2 size={14} /></button></div>
-      <nav className="document-nav" aria-label="열린 파일">
-        {documents.map((item) => <div className={`document-nav-row${item.id === activeId ? ' active' : ''}`} key={item.id}>
-          <button className="document-nav-select" aria-label={item.name} title={item.name} onClick={() => switchTab(item.id)}><span className={`file-badge format-${item.format}`}>{item.format.toUpperCase()}</span><span className="document-nav-name">{safeFilename(item.name)}</span>{item.isDirty && <i className="dirty-dot" aria-label="수정됨" />}</button>
-          <button className="document-nav-close" aria-label={`${item.name} 닫기`} onClick={() => { void closeDocument(item.id) }}><X size={13} /></button>
-        </div>)}
-        {!documents.length && <div className="sidebar-empty">열린 파일이 없습니다.</div>}
-      </nav>
-      <div className="sidebar-bottom"><button className="sidebar-settings" aria-label="설정" title="설정" onClick={() => setShowSettings(true)}><Settings2 size={14} /><span className="sidebar-settings-label">설정</span><span className="sidebar-version">v{__APP_VERSION__}</span></button></div>
-    </aside>
+    <WorkspaceSidebar documents={documents} activeId={activeId} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)} onPickFiles={() => pickFiles()} onOpenCommands={() => setShowCommand(true)} onSelectDocument={switchTab} onCloseDocument={(id) => { void closeDocument(id) }} onOpenSettings={() => setShowSettings(true)} />
 
     <main className="main-column">
-      <header className="topbar">
-        <button className="mobile-menu icon-button" aria-label="열린 파일" onClick={() => setShowCommand(true)}><Command size={17} /></button>
-        <div className="topbar-document"><span className="topbar-file-icon">{activeDocument ? <span className={`file-badge format-${activeDocument.format}`}>{activeDocument.format.toUpperCase()}</span> : <FileText size={16} />}</span><span className="topbar-name">{activeDocument ? safeFilename(activeDocument.name) : '작업 공간'}</span>{dirty && <span className="modified-pill">수정됨</span>}{activeDocument?.parentId && <span className="parent-tag">첨부에서 열림</span>}</div>
-        <div className="topbar-actions">
-          {activeDocument && <>
-            <button className="icon-button desktop-only" aria-label="실행 취소" title="실행 취소" onClick={() => undo()}><Undo2 size={15} /></button>
-            <button className="icon-button desktop-only" aria-label="다시 실행" title="다시 실행" onClick={() => undo(true)}><Redo2 size={15} /></button>
-            <div className="topbar-divider desktop-only" />
-            {renderModeTabs('desktop')}
-            <button className="icon-button theme-toggle" aria-label={`현재 ${resolvedTheme === 'dark' ? '다크' : '라이트'} 테마; 테마 변경`} title="테마 전환" onClick={() => changeTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}>{resolvedTheme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}</button>
-            <button className="primary-button export-button" onClick={() => { void saveCurrent() }}><Upload size={14} /><span>내보내기</span><ChevronDown size={12} /></button>
-            {'share' in navigator && <button className="icon-button desktop-only" aria-label="시스템 공유" title="시스템 공유" onClick={() => { void shareCurrent() }}><Share2 size={15} /></button>}
-            <button className="icon-button close-current" aria-label="현재 파일 닫기" onClick={() => { void closeDocument(activeDocument.id) }}><LogOut size={15} /></button>
-          </>}
-          {!activeDocument && <><button className="icon-button theme-toggle" aria-label="테마 설정" onClick={() => changeTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}>{resolvedTheme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}</button><button className="icon-button" aria-label="설정" onClick={() => setShowSettings(true)}><Settings2 size={16} /></button><button className="primary-button" onClick={() => pickFiles()}><FolderOpen size={14} /><span>파일 열기</span></button></>}
-        </div>
-      </header>
+      <DocumentHeader document={activeDocument} theme={resolvedTheme} canShare={'share' in navigator} onModeChange={setMode} onThemeChange={changeTheme} onUndo={() => undo()} onRedo={() => undo(true)} onSave={() => { void saveCurrent() }} onShare={() => { void shareCurrent() }} onClose={() => { if (activeDocument) void closeDocument(activeDocument.id) }} onPickFiles={() => pickFiles()} onOpenCommands={() => setShowCommand(true)} onOpenSettings={() => setShowSettings(true)} />
 
       {activeDocument ? <>
-        <div id={`document-panel-${activeDocument.id}`} className="document-workspace" key={activeDocument.id} role="tabpanel" aria-label={`${modeLabel[activeDocument.mode]} · ${activeDocument.name}`} tabIndex={0}>
+        <div id={`document-panel-${activeDocument.id}`} className="document-workspace" key={activeDocument.id} role="tabpanel" aria-label={`${activeDocument.mode === 'view' ? '보기' : '원본'} · ${activeDocument.name}`} tabIndex={0}>
           {activeDocument.parseState === 'pending' && !(activeDocument.format === 'md' && activeDocument.mode === 'view') && <div className="source-diagnostic" role="status"><span>최신 원문을 해석하고 있습니다. 편집은 계속할 수 있습니다.</span></div>}
           {activeDocument.parseState === 'error' && <div className="source-diagnostic" role="alert"><span>원문을 해석하지 못했습니다. 마지막 유효 보기는 유지되며 구조 편집은 잠깁니다.</span><small>{activeDocument.diagnostics.find((item) => item.severity === 'error')?.message ?? activeDocument.sourceError}</small></div>}
           {activeDocument.parseState === 'ready' && activeDocument.diagnostics.some((item) => item.severity === 'warning') && <div className="inline-warning" role="status">진단 {activeDocument.diagnostics.filter((item) => item.severity === 'warning').length}개 · {activeDocument.diagnostics.find((item) => item.severity === 'warning')?.message}</div>}
-          <Suspense fallback={null}>
-            {activeDocument.mode === 'view' ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)}
-          </Suspense>
+          <FeatureLoadBoundary key={activeDocument.id} fileName={activeDocument.name} sourceText={activeDocument.text}>
+            <Suspense fallback={null}>
+              {activeDocument.mode === 'view' ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)}
+            </Suspense>
+          </FeatureLoadBoundary>
         </div>
         {activeDocument.mode === 'source' && <div className="source-statusbar"><span>원본 텍스트 · UTF-8 출력</span><span>{activeDocument.text.split(/\r\n|\r|\n/).length}줄 · {activeDocument.text.length.toLocaleString()}자</span><div className="toolbar-spacer" />{activeDocument.parseState === 'pending' ? <span>해석 중</span> : activeDocument.parseState === 'error' ? <span className="error-label">문법 오류</span> : <span className="ready-label">유효한 문서</span>}</div>}
       </> : <WelcomeScreen onOpen={() => pickFiles()} onPaste={() => { void handlePaste() }} onCommand={() => setShowCommand(true)} />}
 
-      {activeDocument && <nav className="mobile-action-bar" aria-label="문서 동작">
-        {renderModeTabs('mobile')}
-        <button className="secondary-button mobile-history" aria-label="실행 취소" onClick={() => undo()}><Undo2 size={17} /></button>
-        <button className="secondary-button mobile-history" aria-label="다시 실행" onClick={() => undo(true)}><Redo2 size={17} /></button>
-        <button className="primary-button mobile-export" onClick={() => { void saveCurrent() }}><Upload size={15} /> 내보내기</button>
-      </nav>}
+      <DocumentActionBar document={activeDocument} onModeChange={setMode} onUndo={() => undo()} onRedo={() => undo(true)} onSave={() => { void saveCurrent() }} />
       {offlineReady && <div className="status-banner"><Check size={15} />오프라인에서 사용할 파일을 준비했습니다.<button className="icon-button" aria-label="알림 닫기" onClick={() => setOfflineReady(false)}><X size={14} /></button></div>}
       {updateReady && !relayRoute && <div className="status-banner update-banner"><span>새 버전을 사용할 수 있습니다. 업데이트는 사용자가 선택할 때 적용됩니다.</span><button className="subtle-button" onClick={() => window.dispatchEvent(new Event('viewer:apply-update'))}>업데이트</button><button className="icon-button" aria-label="업데이트 알림 닫기" onClick={() => setUpdateReady(false)}><X size={14} /></button></div>}
     </main>
@@ -693,5 +742,3 @@ function PasteDialog({ text, format, onTextChange, onFormatChange, onClose, onOp
     <div className="dialog-actions"><button className="secondary-button" onClick={onClose}>취소</button><button className="primary-button" disabled={!text} onClick={onOpen}><FilePlus2 size={14} /> 문서 열기</button></div>
   </section></div>
 }
-
-function safeFilename(value: string): string { return value.replace(/[\\/:*?"<>|\u0000-\u001f\u202a-\u202e\u2066-\u2069]/g, ' ').trim() || '이름 없음' }

@@ -1,10 +1,9 @@
+import { Check } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type RefAttributes } from 'react'
-import { Check, Plus, Trash2 } from 'lucide-react'
 import {
   DataEditor,
   GridCellKind,
   emptyGridSelection,
-  getDefaultTheme,
   type DataEditorProps,
   type DataEditorRef,
   type EditListItem,
@@ -12,13 +11,15 @@ import {
   type GridColumn,
   type GridSelection,
   type Item,
-  type Theme as GridTheme,
 } from '@glideapps/glide-data-grid'
 import '@glideapps/glide-data-grid/dist/index.css'
-import { renderMarkdown } from '../domain/markdown'
-import { useOutsideClick } from '../components/useOutsideClick'
-import type { MarkdownTableState } from '../components/markdownTableState'
-import type { MarkdownTableModel } from '../domain/formats/markdownTable'
+import { renderMarkdown } from '../../domain/markdown'
+import { useOutsideClick } from '../../components/useOutsideClick'
+import type { MarkdownTableState } from './tableState'
+import type { MarkdownTableModel } from '../../domain/formats/markdownTable'
+import { createGridTheme, GRID_BASE_FONT_STYLE, GRID_FONT_FAMILY, GRID_HEADER_FONT_STYLE } from '../gridTheme'
+import { applyGridCellUpdates } from '../gridModel'
+import { GridStructureToolbar } from '../GridStructureToolbar'
 
 interface Props { table: MarkdownTableState }
 
@@ -105,7 +106,7 @@ function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableStat
   }))
   const [editingHeader, setEditingHeader] = useState<number | null>(null)
   const [headerDraft, setHeaderDraft] = useState('')
-  const columnCount = Math.max(model.headers.length, ...model.rows.map((row) => row.length), 1)
+  const columnCount = model.rows.reduce((count, row) => Math.max(count, row.length), Math.max(model.headers.length, 1))
   const columnIds = useRef<string[]>([])
   while (columnIds.current.length < columnCount) columnIds.current.push(createMarkdownColumnId())
   if (columnIds.current.length > columnCount) columnIds.current = columnIds.current.slice(0, columnCount)
@@ -150,41 +151,11 @@ function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableStat
     return () => document.removeEventListener('keydown', keepEnterInGrid, true)
   }, [editorRoot])
 
-  const gridTheme = useMemo<GridTheme>(() => {
-    const light = theme === 'light'
-    return {
-      ...getDefaultTheme(),
-      accentColor: light ? '#4A52C4' : '#A4AAF7',
-      accentLight: light ? 'rgba(74, 82, 196, 0.16)' : 'rgba(164, 170, 247, 0.20)',
-      accentFg: light ? '#FCFCFD' : '#0B0B0C',
-      textDark: light ? '#1C1D21' : '#E6E6E8',
-      textMedium: light ? '#3D3E44' : '#C9CACE',
-      textLight: light ? '#62636A' : '#8A8B91',
-      textBubble: light ? '#1C1D21' : '#E6E6E8',
-      bgIconHeader: light ? '#F4F4F6' : '#0E0E10',
-      fgIconHeader: light ? '#62636A' : '#8A8B91',
-      textHeader: light ? '#62636A' : '#8A8B91',
-      textHeaderSelected: light ? '#1C1D21' : '#F2F2F3',
-      bgCell: light ? '#FCFCFD' : '#0B0B0C',
-      bgCellMedium: light ? '#F4F4F6' : '#0E0E10',
-      bgHeader: light ? '#F4F4F6' : '#0E0E10',
-      bgHeaderHasFocus: light ? '#E6E6EB' : '#1D1E21',
-      bgHeaderHovered: light ? '#E6E6EB' : '#1D1E21',
-      bgBubble: light ? '#E6E6EB' : '#1D1E21',
-      bgBubbleSelected: light ? '#D9DBF7' : '#353859',
-      bgSearchResult: light ? '#D9DBF7' : '#353859',
-      borderColor: light ? '#E4E4E8' : '#1E1F22',
-      horizontalBorderColor: light ? '#EEEEF1' : '#17181B',
-      headerBottomBorderColor: light ? '#E4E4E8' : '#1E1F22',
-      drilldownBorder: light ? '#4A52C4' : '#5B63D3',
-      linkColor: light ? '#4A52C4' : '#A4AAF7',
-      fontFamily: "'Geist Variable', 'Noto Sans KR Variable', sans-serif",
-      headerFontStyle: "500 12px 'Geist Variable', 'Noto Sans KR Variable', sans-serif",
-      baseFontStyle: "13px 'Geist Variable', 'Noto Sans KR Variable', sans-serif",
-      markerFontStyle: "11px 'Geist Mono Variable', 'Noto Sans Mono', monospace",
-      editorFontSize: '13px',
-    }
-  }, [theme])
+  const gridTheme = useMemo(() => createGridTheme(theme, {
+    fontFamily: GRID_FONT_FAMILY,
+    headerFontStyle: `${GRID_HEADER_FONT_STYLE} ${GRID_FONT_FAMILY}`,
+    baseFontStyle: `${GRID_BASE_FONT_STYLE} ${GRID_FONT_FAMILY}`
+  }), [theme])
 
   const getCellContent = ([column, row]: Item): GridCell => {
     const value = model.rows[row]?.[column] ?? ''
@@ -195,41 +166,36 @@ function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableStat
 
   const applyGridEdits = (edits: readonly EditListItem[]) => {
     if (!edits.length) return true
-    const rows = model.rows.map((row) => [...row])
-    for (const { location: [column, row], value } of edits) {
-      if (row < 0 || column < 0 || column >= columnCount) continue
-      while (rows.length <= row) rows.push(Array(columnCount).fill(''))
-      while (rows[row]!.length <= column) rows[row]!.push('')
-      rows[row]![column] = value.kind === GridCellKind.Text ? value.data : ('data' in value ? String(value.data ?? '') : '')
-    }
-    saveRows(rows)
+    const updates = edits.map(({ location: [column, row], value }) => ({
+      row,
+      column,
+      value: value.kind === GridCellKind.Text ? value.data : ('data' in value ? String(value.data ?? '') : '')
+    }))
+    const rows = applyGridCellUpdates(model.rows, updates, { allowAddRows: true, minColumns: columnCount, materializeBlankCells: true })
+    if (rows !== model.rows) saveRows(rows)
     return true
   }
 
   const pasteValues = (target: Item, values: readonly (readonly string[])[]) => {
     const [startColumn, startRow] = target
     if (startColumn < 0 || startColumn >= columnCount || startRow < 0 || values.length === 0) return false
-    const rows = model.rows.map((row) => [...row])
-    values.forEach((line, rowOffset) => {
-      const rowIndex = startRow + rowOffset
-      while (rows.length <= rowIndex) rows.push(Array(columnCount).fill(''))
-      while (rows[rowIndex]!.length < startColumn + line.length) rows[rowIndex]!.push('')
-      line.forEach((value, columnOffset) => { rows[rowIndex]![startColumn + columnOffset] = value })
-    })
-    saveRows(rows, 'command')
+    const updates = values.flatMap((line, rowOffset) => line.map((value, columnOffset) => ({ row: startRow + rowOffset, column: startColumn + columnOffset, value })))
+    const rows = applyGridCellUpdates(model.rows, updates, { allowAddRows: true, minColumns: columnCount, materializeBlankCells: true })
+    if (rows !== model.rows) saveRows(rows, 'command')
     return false
   }
 
   const clearSelection = (nextSelection: GridSelection) => {
     const range = nextSelection.current?.range
     if (range) {
-      const rows = model.rows.map((row) => [...row])
+      const updates: Array<{ row: number; column: number; value: string }> = []
       for (let row = range.y; row < range.y + range.height; row += 1) {
         for (let column = range.x; column < range.x + range.width; column += 1) {
-          if (rows[row] && column < columnCount) rows[row]![column] = ''
+          if (model.rows[row] && column < columnCount) updates.push({ row, column, value: '' })
         }
       }
-      saveRows(rows, 'command')
+      const rows = applyGridCellUpdates(model.rows, updates)
+      if (rows !== model.rows) saveRows(rows, 'command')
     }
     return true
   }
@@ -268,19 +234,23 @@ function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableStat
   }
 
   return <section ref={editorRoot} className="cm-md-table-editor" aria-label="Markdown 표 편집기">
-    <div className="cm-md-table-editor-toolbar">
-      <span>표 편집</span>
-      {editingHeader !== null && <input autoFocus aria-label="열 이름 변경" value={headerDraft} onChange={(event) => setHeaderDraft(event.target.value)} onBlur={commitHeader} onKeyDown={(event) => {
-        if (event.key === 'Enter') { event.preventDefault(); (event.target as HTMLInputElement).blur() }
-        if (event.key === 'Escape') { event.preventDefault(); setEditingHeader(null) }
-      }} />}
-      <button type="button" className="toolbar-button" onMouseDown={(event) => event.preventDefault()} onClick={addRow}><Plus size={13} /> 행 추가</button>
-      <button type="button" className="toolbar-button" onMouseDown={(event) => event.preventDefault()} onClick={addColumn}><Plus size={13} /> 열 추가</button>
-      <button type="button" className="toolbar-button icon-only" aria-label="선택한 행 삭제" title="선택한 행 삭제" disabled={!model.rows.length} onMouseDown={(event) => event.preventDefault()} onClick={removeActiveRow}><Trash2 size={13} /></button>
-      <button type="button" className="toolbar-button icon-only" aria-label="선택한 열 삭제" title="선택한 열 삭제" disabled={columnCount <= 1} onMouseDown={(event) => event.preventDefault()} onClick={removeActiveColumn}><Trash2 size={13} /></button>
-      <span className="toolbar-spacer" />
-      <button type="button" className="toolbar-button" onMouseDown={(event) => event.preventDefault()} onClick={() => table.setEditing(false)}><Check size={13} /> 완료</button>
-    </div>
+    <GridStructureToolbar
+      className="cm-md-table-editor-toolbar"
+      leadingContent={<span>표 편집</span>}
+      headerEditor={editingHeader === null ? undefined : { value: headerDraft, label: '열 이름 변경', onChange: setHeaderDraft, onCommit: commitHeader, onCancel: () => setEditingHeader(null) }}
+      trailingContent={<span className="toolbar-spacer" />}
+      iconSize={13}
+      preserveFocus
+      removeRowDisabled={!model.rows.length}
+      removeColumnDisabled={columnCount <= 1}
+      onAddRow={addRow}
+      onAddColumn={addColumn}
+      onRemoveRow={removeActiveRow}
+      onRemoveColumn={removeActiveColumn}
+      doneLabel="완료"
+      doneIcon={<Check size={13} />}
+      onDone={() => table.setEditing(false)}
+    />
     <div className="cm-md-table-grid" style={{ height: `${Math.min(360, Math.max(164, (model.rows.length + 1) * TABLE_ROW_HEIGHT + TABLE_HEADER_HEIGHT))}px` }}>
       <SpreadsheetGrid
         ref={gridRef}

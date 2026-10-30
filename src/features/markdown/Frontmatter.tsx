@@ -1,9 +1,9 @@
 import { lazy, Suspense, useSyncExternalStore } from 'react'
 import { Check, Code2 } from 'lucide-react'
-import type { MarkdownFrontmatterState } from './markdownFrontmatterState'
-import { useOutsideClick } from './useOutsideClick'
+import type { MarkdownFrontmatterState } from './frontmatterState'
+import { useOutsideClick } from '../../components/useOutsideClick'
 
-const MarkdownCodeBlockMonacoEditor = lazy(() => import('../features/MarkdownCodeBlockMonacoEditor'))
+const MarkdownCodeBlockMonacoEditor = lazy(() => import('./CodeBlockEditor'))
 
 interface Props { frontmatter: MarkdownFrontmatterState }
 

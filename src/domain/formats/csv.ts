@@ -10,7 +10,7 @@ export function parseCsv(text: string, encoding: string, bom: boolean, newline: 
   const headers = hasHeader ? [...(data[0] ?? [])] : []
   const headerRow = hasHeader ? [...headers] : []
   const rows = (hasHeader ? data.slice(1) : data).map((row) => [...row])
-  const columnCount = Math.max(headers.length, ...rows.map((row) => row.length), 0)
+  const columnCount = rows.reduce((count, row) => Math.max(count, row.length), headers.length)
   return {
     headers, headerRow, rows, hasHeader, delimiter: parsed.meta.delimiter || ',', newline, bom, encoding,
     errors: [

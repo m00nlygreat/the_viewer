@@ -12,10 +12,12 @@
     "verbatimModuleSyntax": true,
     "noEmit": true,
     "jsx": "react-jsx",
+    "types": ["vite/client", "chrome"],
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "vite.config.ts", "tests"]
+  "include": ["src", "vite.config.ts", "tests"],
+  "exclude": ["tests/fixtures/**", "dist/**", "node_modules/**"]
 }

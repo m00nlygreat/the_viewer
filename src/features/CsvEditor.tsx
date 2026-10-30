@@ -1,22 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
-import { Columns3, Plus, Search, Trash2 } from 'lucide-react'
+import { Columns3, Search } from 'lucide-react'
 import {
   CompactSelection,
   DataEditor,
   GridCellKind,
   emptyGridSelection,
-  getDefaultTheme,
   type DataEditorProps,
   type EditListItem,
   type GridCell,
   type GridColumn,
   type GridSelection,
   type Item,
-  type Theme as GridTheme,
 } from '@glideapps/glide-data-grid'
 import '@glideapps/glide-data-grid/dist/index.css'
 import type { CsvModel, ViewerDocument } from '../domain/types'
+import { createGridTheme, GRID_BASE_FONT_STYLE, GRID_FONT_FAMILY, GRID_HEADER_FONT_STYLE } from './gridTheme'
+import { applyGridCellUpdates } from './gridModel'
 import { readCsvEditorState, saveCsvEditorState } from './csvEditorState'
+import { GridStructureToolbar } from './GridStructureToolbar'
 
 interface Props { document: ViewerDocument; model: CsvModel; onChange: (model: CsvModel, group?: 'typing' | 'command') => void; theme: 'light' | 'dark' }
 
@@ -26,9 +27,9 @@ const CSV_MIN_COLUMN_WIDTH = 80
 const CSV_DEFAULT_COLUMN_WIDTH = 164
 const CSV_MAX_COLUMN_WIDTH = 640
 const CSV_COLUMN_PADDING = 32
-const CSV_FONT_FAMILY = "'Geist Variable', 'Noto Sans KR Variable', sans-serif"
-const CSV_BASE_FONT_STYLE = '13px'
-const CSV_HEADER_FONT_STYLE = '500 12px'
+const CSV_FONT_FAMILY = GRID_FONT_FAMILY
+const CSV_BASE_FONT_STYLE = GRID_BASE_FONT_STYLE
+const CSV_HEADER_FONT_STYLE = GRID_HEADER_FONT_STYLE
 const CSV_CELL_FONT = `${CSV_BASE_FONT_STYLE} ${CSV_FONT_FAMILY}`
 const CSV_HEADER_FONT = `${CSV_HEADER_FONT_STYLE} ${CSV_FONT_FAMILY}`
 
@@ -82,7 +83,7 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
   const [headerDraft, setHeaderDraft] = useState(() => saved?.headerDraft ?? '')
   const canEdit = document.parseState === 'ready' && document.modelRevision === document.revision
   const rows = model.rows
-  const columnsCount = Math.max(model.headers.length, ...rows.map((row) => row.length), 1)
+  const columnsCount = rows.reduce((count, row) => Math.max(count, row.length), Math.max(model.headers.length, 1))
   const [columnWidths, setColumnWidths] = useState<number[]>(() => saved?.columnWidths ?? autoFitColumnWidths(model.headers, rows, columnsCount, null))
   const savedView = useRef({ query, sort, gridSelection, columnWidths, editingHeader, headerDraft })
   savedView.current = { query, sort, gridSelection, columnWidths, editingHeader, headerDraft }
@@ -104,41 +105,13 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
     return { title: sortedTitle, width: columnWidths[column] ?? CSV_DEFAULT_COLUMN_WIDTH }
   }), [columnWidths, columnsCount, model.headers, sort])
 
-  const gridTheme = useMemo<GridTheme>(() => {
-    const light = theme === 'light'
-    return {
-      ...getDefaultTheme(),
-      accentColor: light ? '#4A52C4' : '#A4AAF7',
-      accentLight: light ? 'rgba(74, 82, 196, 0.16)' : 'rgba(164, 170, 247, 0.20)',
-      accentFg: light ? '#FCFCFD' : '#0B0B0C',
-      textDark: light ? '#1C1D21' : '#E6E6E8',
-      textMedium: light ? '#3D3E44' : '#C9CACE',
-      textLight: light ? '#62636A' : '#8A8B91',
-      textBubble: light ? '#1C1D21' : '#E6E6E8',
-      bgIconHeader: light ? '#F4F4F6' : '#0E0E10',
-      fgIconHeader: light ? '#62636A' : '#8A8B91',
-      textHeader: light ? '#62636A' : '#8A8B91',
-      textHeaderSelected: light ? '#1C1D21' : '#F2F2F3',
-      bgCell: light ? '#FCFCFD' : '#0B0B0C',
-      bgCellMedium: light ? '#F4F4F6' : '#0E0E10',
-      bgHeader: light ? '#F4F4F6' : '#0E0E10',
-      bgHeaderHasFocus: light ? '#E6E6EB' : '#1D1E21',
-      bgHeaderHovered: light ? '#E6E6EB' : '#1D1E21',
-      bgBubble: light ? '#E6E6EB' : '#1D1E21',
-      bgBubbleSelected: light ? '#D9DBF7' : '#353859',
-      bgSearchResult: light ? '#D9DBF7' : '#353859',
-      borderColor: light ? '#E4E4E8' : '#1E1F22',
-      horizontalBorderColor: light ? '#EEEEF1' : '#17181B',
-      headerBottomBorderColor: light ? '#E4E4E8' : '#1E1F22',
-      drilldownBorder: light ? '#4A52C4' : '#5B63D3',
-      linkColor: light ? '#4A52C4' : '#A4AAF7',
+  const gridTheme = useMemo(() => createGridTheme(theme, {
       fontFamily: CSV_FONT_FAMILY,
       headerFontStyle: CSV_HEADER_FONT_STYLE,
       baseFontStyle: CSV_BASE_FONT_STYLE,
       markerFontStyle: "11px 'Geist Mono Variable', 'Noto Sans Mono', monospace",
       editorFontSize: '13px',
-    }
-  }, [theme])
+    }), [theme])
 
   const getCellContent = useCallback(([column, row]: Item): GridCell => {
     const value = visible[row]?.row[column] ?? ''
@@ -147,22 +120,14 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
 
   const applyTextEdits = useCallback((edits: readonly { location: Item; value: string }[], group: 'typing' | 'command' = 'typing') => {
     if (edits.length === 0) return
-    const next = [...rows]
-    const changedRows = new Map<number, string[]>()
-    let changed = false
+    const updates: Array<{ row: number; column: number; value: string }> = []
     for (const { location: [column, viewRow], value } of edits) {
       const sourceRow = visible[viewRow]?.index
       if (sourceRow === undefined || column < 0 || column >= columnsCount) continue
-      let nextRow = changedRows.get(sourceRow)
-      if (!nextRow) {
-        nextRow = [...next[sourceRow]]
-        changedRows.set(sourceRow, nextRow)
-        next[sourceRow] = nextRow
-      }
-      while (nextRow.length <= column) nextRow.push('')
-      if (nextRow[column] !== value) { nextRow[column] = value; changed = true }
+      updates.push({ row: sourceRow, column, value })
     }
-    if (changed && canEdit) onChange({ ...model, rows: next }, group)
+    const nextRows = applyGridCellUpdates(rows, updates)
+    if (nextRows !== rows && canEdit) onChange({ ...model, rows: nextRows }, group)
   }, [canEdit, columnsCount, model, onChange, rows, visible])
 
   const applyGridEdits = useCallback((edits: readonly EditListItem[]) => {
@@ -177,23 +142,17 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
     if (!canEdit || values.length === 0) return false
     const [startColumn, startViewRow] = target
     if (startColumn < 0 || startColumn >= columnsCount || startViewRow < 0) return false
-    const next = rows.map((row) => [...row])
-    let changed = false
+    const updates: Array<{ row: number; column: number; value: string }> = []
+    let nextNewRow = rows.length
     values.forEach((line, rowOffset) => {
       const viewRow = startViewRow + rowOffset
-      let sourceRow = visible[viewRow]?.index
-      if (sourceRow === undefined) {
-        sourceRow = next.length
-        next.push(Array(columnsCount).fill(''))
-      }
-      while (next[sourceRow].length < startColumn + line.length) next[sourceRow].push('')
-      line.forEach((value, columnOffset) => {
-        const column = startColumn + columnOffset
-        if (next[sourceRow][column] !== value) { next[sourceRow][column] = value; changed = true }
-      })
+      const sourceRow = visible[viewRow]?.index ?? nextNewRow++
+      line.forEach((value, columnOffset) => updates.push({ row: sourceRow, column: startColumn + columnOffset, value }))
     })
-    if (changed) {
-      const nextColumnCount = Math.max(columnsCount, ...next.map((row) => row.length), 1)
+    const next = applyGridCellUpdates(rows, updates, { allowAddRows: true, minColumns: columnsCount, materializeBlankCells: true })
+    if (next !== rows) {
+      const pastedColumnCount = values.reduce((count, line) => Math.max(count, startColumn + line.length), columnsCount)
+      const nextColumnCount = Math.max(columnsCount, pastedColumnCount)
       if (nextColumnCount > columnsCount) setColumnWidths((current) => [...current, ...Array(nextColumnCount - current.length).fill(CSV_DEFAULT_COLUMN_WIDTH)])
       onChange({ ...model, rows: next }, 'command')
     }
@@ -297,26 +256,31 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
 
   return (
     <section className="csv-workspace" aria-label={`${document.name} 표`}>
-      <div className="csv-toolbar">
-        <label className="search-box"><Search size={14} /><input aria-label="표 검색" placeholder="검색" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-        {editingHeader !== null && <input className="csv-header-editor" autoFocus aria-label="열 이름 변경" value={headerDraft} onChange={(event) => setHeaderDraft(event.target.value)} onBlur={commitHeader} onKeyDown={(event) => {
-          if (event.key === 'Enter') { event.preventDefault(); (event.target as HTMLInputElement).blur() }
-          if (event.key === 'Escape') { event.preventDefault(); setEditingHeader(null) }
-        }} />}
-        <div className="toolbar-separator" />
-        <button className="toolbar-button" disabled={!canEdit} onClick={addRow}><Plus size={14} /> 행 추가</button>
-        <button className="toolbar-button" disabled={!canEdit} onClick={addColumn}><Plus size={14} /> 열</button>
-        <button className="toolbar-button csv-autofit-button" aria-label="열 너비 자동 맞춤" title="열 너비 자동 맞춤" onClick={autoFitColumns}><Columns3 size={14} /><span>너비 맞춤</span></button>
-        <button className="toolbar-button icon-only" disabled={!canEdit} aria-label="선택한 행 삭제" title="선택한 행 삭제" onClick={removeActiveRow}><Trash2 size={14} /></button>
-        <button className="toolbar-button icon-only" disabled={!canEdit} aria-label="선택한 열 삭제" title="선택한 열 삭제" onClick={removeActiveColumn}><Trash2 size={14} /></button>
-        <div className="toolbar-spacer" />
-        <label className="csv-select-label">구분자
+      <GridStructureToolbar
+        className="csv-toolbar"
+        leadingContent={<label className="search-box"><Search size={14} /><input aria-label="표 검색" placeholder="검색" value={query} onChange={(event) => setQuery(event.target.value)} /></label>}
+        headerEditor={editingHeader === null ? undefined : { value: headerDraft, className: 'csv-header-editor', label: '열 이름 변경', onChange: setHeaderDraft, onCommit: commitHeader, onCancel: () => setEditingHeader(null) }}
+        beforeActions={<div className="toolbar-separator" />}
+        afterAddColumn={<button type="button" className="toolbar-button csv-autofit-button" aria-label="열 너비 자동 맞춤" title="열 너비 자동 맞춤" onClick={autoFitColumns}><Columns3 size={14} /><span>너비 맞춤</span></button>}
+        trailingContent={<>
+          <div className="toolbar-spacer" />
+          <label className="csv-select-label">구분자
           <select aria-label="CSV 구분자" disabled={!canEdit} value={model.delimiter} onChange={(event) => onChange({ ...model, delimiter: event.target.value })}>
             <option value=",">쉼표</option><option value=";">세미콜론</option><option value="\t">탭</option>
           </select>
-        </label>
-        <label className="csv-toggle"><input type="checkbox" disabled={!canEdit} checked={model.hasHeader} onChange={(event) => setHeaderStatus(event.target.checked)} /> 첫 행 머리글</label>
-      </div>
+          </label>
+          <label className="csv-toggle"><input type="checkbox" disabled={!canEdit} checked={model.hasHeader} onChange={(event) => setHeaderStatus(event.target.checked)} /> 첫 행 머리글</label>
+        </>}
+        addRowDisabled={!canEdit}
+        addColumnDisabled={!canEdit}
+        removeRowDisabled={!canEdit}
+        removeColumnDisabled={!canEdit}
+        addColumnLabel="열"
+        onAddRow={addRow}
+        onAddColumn={addColumn}
+        onRemoveRow={removeActiveRow}
+        onRemoveColumn={removeActiveColumn}
+      />
       {model.errors.length > 0 && <div className="inline-warning" role="status">CSV 진단 {model.errors.length}개 · 첫 오류: {model.errors[0]}</div>}
       <div className="csv-grid">
         <SpreadsheetGrid

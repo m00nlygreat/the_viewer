@@ -1,6 +1,7 @@
 import { getFormat, FORMAT_MIME, GENERIC_FILE_MIME_TYPES } from '../fileTypes'
 import type { Format, PickedFile } from '../fileTypes'
 import { isLocalFileAccessAllowed } from './autoOpen'
+import { assertInputFileSize, maxInputFileBytes } from '../../domain/inputPolicy'
 
 export async function readRemoteLinkTicket(id: string): Promise<string | null> {
   const result = await chrome.storage.local.get(`link:${id}`)
@@ -44,11 +45,32 @@ export async function fetchRemoteLinkFile(source: string, options: { requestPerm
 }
 
 async function readFileBytes(response: Response): Promise<Uint8Array> {
-  const maximum = /Mobi|Android/i.test(navigator.userAgent) ? 20 * 1024 * 1024 : 50 * 1024 * 1024
+  const maximum = maxInputFileBytes(navigator.userAgent)
   const length = Number(response.headers.get('content-length') ?? 0)
-  if (length > maximum) throw new Error('파일 크기가 기기별 제한을 초과합니다.')
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength > maximum) throw new Error('파일 크기가 기기별 제한을 초과합니다.')
+  if (length > maximum) assertInputFileSize('다운로드', length, navigator.userAgent)
+  const reader = response.body?.getReader()
+  if (!reader) {
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    assertInputFileSize('다운로드', bytes.byteLength, navigator.userAgent)
+    return bytes
+  }
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > maximum) {
+        await reader.cancel()
+        assertInputFileSize('다운로드', total, navigator.userAgent)
+      }
+      chunks.push(value)
+    }
+  } finally { reader.releaseLock() }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
   return bytes
 }
 

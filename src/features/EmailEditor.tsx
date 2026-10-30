@@ -1,8 +1,9 @@
-import DOMPurify from 'dompurify'
 import { Download, ExternalLink, FileText, Paperclip } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { EmailModel, ViewerDocument } from '../domain/types'
+import { getFormat } from '../domain/fileFormats'
 import { createInlineImageUrls, releaseObjectUrls } from '../platform/attachmentResources'
+import { prepareEmailHtml } from './emailHtml'
 
 interface Props {
   document: ViewerDocument
@@ -20,17 +21,7 @@ export function EmailEditor({ document, model, onOpenAttachment, onDownloadAttac
   }, [model.attachments])
 
   const content = model.text || model.html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-  const localHtml = (model.html || '').replace(/\bsrc=(['"])cid:([^'"]+)\1/gi, (_match, _quote: string, value: string) => {
-    let key = value.trim().replace(/[<>]/g, '')
-    try { key = decodeURIComponent(key) } catch { /* Keep the literal Content-ID when it is not percent encoded. */ }
-    const url = imageUrls[key.toLowerCase()]
-    return url ? `src="${url}"` : 'src=""'
-  })
-  const safeHtml = DOMPurify.sanitize(localHtml, {
-    FORBID_TAGS: ['script', 'style', 'link', 'iframe', 'object', 'embed', 'form', 'input', 'video', 'audio'],
-    FORBID_ATTR: ['style', 'srcset', 'background', 'action', 'formaction'],
-    ALLOWED_URI_REGEXP: /^(?:blob:|data:image\/(?:png|gif|jpeg|webp);base64,)/i
-  })
+  const safeHtml = useMemo(() => prepareEmailHtml(model.html || '', imageUrls), [imageUrls, model.html])
   const sender = model.from[0]
   const details = [
     ['보낸 사람', sender?.name || sender?.address || '—'], ['주소', sender?.address || '—'],
@@ -74,7 +65,7 @@ function AttachmentList({ model, onOpen, onDownload }: { model: EmailModel; onOp
   return <section className="attachments"><div className="attachments-heading"><h2><Paperclip size={14} /> 첨부 파일 <span>{model.attachments.length}</span></h2></div>
     {model.attachments.map((attachment, index) => <div className="attachment-row" key={`${attachment.filename}-${index}`}>
       <div className="attachment-icon"><FileText size={16} /></div><div className="attachment-info"><strong>{attachment.filename}</strong><span>{attachment.mimeType} · {formatSize(attachment.content.length)}</span></div>
-      {['eml', 'csv', 'md', 'ics', 'vcf'].some((extension) => attachment.filename.toLowerCase().endsWith(`.${extension}`)) && <button className="subtle-button" onClick={() => onOpen(index)} title="작업 공간에서 열기"><ExternalLink size={14} /> 열기</button>}
+      {getFormat(attachment.filename, attachment.mimeType) && <button className="subtle-button" onClick={() => onOpen(index)} title="작업 공간에서 열기"><ExternalLink size={14} /> 열기</button>}
       <button className="icon-button" onClick={() => onDownload(index)} aria-label={`${attachment.filename} 내려받기`} title="내려받기"><Download size={15} /></button>
     </div>)}
   </section>

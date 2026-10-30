@@ -1,5 +1,5 @@
 import type { EditorView } from '@codemirror/view'
-import type { MarkdownFrontmatter } from '../domain/formats/markdownFrontmatter'
+import type { MarkdownFrontmatter } from '../../domain/formats/markdownFrontmatter'
 
 export interface MarkdownFrontmatterSnapshot extends MarkdownFrontmatter {
   editing: boolean

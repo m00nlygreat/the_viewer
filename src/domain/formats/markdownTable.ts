@@ -57,13 +57,11 @@ export function parseMarkdownTable(source: string): MarkdownTableModel | null {
   const alignments = delimiter.map(alignmentOf)
   if (headers.length === 0 || delimiter.length === 0 || alignments.some((alignment) => alignment === undefined)) return null
 
-  const columnCount = Math.max(headers.length, delimiter.length, ...lines.slice(2).map((line) => splitRow(line).length), 1)
+  const parsedRows = lines.slice(2).filter((line) => line.trim() !== '').map(splitRow)
+  const columnCount = parsedRows.reduce((count, row) => Math.max(count, row.length), Math.max(headers.length, delimiter.length, 1))
   const normalizedHeaders = Array.from({ length: columnCount }, (_, index) => headers[index] ?? '')
   const normalizedAlignments = Array.from({ length: columnCount }, (_, index) => alignments[index] ?? null)
-  const rows = lines.slice(2).filter((line) => line.trim() !== '').map((line) => {
-    const row = splitRow(line)
-    return Array.from({ length: columnCount }, (_, index) => row[index] ?? '')
-  })
+  const rows = parsedRows.map((row) => Array.from({ length: columnCount }, (_, index) => row[index] ?? ''))
 
   return { headers: normalizedHeaders, alignments: normalizedAlignments, rows, newline }
 }
@@ -92,7 +90,7 @@ function serializeAlignment(alignment: MarkdownTableAlignment): string {
 }
 
 export function serializeMarkdownTable(model: MarkdownTableModel): string {
-  const columnCount = Math.max(model.headers.length, model.alignments.length, ...model.rows.map((row) => row.length), 1)
+  const columnCount = model.rows.reduce((count, row) => Math.max(count, row.length), Math.max(model.headers.length, model.alignments.length, 1))
   const renderRow = (row: readonly string[]) => `| ${Array.from({ length: columnCount }, (_, index) => escapePipes(row[index] ?? '')).join(' | ')} |`
   const delimiter = Array.from({ length: columnCount }, (_, index) => serializeAlignment(model.alignments[index] ?? null))
   return [renderRow(model.headers), renderRow(delimiter), ...model.rows.map(renderRow)].join(model.newline)

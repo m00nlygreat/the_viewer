@@ -1,10 +1,10 @@
 import { FORMATS, type Format } from '../fileTypes'
+import { DESKTOP_FILE_LIMIT, MOBILE_FILE_LIMIT, maxInputFileBytes } from '../../domain/inputPolicy'
 
 export const PROTOCOL_VERSION = 1
 export const PORT_NAME = 'the-viewer-relay-v1'
 export const CHUNK_BYTES = 192 * 1024
-export const DESKTOP_FILE_LIMIT = 50 * 1024 * 1024
-export const MOBILE_FILE_LIMIT = 20 * 1024 * 1024
+export { DESKTOP_FILE_LIMIT, MOBILE_FILE_LIMIT }
 export const WORKSPACE_SNAPSHOT_LIMIT = 200 * 1024 * 1024
 export const SNAPSHOT_MIME = 'application/vnd.the-viewer.workspace+json'
 export const PWA_ORIGIN = 'https://m00nlygreat.github.io'
@@ -28,7 +28,7 @@ export type RelayMessage = HelloMessage | MetaMessage | ReadMessage | ChunkMessa
 export interface RelayRoute { extensionId: string; ticketId: string }
 
 export function maxFileBytes(userAgent = ''): number {
-  return /Mobi|Android|iPhone|iPad|iPod/i.test(userAgent) ? MOBILE_FILE_LIMIT : DESKTOP_FILE_LIMIT
+  return maxInputFileBytes(userAgent)
 }
 
 export function maxBytesForKind(kind: RelayKind, userAgent = ''): number {

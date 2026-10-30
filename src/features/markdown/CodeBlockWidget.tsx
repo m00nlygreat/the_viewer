@@ -1,10 +1,7 @@
-import { createRoot, type Root } from 'react-dom/client'
 import { WidgetType, type EditorView } from '@codemirror/view'
-import { MarkdownCodeBlock } from './MarkdownCodeBlock'
-import type { MarkdownCodeBlockState } from './markdownCodeBlockState'
-import { unmountWidgetRoot } from './reactWidgetRoot'
-
-const roots = new WeakMap<HTMLElement, Root>()
+import { MarkdownCodeBlock } from './CodeBlock'
+import type { MarkdownCodeBlockState } from './codeBlockState'
+import { renderWidgetRoot, unmountWidgetRoot } from '../../components/reactWidgetRoot'
 
 export class MarkdownCodeBlockWidget extends WidgetType {
   constructor(private readonly block: MarkdownCodeBlockState) { super() }
@@ -18,9 +15,7 @@ export class MarkdownCodeBlockWidget extends WidgetType {
     const element = document.createElement('div')
     element.className = 'cm-md-code-widget'
     element.contentEditable = 'false'
-    const root = createRoot(element)
-    roots.set(element, root)
-    root.render(<MarkdownCodeBlock block={this.block} />)
+    renderWidgetRoot(element, <MarkdownCodeBlock block={this.block} />)
     return element
   }
 
@@ -29,8 +24,6 @@ export class MarkdownCodeBlockWidget extends WidgetType {
   ignoreEvent(): boolean { return true }
 
   destroy(element: HTMLElement): void {
-    const root = roots.get(element)
-    if (root) unmountWidgetRoot(root)
-    roots.delete(element)
+    unmountWidgetRoot(element)
   }
 }

@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["vite/client", "chrome"] },
+  "include": ["src/types/global.d.ts", "tests/**/*.test.ts", "tests/**/*.test.tsx"],
+  "exclude": ["tests/fixtures/**", "dist/**", "node_modules/**"]
+}

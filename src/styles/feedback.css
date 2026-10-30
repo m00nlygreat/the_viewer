@@ -1,0 +1,13 @@
+.status-banner { position: absolute; right: 16px; bottom: 16px; z-index: 8; max-width: min(520px, calc(100% - 32px)); padding: 10px 11px; display: flex; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--text-secondary); background: var(--panel-raised); box-shadow: var(--shadow); font-size: 12px; }
+.status-banner > svg:first-child { color: #63B887; }.status-banner .icon-button { margin: -3px -4px -3px auto; }
+.update-banner { bottom: 58px; }.update-banner .subtle-button { margin-left: auto; }
+.toast-stack { position: fixed; right: 18px; bottom: 18px; z-index: 1200; display: flex; align-items: flex-end; flex-direction: column; gap: 7px; pointer-events: none; }
+.toast { max-width: min(400px, calc(100vw - 36px)); min-height: 38px; padding: 8px 10px 8px 12px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--button-line); border-radius: 7px; color: var(--text-secondary); background: var(--panel-raised); box-shadow: var(--shadow); font-size: 12px; pointer-events: auto; }
+.toast.success { border-color: color-mix(in srgb, #63B887 38%, var(--button-line)); }.toast.error { border-color: color-mix(in srgb, #D77E7E 45%, var(--button-line)); }
+.toast button { width: 20px; height: 20px; display: grid; place-items: center; color: var(--text-weak); background: transparent; }
+.mobile-menu { display: none; }
+.about-links { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 12px; }
+.about-links a { color: var(--accent); font-size: 12px; text-decoration: none; }
+.about-links a:hover { text-decoration: underline; }
+.mobile-action-bar { display: none; }
+

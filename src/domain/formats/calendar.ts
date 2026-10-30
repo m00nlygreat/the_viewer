@@ -94,7 +94,7 @@ function updateEventTimezone(component: ICAL.Component, timezone: string | undef
 }
 
 export function serializeCalendar(model: CalendarModel): string {
-  const root = new ICAL.Component(model.jcal as ConstructorParameters<typeof ICAL.Component>[0])
+  const root = new ICAL.Component(structuredClone(model.jcal) as ConstructorParameters<typeof ICAL.Component>[0])
   const original = root.getAllSubcomponents('vevent')
   const updated = new Map<number, CalendarEvent>()
   const additions: CalendarEvent[] = []

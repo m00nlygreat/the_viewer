@@ -9,13 +9,18 @@
   "scripts": {
     "dev": "vite --mode app",
     "dev:extension": "vite build --mode extension --watch",
-    "build:icons": "node scripts/generate-icons.mjs",
-    "build:app": "npm run build:icons && vite build --mode app",
-    "build:extension": "npm run build:icons && vite build --mode extension",
+    "verify:icons": "node scripts/verify-icons.mjs",
+    "prepare:assets": "node scripts/prepare-build-assets.mjs",
+    "build:app": "npm run verify:icons && npm run prepare:assets && vite build --mode app",
+    "build:extension": "npm run verify:icons && npm run prepare:assets && vite build --mode extension",
     "build": "npm run build:app && npm run build:extension",
-    "lint:app": "eslint src/app src/components src/domain src/features src/platform/pwa src/platform/relay src/platform/storage.ts src/platform/attachmentResources.ts src/platform/browserFiles.ts src/platform/fileTypes.ts src/platform/FilePicker.tsx src/main.tsx",
+    "lint:app": "eslint src/app src/components src/domain src/features src/platform/pwa src/platform/relay src/platform/storage.ts src/platform/documentWriteQueue.ts src/platform/attachmentResources.ts src/platform/browserFiles.ts src/platform/fileTypes.ts src/platform/FilePicker.tsx src/main.tsx",
     "typecheck:app": "tsc -p tsconfig.app.json",
-    "test:app": "vitest run tests/formats.test.ts tests/session.test.ts tests/markdownPreview.test.ts tests/editorText.test.ts tests/monacoThemeColors.test.ts tests/csvLanguage.test.ts tests/emailEditor.test.tsx",
+    "typecheck:sw": "tsc -p tsconfig.sw.json",
+    "typecheck:extension": "tsc -p tsconfig.extension.json",
+    "typecheck:tools": "tsc -p tsconfig.tools.json",
+    "typecheck:tests": "tsc -p tsconfig.tests.json",
+    "test:app": "vitest run",
     "test:formats": "vitest run tests/formats.test.ts tests/session.test.ts",
     "verify:pwa-build": "node scripts/verify-pwa-build.mjs",
     "preview:app": "vite preview --mode app --outDir dist/app",
@@ -24,7 +29,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "check": "npm run lint && npm run typecheck:app && npm run typecheck:sw && npm run typecheck:extension && npm run typecheck:tools && npm run typecheck:tests && npm run test && npm run build"
   },
   "dependencies": {
     "@codemirror/commands": "^6.8.1",
@@ -37,7 +42,7 @@
     "@fontsource-variable/noto-sans-kr": "^5.3.1",
     "@glideapps/glide-data-grid": "6.0.4-alpha24",
     "@lezer/highlight": "^1.2.5",
-    "dompurify": "^3.2.6",
+    "dompurify": "^3.4.17",
     "highlight.js": "^11.12.0",
     "ical.js": "^2.2.1",
     "idb": "^8.0.3",
@@ -59,11 +64,17 @@
     "eslint": "^10.13.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
+    "jsdom": "^30.1.3",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.71.2",
     "vite": "^8.3.4",
     "vite-plugin-pwa": "^2.0.0",
     "vitest": "^5.0.5",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
     "yazl": "^3.3.1"
+  },
+  "overrides": {
+    "dompurify": "$dompurify"
   }
 }

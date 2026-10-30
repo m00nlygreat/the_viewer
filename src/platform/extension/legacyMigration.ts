@@ -29,7 +29,7 @@ export function createLegacySnapshot(document: LegacyDocumentRecord): { bytes: U
     schemaVersion: 1,
     document: { ...savedDocument, sourceBytesBase64: bytesToBase64(new Uint8Array(sourceBytes)) }
   }
-  const bytes = new TextEncoder().encode(JSON.stringify(snapshot))
+  const bytes = new TextEncoder().encode(JSON.stringify(snapshot, (_key, value: unknown) => value instanceof Uint8Array ? Array.from(value) : value))
   if (bytes.byteLength > maxBytesForKind('workspace-snapshot', navigator.userAgent)) {
     throw new Error('기존 문서가 이 기기의 이전 작업 크기 제한을 초과합니다.')
   }

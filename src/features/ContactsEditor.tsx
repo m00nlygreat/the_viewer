@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Building2, Mail, MapPin, Phone, Plus, Trash2, UserRound, Globe2, Pencil } from 'lucide-react'
 import type { ContactModel, ViewerDocument } from '../domain/types'
 import { addContact, removeContact, setContactItems, updateContact } from '../domain/vcard'
@@ -9,22 +9,57 @@ export function ContactsEditor({ document, model, onChange }: Props) {
   const [selected, setSelected] = useState(model.cards[0]?.recordId ?? model.cards[0]?.uid ?? '')
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState(() => model.cards.length > 0 && !model.cards[0]?.fullName && !model.cards[0]?.organization && !model.cards[0]?.phones.length && !model.cards[0]?.emails.length)
+  const listRef = useRef<HTMLElement>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(720)
+  const [rowHeight, setRowHeight] = useState(58)
   const canEdit = document.parseState === 'ready' && document.modelRevision === document.revision
   const contacts = model.cards
-  const visible = contacts.filter((card) => `${card.fullName} ${card.organization} ${card.title} ${card.emails.map((item) => item.value).join(' ')}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
-  const active = contacts.find((card) => (card.recordId ?? card.uid) === selected) ?? visible[0] ?? null
+  const searchIndex = useMemo(() => contacts.map((card) => ({
+    card,
+    searchText: `${card.fullName} ${card.organization} ${card.title} ${card.emails.map((item) => item.value).join(' ')}`.toLocaleLowerCase()
+  })), [contacts])
+  const byId = useMemo(() => new Map(contacts.map((card) => [card.recordId ?? card.uid, card])), [contacts])
+  const normalizedQuery = query.toLocaleLowerCase()
+  const visible = useMemo(() => searchIndex.filter((item) => !normalizedQuery || item.searchText.includes(normalizedQuery)).map((item) => item.card), [searchIndex, normalizedQuery])
+  useEffect(() => {
+    const element = listRef.current
+    if (!element) return
+    const updateSize = () => setViewportHeight(element.clientHeight)
+    updateSize()
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = 0
+    setScrollTop(0)
+  }, [normalizedQuery])
+  const overscan = 10
+  const staticHeight = 52 + (model.diagnostics.length ? 31 : 0)
+  const firstVisibleIndex = Math.max(0, Math.floor(Math.max(0, scrollTop - staticHeight) / rowHeight))
+  const firstContactIndex = Math.max(0, firstVisibleIndex - overscan)
+  const renderedCount = Math.ceil(Math.max(0, viewportHeight - staticHeight) / rowHeight) + overscan * 2
+  const renderedContacts = visible.slice(firstContactIndex, firstContactIndex + renderedCount)
+  const measureRow = (element: HTMLButtonElement | null) => {
+    const height = element?.getBoundingClientRect().height
+    if (height && height !== rowHeight) setRowHeight(height)
+  }
+  const active = byId.get(selected) ?? visible[0] ?? null
   const activeId = active?.recordId ?? active?.uid ?? ''
   const edit = (values: Parameters<typeof updateContact>[2]) => active && canEdit && onChange(updateContact(model, activeId, values), 'typing')
   const add = () => { if (!canEdit) return; const next = addContact(model); onChange(next); const card = next.cards[next.cards.length - 1]; setSelected(card.recordId ?? card.uid); setEditing(true) }
   const remove = () => { if (!active || !canEdit || !window.confirm(`“${active.fullName || '연락처'}”를 삭제할까요?`)) return; const next = removeContact(model, activeId); onChange(next); setSelected(next.cards[0]?.recordId ?? next.cards[0]?.uid ?? '') }
 
   return <section className="contacts-layout">
-    <aside className="contact-list">
+    <aside ref={listRef} className="contact-list" onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
       <div className="contact-list-toolbar"><label className="search-box"><UserRound size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="연락처 검색" placeholder="연락처 검색" /></label><button className="icon-button" disabled={!canEdit} aria-label="연락처 추가" onClick={add}><Plus size={16} /></button></div>
       {model.diagnostics.length > 0 && <div className="inline-warning">{model.diagnostics[0]}</div>}
-      {visible.map((card) => <button className={`contact-list-item${active?.recordId === card.recordId ? ' active' : ''}`} key={card.recordId} onClick={() => setSelected(card.recordId)}>
+      {firstContactIndex > 0 && <div className="contact-list-spacer" aria-hidden="true" style={{ height: firstContactIndex * rowHeight }} />}
+      {renderedContacts.map((card, index) => <button ref={index === 0 ? measureRow : undefined} className={`contact-list-item${activeId === (card.recordId ?? card.uid) ? ' active' : ''}`} key={card.recordId ?? card.uid} onClick={() => setSelected(card.recordId ?? card.uid)}>
         <span className="contact-avatar">{(card.fullName || '?').slice(0, 1)}</span><span><strong>{card.fullName || '이름 없음'}</strong><small>{card.organization || card.emails[0]?.value || card.phones[0]?.value || '연락처'}</small></span>
       </button>)}
+      {firstContactIndex + renderedContacts.length < visible.length && <div className="contact-list-spacer" aria-hidden="true" style={{ height: (visible.length - firstContactIndex - renderedContacts.length) * rowHeight }} />}
       {!visible.length && <div className="empty-state compact"><span>연락처가 없습니다.</span></div>}
     </aside>
     {active ? <main className="contact-detail">

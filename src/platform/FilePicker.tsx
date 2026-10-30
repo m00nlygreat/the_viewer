@@ -1,4 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef } from 'react'
+import { FORMATS } from '../domain/fileFormats'
+import { readDroppedFiles } from './browserFiles'
 import type { Format, PickedFile } from './fileTypes'
 
 export type { PickedFile } from './fileTypes'
@@ -12,7 +14,7 @@ export const FilePicker = forwardRef<FilePickerHandle, Props>(function FilePicke
   useImperativeHandle(ref, () => ({
     open(format, accept) {
       pendingFormat.current = format
-      pendingAccept.current = accept ?? [".eml", ".csv", ".md", ".ics", ".vcf"].join(',')
+      pendingAccept.current = accept ?? FORMATS.map((format) => `.${format}`).join(',')
       if (input.current) { input.current.accept = pendingAccept.current; input.current.click() }
     }
   }), [])
@@ -21,10 +23,10 @@ export const FilePicker = forwardRef<FilePickerHandle, Props>(function FilePicke
     event.currentTarget.value = ''
     if (!files.length) { pendingFormat.current = undefined; return }
     try {
-      const result = await Promise.all(files.map(async (file) => ({ name: file.name, type: file.type, bytes: new Uint8Array(await file.arrayBuffer()) })))
+      const result = await readDroppedFiles(files)
       onFiles(result, pendingFormat.current)
-    } catch { onError?.('선택한 파일을 읽지 못했습니다.') }
+    } catch (error) { onError?.(error instanceof Error ? error.message : '선택한 파일을 읽지 못했습니다.') }
     finally { pendingFormat.current = undefined }
   }
-  return <input ref={input} className="visually-hidden" type="file" multiple={multiple} accept=".eml,.csv,.md,.ics,.vcf" onChange={(event) => { void receive(event) }} />
+  return <input ref={input} className="visually-hidden" type="file" multiple={multiple} accept={FORMATS.map((format) => `.${format}`).join(',')} onChange={(event) => { void receive(event) }} />
 })

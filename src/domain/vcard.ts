@@ -98,12 +98,14 @@ function escapeText(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;')
 }
 
+const utf8Encoder = new TextEncoder()
+
 function foldLine(line: string): string {
   const chunks: string[] = []
   let current = ''
   let size = 0
   for (const char of line) {
-    const bytes = new TextEncoder().encode(char).length
+    const bytes = utf8Encoder.encode(char).length
     if (size + bytes > 75) { chunks.push(current); current = ' '; size = 1 }
     current += char
     size += bytes

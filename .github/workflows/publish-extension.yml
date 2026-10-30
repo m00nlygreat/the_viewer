@@ -13,6 +13,9 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -20,36 +23,56 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run check
+      - run: npm run lint
+      - run: npm run typecheck:app
+      - run: npm run typecheck:sw
+      - run: npm run typecheck:extension
+      - run: npm run typecheck:tools
+      - run: npm run typecheck:tests
+      - run: npm run test
+      - run: npm run build:app && npm run verify:pwa-build -- /the_viewer/
+        env:
+          BASE_PATH: /the_viewer/
       - run: npm run package:extension
       - run: npm run verify:build
-
+      - run: node scripts/publish-extension.mjs
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: dist/app
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: extension-release
+          path: dist/the-viewer-chrome-v*.zip
+          if-no-files-found: error
   deploy:
     needs: verify
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     env:
-      BASE_PATH: /the_viewer/
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm run build:app
-      - run: npm run package:extension
-      - run: node scripts/publish-extension.mjs
+          name: extension-release
+          path: dist
+      - name: Publish versioned extension ZIP to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="extension-v${VERSION}"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "The Viewer Chrome extension v${VERSION}" --notes "Verified extension package v${VERSION}."
+          gh release upload "$TAG" "dist/the-viewer-chrome-v${VERSION}.zip" --repo "$GITHUB_REPOSITORY" --clobber
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
-        with:
-          path: dist/app
       - name: Deploy PWA and extension ZIP to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

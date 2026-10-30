@@ -1,15 +1,15 @@
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
 import { StateEffect, StateField, type ChangeDesc, type EditorState, type Range } from '@codemirror/state'
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view'
-import { markdownLinkAttributes, renderMarkdown } from '../domain/markdown'
-import { detectMarkdownFrontmatter } from '../domain/formats/markdownFrontmatter'
-import { parseMarkdownTable } from '../domain/formats/markdownTable'
-import { MarkdownFrontmatterState } from './markdownFrontmatterState'
-import { MarkdownFrontmatterWidget } from './MarkdownFrontmatterWidget'
-import { MarkdownCodeBlockState, type MarkdownCodeBlockContext } from './markdownCodeBlockState'
-import { MarkdownCodeBlockWidget } from './MarkdownCodeBlockWidget'
-import { MarkdownTableState } from './markdownTableState'
-import { MarkdownTableWidget } from './MarkdownTableWidget'
+import { markdownLinkAttributes, renderMarkdown } from '../../domain/markdown'
+import { detectMarkdownFrontmatter } from '../../domain/formats/markdownFrontmatter'
+import { MarkdownFrontmatterState } from './frontmatterState'
+import { MarkdownFrontmatterWidget } from './FrontmatterWidget'
+import { MarkdownCodeBlockState, type MarkdownCodeBlockContext } from './codeBlockState'
+import { MarkdownCodeBlockWidget } from './CodeBlockWidget'
+import { MarkdownTableState } from './tableState'
+import { MarkdownTableWidget } from './TableWidget'
+export { taskMarkerRangesForSelection } from './taskMarkers'
 
 type MarkdownNode = ReturnType<typeof syntaxTree>['topNode']
 
@@ -115,25 +115,6 @@ function isPositionInBlock(state: EditorState, from: number, to: number, positio
   const lastLine = state.doc.lineAt(lastPosition).number
   const positionLine = state.doc.lineAt(position).number
   return positionLine >= firstLine && positionLine <= lastLine
-}
-
-export function taskMarkerRangesForSelection(state: EditorState): Array<{ from: number; to: number; checked: boolean }> {
-  const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
-  const ranges = state.selection.ranges
-  const selectedLines = new Set<number>()
-  for (const range of ranges) {
-    const firstLine = state.doc.lineAt(range.from)
-    const lastPosition = range.to > range.from ? range.to - 1 : range.from
-    const lastLine = state.doc.lineAt(lastPosition)
-    for (let number = firstLine.number; number <= lastLine.number; number += 1) selectedLines.add(number)
-  }
-  const result: Array<{ from: number; to: number; checked: boolean }> = []
-  tree.iterate({ enter(node) {
-    if (node.name !== 'TaskMarker' || !selectedLines.has(state.doc.lineAt(node.from).number)) return
-    const marker = state.doc.sliceString(node.from, node.to)
-    if (marker === '[ ]' || marker === '[x]' || marker === '[X]') result.push({ from: node.from, to: node.to, checked: marker !== '[ ]' })
-  } })
-  return result
 }
 
 export function buildMarkdownPreviewDecorations(
@@ -374,9 +355,10 @@ function buildMarkdownTableDecorationValue(
   tree.iterate({ enter: (node) => {
     if (node.name !== 'Table' || overlapsFrontmatter(node, frontmatter)) return
     const source = state.doc.sliceString(node.from, node.to)
-    if (!source.trim() || !parseMarkdownTable(source)) return
-    const table = mappedPrevious.get(node.from) ?? new MarkdownTableState(node.from, node.to, source, theme)
-    table.update(node.from, node.to, source, theme)
+    if (!source.trim()) return
+    const previousTable = mappedPrevious.get(node.from)
+    const table = previousTable ?? new MarkdownTableState(node.from, node.to, source, theme)
+    if (previousTable && !table.update(node.from, node.to, source, theme)) return
     tableStates.set(node.from, table)
     if (node.to > node.from) ranges.push(Decoration.replace({ widget: new MarkdownTableWidget(table), inclusive: false, block: true }).range(node.from, node.to))
   } })

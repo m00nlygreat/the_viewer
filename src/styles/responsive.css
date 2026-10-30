@@ -1,0 +1,90 @@
+@media (max-width: 1100px) {
+  .email-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .email-details { padding: 16px 24px; border-top: 1px solid var(--line); border-left: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+  .email-details > h2 { grid-column: 1 / -1; }
+  .email-details > .attachments { grid-column: 1 / -1; }
+  .email-details .headers-details { grid-column: 1 / -1; }
+}
+@media (max-width: 900px) {
+  .calendar-layout { grid-template-columns: minmax(0, 1fr); }
+  .event-detail { border-top: 1px solid var(--line); border-left: 0; }
+}
+@media (max-width: 760px) {
+  html, body, #root { overflow: hidden; }
+  .app-shell { min-height: 0; }
+  .sidebar { display: none; }
+  .main-column { width: 100%; }
+  .topbar { min-height: 56px; height: 56px; padding: 4px 8px; gap: 5px; }
+  .mobile-menu { display: inline-grid; width: 36px; height: 40px; }
+  .topbar-document { gap: 6px; }
+  .topbar-file-icon { width: 24px; }
+  .topbar-name { max-width: min(35vw, 190px); font-size: 13px; }
+  .topbar-actions { gap: 3px; }
+  .topbar-actions > .icon-button { width: 32px; height: 36px; }
+  .topbar-actions > .primary-button { min-height: 34px; padding: 0 8px; }
+  .topbar-actions > .primary-button span { display: none; }
+  .topbar-actions > .primary-button > svg:last-child { display: none; }
+  .mode-switch { padding: 2px; }
+  .mode-switch button { height: 30px; min-width: 39px; padding: 0 6px; font-size: 12px; }
+  .topbar .mode-switch { display: none; }
+  .mobile-action-bar { z-index: 5; min-height: 68px; padding: 10px 16px calc(24px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); background: var(--sidebar); }
+  .mobile-action-bar .mode-switch { flex: 1; justify-content: center; min-width: 0; }
+  .mobile-action-bar .mode-switch button { flex: 1; min-width: 0; height: 36px; font-size: 13px; }
+  .mobile-history { width: 44px; height: 44px; min-height: 44px; padding: 0; }
+  .mobile-export { min-height: 44px; padding: 0 12px; }
+  .desktop-only { display: none !important; }
+  .close-current { display: none; }
+  .welcome-screen { padding: 24px 16px 40px; }
+  .welcome-card { width: 100%; }
+  .welcome-card > p { font-size: 13px; }
+  .command-overlay { align-items: flex-start; padding: 12px 12px 0; }
+  .command-menu { width: 100%; max-height: calc(100dvh - 24px); }
+  .command-copy { align-items: flex-start; flex-direction: column; gap: 2px; }
+  .command-item { height: 42px; }
+  .command-footer { gap: 8px; }
+  .csv-toolbar { min-height: 44px; padding: 0 8px; gap: 3px; }
+  .csv-autofit-button { padding: 0 6px; }
+  .csv-autofit-button span { display: none; }
+  .search-box { width: 155px; max-width: 39vw; }
+  .csv-select-label { display: none; }
+  .csv-toggle { display: none; }
+  .csv-statusbar { gap: 8px; padding: 0 8px; font-size: 10px; }
+  .email-main { padding: 22px 16px; }
+  .email-subject-row h1 { font-size: 24px; }
+  .email-from-row time { max-width: 82px; overflow: hidden; text-overflow: ellipsis; }
+  .email-details { padding: 15px 16px; grid-template-columns: minmax(0, 1fr); }
+  .property-row { min-height: 30px; }
+  .attachments { margin-top: 20px; }
+  .email-recipient { margin-left: 0; }
+  .calendar-agenda { padding-bottom: 8px; }
+  .agenda-toolbar { padding: 0 9px; }
+  .agenda-toolbar .search-box { width: auto; }
+  .agenda-day { padding: 16px 10px 3px; }
+  .agenda-event { gap: 9px; padding: 10px 8px; }
+  .event-detail { padding: 16px; }
+  .contacts-layout { grid-template-columns: minmax(115px, 35%) minmax(0, 1fr); }
+  .contact-list-toolbar { padding: 7px; gap: 3px; }
+  .contact-list-toolbar .search-box { max-width: none; padding: 0 6px; }
+  .contact-list-item { height: 54px; min-height: 54px; flex-basis: 54px; padding: 7px; gap: 6px; }
+  .contact-avatar { width: 30px; height: 30px; }
+  .contact-cover { min-height: 111px; padding: 15px 12px; gap: 8px; }
+  .contact-avatar.large { width: 40px; height: 40px; font-size: 17px; }
+  .contact-cover h1 { font-size: 18px; }
+  .contact-cover p { font-size: 11px; }
+  .contact-fields { padding: 4px 12px 18px; }
+  .contact-form-grid { grid-template-columns: 1fr; gap: 9px; }
+  .contact-section { padding: 12px 0; }
+  .repeat-field-row { gap: 4px; }
+  .repeat-field-row select { width: 62px; }
+  .status-banner { right: 8px; bottom: 8px; }
+  .toast-stack { right: 8px; bottom: 8px; }
+}
+@media (max-width: 380px) {
+  .topbar { padding: 4px; }
+  .mobile-menu { width: 30px; }
+  .topbar-name { max-width: 26vw; }
+  .mode-switch button { min-width: 34px; padding: 0 4px; }
+  .topbar-actions > .icon-button { width: 27px; }
+}
+.relay-error-banner { left: 16px; right: auto; }
+.relay-error-banner .subtle-button { flex: 0 0 auto; }

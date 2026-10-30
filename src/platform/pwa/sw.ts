@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { cleanupOutdatedCaches, precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching'
 import { NavigationRoute, registerRoute } from 'workbox-routing'
+import { assertInputFileSize } from '../../domain/inputPolicy'
 
 declare let self: ServiceWorkerGlobalScope & { __WB_MANIFEST: Array<{ url: string; revision?: string | null }> }
 const base = __APP_BASE__
@@ -20,6 +21,8 @@ self.addEventListener('fetch', (event) => {
     const form = await event.request.formData()
     const entries = form.getAll('files').filter((entry): entry is File => entry instanceof File).slice(0, 20)
     if (!entries.length) return Response.redirect(new URL(`${base}#/`, self.location.origin), 303)
+    try { for (const file of entries) assertInputFileSize(file.name, file.size, self.navigator.userAgent) }
+    catch (error) { return new Response(error instanceof Error ? error.message : '파일 크기 제한을 초과했습니다.', { status: 413 }) }
     const files = await Promise.all(entries.map(async (file) => ({ name: file.name.slice(0, 255), type: file.type.slice(0, 128), bytes: await file.arrayBuffer() })))
     const id = crypto.randomUUID()
     await new Promise<void>((resolve, reject) => {
@@ -37,7 +40,7 @@ self.addEventListener('fetch', (event) => {
       request.onsuccess = () => {
         const db = request.result
         const tx = db.transaction('shares', 'readwrite')
-        tx.objectStore('shares').put({ id, files, createdAt: Date.now() })
+        tx.objectStore('shares').put({ id, files, completed: files.map(() => false), createdAt: Date.now() })
         tx.oncomplete = () => { db.close(); resolve() }
         tx.onerror = () => { db.close(); reject(tx.error) }
       }

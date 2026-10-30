@@ -9,7 +9,3 @@ export const CSV_COLUMN_LIGHT_COLORS = [
   '#1D4ED8', '#15803D', '#B91C1C', '#A16207',
   '#6D28D9', '#0E7490', '#BE185D', '#4D7C0F'
 ] as const
-
-export function csvColumnColorVariable(index: number): string {
-  return `--csv-column-${index}`
-}

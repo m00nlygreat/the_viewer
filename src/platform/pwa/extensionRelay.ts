@@ -1,5 +1,6 @@
 import { FORMATS, type Format, type PickedFile } from '../fileTypes'
 import type { CalendarModel, ContactModel, CsvModel, EmailModel, ViewerDocument } from '../../domain/types'
+import { normalizeEmailAttachmentBytes } from '../../domain/emailAttachmentBytes'
 import {
   base64ToBytes, CHUNK_BYTES, expectedChunkCount, isExtensionId, isRelayMessage,
   isSupportedProtocolVersion, maxBytesForKind, PORT_NAME, PROTOCOL_VERSION, type ErrorMessage, type MetaMessage,
@@ -46,6 +47,13 @@ export function restoreLegacySnapshot(bytes: Uint8Array): ViewerDocument {
   delete restored.sourceBytesBase64
   const document = { ...restored }
   delete document.sourceBytes
+  if (format === 'eml' && isRecord(document.model) && Array.isArray((document.model as { attachments?: unknown }).attachments)) {
+    const model = document.model as unknown as EmailModel
+    document.model = {
+      ...model,
+      attachments: model.attachments.map((attachment) => ({ ...attachment, content: normalizeEmailAttachmentBytes(attachment.content) }))
+    }
+  }
   const savedBytes = sourceBytes.buffer.slice(sourceBytes.byteOffset, sourceBytes.byteOffset + sourceBytes.byteLength)
   return {
     ...document,
@@ -72,7 +80,8 @@ async function receiveOnce({ extensionId, ticketId, onProgress }: ReceiveOptions
   if (!isExtensionId(extensionId)) throw new RelayTransferError('INVALID_TICKET', 'Chrome 확장 ID 형식이 올바르지 않습니다.')
   const port = connect(extensionId)
   try {
-    const response = await request(port, { type: 'HELLO', version: PROTOCOL_VERSION, ticketId }, 'META', ticketId)
+    const response = await request(port, { type: 'HELLO', version: PROTOCOL_VERSION, ticketId }, ['META', 'COMMITTED'], ticketId)
+    if (response.type === 'COMMITTED') throw new RelayTransferError('INVALID_TICKET', '이 전달 티켓은 이미 완료되었습니다.')
     if (response.type !== 'META' || !isSupportedProtocolVersion(response.version)) {
       throw new RelayTransferError('VERSION_MISMATCH', 'PWA와 Chrome 확장의 전달 프로토콜이 다릅니다. 확장을 업데이트한 뒤 다시 시도하세요.')
     }
@@ -84,7 +93,7 @@ async function receiveOnce({ extensionId, ticketId, onProgress }: ReceiveOptions
     let receivedBytes = 0
     onProgress?.({ receivedBytes, totalBytes: response.byteLength })
     for (let sequence = 0; sequence < response.chunkCount; sequence += 1) {
-      const chunk = await request(port, { type: 'READ', ticketId, sequence }, 'CHUNK', ticketId)
+      const chunk = await request(port, { type: 'READ', ticketId, sequence }, ['CHUNK'], ticketId)
       if (chunk.type !== 'CHUNK' || chunk.sequence !== sequence) throw new RelayTransferError('SEQUENCE', '받은 파일 조각의 순번이 맞지 않습니다.')
       const decoded = base64ToBytes(chunk.base64)
       const expectedBytes = Math.min(CHUNK_BYTES, response.byteLength - receivedBytes)
@@ -107,26 +116,39 @@ async function receiveOnce({ extensionId, ticketId, onProgress }: ReceiveOptions
 export async function commitExtensionFile({ extensionId, ticketId }: Pick<ReceiveOptions, 'extensionId' | 'ticketId'>): Promise<void> {
   if (!isExtensionId(extensionId)) throw new RelayTransferError('INVALID_TICKET', 'Chrome 확장 ID 형식이 올바르지 않습니다.')
   let port = connectedPorts.get(ticketId)
-  if (!port) {
-    await receiveExtensionFile({ extensionId, ticketId })
-    port = connectedPorts.get(ticketId)
+  if (port) {
+    try {
+      await request(port, { type: 'COMMIT', ticketId }, ['COMMITTED'], ticketId)
+      finishPort(ticketId, port)
+      return
+    } catch (error) {
+      finishPort(ticketId, port)
+      const normalized = normalizeError(error)
+      if (!['CONNECTION_CLOSED', 'TIMEOUT', 'INVALID_TICKET'].includes(normalized.code)) throw normalized
+    }
   }
-  if (!port) throw new RelayTransferError('CONNECTION_CLOSED', '확장과 연결되지 않았습니다. 다시 시도하세요.')
-  try {
-    await request(port, { type: 'COMMIT', ticketId }, 'COMMITTED', ticketId)
-    connectedPorts.delete(ticketId)
-  } catch (error) {
-    connectedPorts.delete(ticketId)
-    try { port.disconnect() } catch { /* Already closed. */ }
-    const normalized = normalizeError(error)
-    if (normalized.code !== 'CONNECTION_CLOSED' && normalized.code !== 'TIMEOUT') throw normalized
-    await new Promise((resolve) => window.setTimeout(resolve, 120))
-    await receiveExtensionFile({ extensionId, ticketId })
-    const retryPort = connectedPorts.get(ticketId)
-    if (!retryPort) throw new RelayTransferError('CONNECTION_CLOSED', '확장과 다시 연결하지 못했습니다.')
-    await request(retryPort, { type: 'COMMIT', ticketId }, 'COMMITTED', ticketId)
-    connectedPorts.delete(ticketId)
+
+  let lastError: RelayTransferError | null = null
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    port = connect(extensionId)
+    try {
+      const handshake = await request(port, { type: 'HELLO', version: PROTOCOL_VERSION, ticketId }, ['META', 'COMMITTED'], ticketId)
+      if (handshake.type !== 'COMMITTED') await request(port, { type: 'COMMIT', ticketId }, ['COMMITTED'], ticketId)
+      finishPort(ticketId, port)
+      return
+    } catch (error) {
+      finishPort(ticketId, port)
+      lastError = normalizeError(error)
+      if (!['CONNECTION_CLOSED', 'TIMEOUT', 'INVALID_TICKET'].includes(lastError.code) || attempt === 1) throw lastError
+      await new Promise((resolve) => window.setTimeout(resolve, 120))
+    }
   }
+  throw lastError ?? new RelayTransferError('CONNECTION_CLOSED', '확장과 연결되지 않았습니다. 다시 시도하세요.')
+}
+
+function finishPort(ticketId: string, port: chrome.runtime.Port): void {
+  if (connectedPorts.get(ticketId) === port) connectedPorts.delete(ticketId)
+  try { port.disconnect() } catch { /* Already closed. */ }
 }
 
 function connect(extensionId: string): chrome.runtime.Port {
@@ -149,7 +171,7 @@ function connect(extensionId: string): chrome.runtime.Port {
 function request(
   port: chrome.runtime.Port,
   outgoing: RelayMessage,
-  expectedType: 'META' | 'CHUNK' | 'COMMITTED',
+  expectedTypes: readonly ('META' | 'CHUNK' | 'COMMITTED')[],
   ticketId: string
 ): Promise<MetaMessage | Extract<RelayMessage, { type: 'CHUNK' | 'COMMITTED' }>> {
   return new Promise((resolve, reject) => {
@@ -168,7 +190,7 @@ function request(
         finish(() => reject(fromRelayError(raw)))
         return
       }
-      if (raw.type !== expectedType) return
+      if (!expectedTypes.includes(raw.type as 'META' | 'CHUNK' | 'COMMITTED')) return
       finish(() => resolve(raw as MetaMessage | Extract<RelayMessage, { type: 'CHUNK' | 'COMMITTED' }>))
     }
     const onDisconnect = () => finish(() => reject(portFailures.get(port) ?? new RelayTransferError('CONNECTION_CLOSED', '파일 전달 도중 연결이 끊겼습니다.')))

@@ -6,7 +6,7 @@ export function createInlineImageUrls(attachments: EmailAttachment[]): Record<st
     if (!attachment.contentId || !attachment.mimeType.toLowerCase().startsWith('image/')) continue
     const key = attachment.contentId.replace(/[<>]/g, '').trim().toLowerCase()
     if (!key || urls[key]) continue
-    const blob = new Blob([new Uint8Array(attachment.content)], { type: attachment.mimeType })
+    const blob = new Blob([attachment.content as unknown as BlobPart], { type: attachment.mimeType })
     urls[key] = URL.createObjectURL(blob)
   }
   return urls

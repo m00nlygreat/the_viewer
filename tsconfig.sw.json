@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["vite/client"] },
+  "include": ["src/types/global.d.ts", "src/platform/pwa/sw.ts"],
+  "exclude": ["**/*.test.ts", "**/*.test.tsx", "tests/fixtures/**", "dist/**", "node_modules/**"]
+}

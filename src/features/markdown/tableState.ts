@@ -1,5 +1,5 @@
 import type { EditorView } from '@codemirror/view'
-import { parseMarkdownTable, serializeMarkdownTable, type MarkdownTableModel } from '../domain/formats/markdownTable'
+import { parseMarkdownTable, serializeMarkdownTable, type MarkdownTableModel } from '../../domain/formats/markdownTable'
 
 export interface MarkdownTableSnapshot {
   from: number
@@ -30,12 +30,18 @@ export class MarkdownTableState {
 
   attachView(view: EditorView): void { this.view = view }
 
-  update(from: number, to: number, source: string, theme: 'light' | 'dark'): void {
+  update(from: number, to: number, source: string, theme: 'light' | 'dark'): boolean {
+    if (this.snapshot.from === from && this.snapshot.to === to && this.snapshot.source === source && this.snapshot.theme === theme) return true
+    if (this.snapshot.source === source) {
+      this.snapshot = { ...this.snapshot, from, to, theme }
+      this.emit()
+      return true
+    }
     const model = parseMarkdownTable(source)
-    if (!model) return
-    if (this.snapshot.from === from && this.snapshot.to === to && this.snapshot.source === source && this.snapshot.theme === theme) return
+    if (!model) return false
     this.snapshot = { ...this.snapshot, from, to, source, model, theme }
     this.emit()
+    return true
   }
 
   setEditing(editing: boolean): void {

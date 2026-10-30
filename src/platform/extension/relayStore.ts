@@ -19,23 +19,38 @@ export interface RelayTicket {
   bytes: ArrayBuffer
 }
 
+export interface CompletedRelayTicket {
+  id: string
+  kind: RelayKind
+  tabId: number
+  name: string
+  expiresAt: number
+}
+
 interface RelayDatabase extends DBSchema {
   tickets: { key: string; value: RelayTicket; indexes: { 'by-created': number; 'by-expires': number } }
+  completed: { key: string; value: CompletedRelayTicket; indexes: { 'by-expires': number } }
   meta: { key: string; value: number }
 }
 
-type WritableTickets = IDBPObjectStore<RelayDatabase, ('tickets' | 'meta')[], 'tickets', 'readwrite'>
+type WritableTickets<Stores extends ('tickets' | 'meta' | 'completed')[]> = IDBPObjectStore<RelayDatabase, Stores, 'tickets', 'readwrite'>
 
 let database: Promise<IDBPDatabase<RelayDatabase>> | null = null
 let createQueue: Promise<void> = Promise.resolve()
 
 function getDatabase(): Promise<IDBPDatabase<RelayDatabase>> {
-  if (!database) database = openDB<RelayDatabase>(DATABASE_NAME, 1, {
+  if (!database) database = openDB<RelayDatabase>(DATABASE_NAME, 2, {
     upgrade(db) {
-      const tickets = db.createObjectStore('tickets', { keyPath: 'id' })
-      tickets.createIndex('by-created', 'createdAt')
-      tickets.createIndex('by-expires', 'expiresAt')
-      db.createObjectStore('meta')
+      if (!db.objectStoreNames.contains('tickets')) {
+        const tickets = db.createObjectStore('tickets', { keyPath: 'id' })
+        tickets.createIndex('by-created', 'createdAt')
+        tickets.createIndex('by-expires', 'expiresAt')
+      }
+      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta')
+      if (!db.objectStoreNames.contains('completed')) {
+        const completed = db.createObjectStore('completed', { keyPath: 'id' })
+        completed.createIndex('by-expires', 'expiresAt')
+      }
     }
   })
   return database
@@ -49,6 +64,7 @@ export class RelayStoreError extends Error {
 }
 
 export async function createTicket(input: {
+  id?: string
   kind: RelayKind
   tabId: number
   name: string
@@ -61,6 +77,7 @@ export async function createTicket(input: {
 }
 
 async function createTicketNow(input: {
+  id?: string
   kind: RelayKind
   tabId: number
   name: string
@@ -72,7 +89,7 @@ async function createTicketNow(input: {
     throw new RelayStoreError('SIZE_LIMIT', '전달 데이터가 임시 저장 용량 제한을 초과했습니다.')
   }
   const now = Date.now()
-  const id = crypto.randomUUID()
+  const id = input.id ?? crypto.randomUUID()
   const bytes = source.slice().buffer as ArrayBuffer
   const ticket: RelayTicket = {
     id, version: PROTOCOL_VERSION, kind: input.kind, tabId: input.tabId,
@@ -112,7 +129,7 @@ async function createTicketNow(input: {
   return ticket
 }
 
-async function calculateStoredBytes(store: WritableTickets): Promise<number> {
+async function calculateStoredBytes<Stores extends ('tickets' | 'meta' | 'completed')[]>(store: WritableTickets<Stores>): Promise<number> {
   let total = 0
   let cursor = await store.openCursor()
   while (cursor) {
@@ -134,6 +151,46 @@ export async function readTicket(id: string, expectedTabId?: number): Promise<Re
     throw new RelayStoreError('ACCESS_DENIED', '전달 티켓이 현재 탭에 속하지 않습니다.')
   }
   return ticket
+}
+
+export async function readCompletedTicket(id: string): Promise<CompletedRelayTicket | null> {
+  const db = await getDatabase()
+  const completed = await db.get('completed', id)
+  if (!completed) return null
+  if (completed.expiresAt <= Date.now()) {
+    await db.delete('completed', id)
+    return null
+  }
+  return completed
+}
+
+export async function commitTicket(id: string): Promise<CompletedRelayTicket> {
+  const db = await getDatabase()
+  const tx = db.transaction(['tickets', 'meta', 'completed'], 'readwrite')
+  const completedStore = tx.objectStore('completed')
+  const previous = await completedStore.get(id)
+  if (previous && previous.expiresAt > Date.now()) {
+    await tx.done
+    return previous
+  }
+
+  const tickets = tx.objectStore('tickets')
+  const ticket = await tickets.get(id)
+  if (!ticket) {
+    await tx.done
+    throw new RelayStoreError('INVALID_TICKET', '전달 티켓을 찾을 수 없습니다.')
+  }
+  await tickets.delete(id)
+  const meta = tx.objectStore('meta')
+  const total = await meta.get(TOTAL_BYTES_KEY)
+  if (typeof total === 'number') await meta.put(Math.max(0, total - ticket.byteLength), TOTAL_BYTES_KEY)
+  const completed: CompletedRelayTicket = {
+    id: ticket.id, kind: ticket.kind, tabId: ticket.tabId, name: ticket.name,
+    expiresAt: Date.now() + TICKET_LIFETIME_MS
+  }
+  await completedStore.put(completed)
+  await tx.done
+  return completed
 }
 
 export async function assertTicketAvailable(id: string, senderTabId: number | undefined, ticketTabId: number, expiresAt: number, byteLength: number): Promise<void> {
@@ -165,7 +222,7 @@ export async function deleteTicket(id: string, knownByteLength?: number): Promis
 
 export async function purgeExpiredTickets(): Promise<number> {
   const db = await getDatabase()
-  const tx = db.transaction(['tickets', 'meta'], 'readwrite')
+  const tx = db.transaction(['tickets', 'meta', 'completed'], 'readwrite')
   const store = tx.objectStore('tickets')
   const meta = tx.objectStore('meta')
   let total = await meta.get(TOTAL_BYTES_KEY)
@@ -177,6 +234,13 @@ export async function purgeExpiredTickets(): Promise<number> {
     deleted += 1
     await cursor.delete()
     cursor = await cursor.continue()
+  }
+  const completed = tx.objectStore('completed')
+  let completedCursor = await completed.index('by-expires').openCursor(IDBKeyRange.upperBound(Date.now()))
+  while (completedCursor) {
+    deleted += 1
+    await completedCursor.delete()
+    completedCursor = await completedCursor.continue()
   }
   await meta.put(Math.max(0, total), TOTAL_BYTES_KEY)
   await tx.done

@@ -31,18 +31,24 @@ function toCanonicalOffset(state: EditorState, starts: number[], position: numbe
 }
 
 function preferredLineBreak(text: string, at: number): string {
-  const breaks: Array<{ from: number; to: number; value: string }> = []
   const pattern = /\r\n|\r|\n/gu
-  for (let match = pattern.exec(text); match; match = pattern.exec(text)) breaks.push({ from: match.index, to: match.index + match[0].length, value: match[0] })
-  const previous = [...breaks].reverse().find((item) => item.to <= at)
-  const next = breaks.find((item) => item.from >= at)
+  let previous: { from: number; to: number; value: string } | undefined
+  let next: { from: number; to: number; value: string } | undefined
+  const counts = new Map<string, number>()
+  for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
+    counts.set(match[0], (counts.get(match[0]) ?? 0) + 1)
+    const item = { from: match.index, to: match.index + match[0].length, value: match[0] }
+    if (item.to <= at) previous = item
+    if (item.from >= at) { next = item; break }
+  }
   if (previous && next) return at - previous.to <= next.from - at ? previous.value : next.value
   if (previous) return previous.value
   if (next) return next.value
-  if (breaks.length) {
-    const counts = new Map<string, number>()
-    for (const item of breaks) counts.set(item.value, (counts.get(item.value) ?? 0) + 1)
-    return [...counts].sort((left, right) => right[1] - left[1])[0]![0]
+  if (counts.size) {
+    let preferred = '\n'
+    let maximum = 0
+    for (const [lineBreak, count] of counts) if (count > maximum) { preferred = lineBreak; maximum = count }
+    return preferred
   }
   return '\n'
 }
@@ -156,19 +162,28 @@ function diffTextChanges(previous: string, next: string): TextChange[] | null {
   return changes
 }
 
+function calculateTextChanges(previousText: string, nextText: string): TextChange[] {
+  if (previousText === nextText) return []
+  return diffTextChanges(previousText, nextText) ?? [findMinimalChange(previousText, nextText)]
+}
+
 export function findTextChanges(previousText: string, nextText: string): TextChange[] {
   const previous = normalizeLineEndings(previousText)
   const next = normalizeLineEndings(nextText)
-  if (previous === next) return []
-  return diffTextChanges(previous, next) ?? [findMinimalChange(previous, next)]
+  return calculateTextChanges(previous, next)
+}
+
+export function findTextChangesWithMapper(previousText: string, nextText: string): { changes: TextChange[]; mapPosition: (position: number, association?: number) => number } {
+  const previous = normalizeLineEndings(previousText)
+  const next = normalizeLineEndings(nextText)
+  const changes = calculateTextChanges(previous, next)
+  const state = EditorState.create({ doc: previous })
+  const changeSet = state.changes(changes)
+  return { changes, mapPosition: (position, association = 1) => changeSet.mapPos(Math.max(0, Math.min(position, state.doc.length)), association) }
 }
 
 export function createTextPositionMapper(previousText: string, nextText: string): (position: number, association?: number) => number {
-  const previous = normalizeLineEndings(previousText)
-  const next = normalizeLineEndings(nextText)
-  const state = EditorState.create({ doc: previous })
-  const changes = state.changes(findTextChanges(previous, next))
-  return (position, association = 1) => changes.mapPos(Math.max(0, Math.min(position, state.doc.length)), association)
+  return findTextChangesWithMapper(previousText, nextText).mapPosition
 }
 
 /** Keep local IME edits while applying a concurrent session change outside the edited range. */
@@ -191,6 +206,59 @@ export function mergeTextDuringComposition(baseText: string, localText: string, 
   let merged = remoteText
   for (const change of mappedLocal) merged = applyNormalizedChange(merged, change.from, change.to, change.insert)
   return merged
+}
+
+export type ExternalTextUpdate = { status: 'defer'; matchesEditor: boolean } | { status: 'same' | 'apply'; matchesEditor: boolean }
+
+/** Shared composition and external-value lifecycle used by Monaco and CodeMirror adapters. */
+export class EditorTextSyncSession {
+  private compositionBase: string | null = null
+  private pendingExternal: string | null = null
+
+  get pendingExternalValue(): string | null { return this.pendingExternal }
+
+  beginComposition(sessionText: string): void {
+    this.compositionBase = sessionText
+  }
+
+  receiveExternal(externalText: string, editorText: string, composing: boolean): ExternalTextUpdate {
+    const matchesEditor = normalizeLineEndings(editorText) === normalizeLineEndings(externalText)
+    if (composing || this.compositionBase !== null) {
+      if (!matchesEditor) this.pendingExternal = externalText
+      return { status: 'defer', matchesEditor }
+    }
+    if (matchesEditor) {
+      this.pendingExternal = null
+      return { status: 'same', matchesEditor: true }
+    }
+    return { status: 'apply', matchesEditor: false }
+  }
+
+  mergeLocal(localText: string): string {
+    if (this.compositionBase === null || this.pendingExternal === null) return localText
+    this.pendingExternal = mergeTextDuringComposition(this.compositionBase, localText, this.pendingExternal)
+    return this.pendingExternal
+  }
+
+  finishComposition(localText: string): { text: string; changed: boolean; pendingExternalValue: string | null } {
+    const pending = this.pendingExternal
+    let text = localText
+    if (this.compositionBase !== null && pending !== null) {
+      text = mergeTextDuringComposition(this.compositionBase, localText, pending)
+      this.pendingExternal = text
+    }
+    this.compositionBase = null
+    return { text, changed: pending !== null && text !== pending, pendingExternalValue: this.pendingExternal }
+  }
+
+  completeExternalUpdate(): void {
+    if (this.compositionBase === null) this.pendingExternal = null
+  }
+
+  reset(): void {
+    this.compositionBase = null
+    this.pendingExternal = null
+  }
 }
 
 export interface LineBasedTextChange {

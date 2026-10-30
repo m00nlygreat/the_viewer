@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["chrome", "vite/client"] },
+  "include": [
+    "src/types/global.d.ts",
+    "src/platform/extension/**/*.ts",
+    "src/platform/relay/**/*.ts",
+    "src/platform/fileTypes.ts",
+    "src/domain/fileFormats.ts",
+    "src/domain/inputPolicy.ts"
+  ],
+  "exclude": ["**/*.test.ts", "**/*.test.tsx", "tests/fixtures/**", "dist/**", "node_modules/**"]
+}

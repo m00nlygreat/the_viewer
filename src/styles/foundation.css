@@ -1,0 +1,106 @@
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+@import '@fontsource-variable/noto-sans-kr/wght.css';
+
+:root {
+  font-family: 'Geist Variable', 'Noto Sans KR Variable', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  font-size: 16px;
+  letter-spacing: -0.005em;
+  color-scheme: dark;
+  --bg: #0B0B0C;
+  --sidebar: #0E0E10;
+  --line: #1E1F22;
+  --row-line: #17181B;
+  --text: #E6E6E8;
+  --text-strong: #F2F2F3;
+  --body: #D4D5D8;
+  --text-secondary: #C9CACE;
+  --text-muted: #8A8B91;
+  --text-weak: #7D7E85;
+  --selected: #1D1E21;
+  --selected-row: #131418;
+  --selected-cell: #161830;
+  --accent: #A4AAF7;
+  --accent-contrast: #A4AAF7;
+  --csv-column-0: #93C5FD;
+  --csv-column-1: #86EFAC;
+  --csv-column-2: #FCA5A5;
+  --csv-column-3: #FCD34D;
+  --csv-column-4: #C4B5FD;
+  --csv-column-5: #67E8F9;
+  --csv-column-6: #FDA4AF;
+  --csv-column-7: #BEF264;
+  --warning: #E0A33A;
+  --control: #141416;
+  --control-active: #26272B;
+  --button-line: #2A2B30;
+  --primary: #5B63D3;
+  --primary-line: #6A72E0;
+  --panel: #101012;
+  --panel-raised: #151518;
+  --shadow: 0 18px 60px rgb(0 0 0 / 42%);
+  --font-mono: 'Geist Mono Variable', 'Noto Sans Mono', monospace;
+  --markdown-font-size: 15px;
+  --markdown-heading-1-size: 23px;
+  --markdown-heading-2-size: 18px;
+  --markdown-heading-small-size: 15px;
+  --markdown-inline-code-size: 13px;
+  --markdown-code-block-size: 14px;
+  --markdown-image-label-size: 12px;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #FCFCFD;
+  --sidebar: #F4F4F6;
+  --line: #E4E4E8;
+  --row-line: #EEEEF1;
+  --text: #1C1D21;
+  --text-strong: #0F1013;
+  --body: #2E2F34;
+  --text-secondary: #3D3E44;
+  --text-muted: #62636A;
+  --text-weak: #6E6F76;
+  --selected: #E6E6EB;
+  --selected-row: #F4F5FE;
+  --selected-cell: #ECEEFD;
+  --accent: #4A52C4;
+  --accent-contrast: #A4AAF7;
+  --csv-column-0: #1D4ED8;
+  --csv-column-1: #15803D;
+  --csv-column-2: #B91C1C;
+  --csv-column-3: #A16207;
+  --csv-column-4: #6D28D9;
+  --csv-column-5: #0E7490;
+  --csv-column-6: #BE185D;
+  --csv-column-7: #4D7C0F;
+  --warning: #A0650F;
+  --control: #EFEFF2;
+  --control-active: #FFFFFF;
+  --button-line: #DADADF;
+  --panel: #FFFFFF;
+  --panel-raised: #FFFFFF;
+  --shadow: 0 18px 60px rgb(18 20 40 / 18%);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; min-width: 320px; height: 100%; min-height: 100%; margin: 0; }
+body { overflow: hidden; background: var(--bg); color: var(--text); font-size: 16px; }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { border: 0; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex='0']:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+button:not(:disabled) { cursor: pointer; }
+input, textarea, select { min-width: 0; background: var(--control); border: 1px solid var(--button-line); border-radius: 6px; }
+input:focus, textarea:focus, select:focus { border-color: color-mix(in srgb, var(--accent) 58%, var(--button-line)); outline: 0; }
+textarea { resize: vertical; }
+::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.toolbar-spacer { flex: 1; }
+.small-muted { color: var(--text-weak); font-size: 13px; }
+

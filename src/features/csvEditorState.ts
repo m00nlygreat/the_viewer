@@ -17,3 +17,6 @@ export function saveCsvEditorState(documentId: string, state: CsvEditorViewState
   savedStates.set(documentId, state)
   while (savedStates.size > 32) savedStates.delete(savedStates.keys().next().value!)
 }
+
+export function disposeCsvEditorState(documentId: string): void { savedStates.delete(documentId) }
+export function clearCsvEditorStates(): void { savedStates.clear() }

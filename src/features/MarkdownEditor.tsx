@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { Bold, CheckSquare, Code2, Heading2, Italic, Link2, List, ListOrdered, Quote, Strikethrough } from 'lucide-react'
 import type { ViewerDocument } from '../domain/types'
 import { CodeEditor, type CodeEditorHandle } from '../components/CodeEditor'
@@ -14,8 +14,10 @@ interface Props {
 
 export function MarkdownEditor({ document, text, theme, onChange, onUndo, onRedo }: Props) {
   const editorRef = useRef<CodeEditorHandle>(null)
-  const lines = text.split(/\r\n|\r|\n/u).length
-  const words = text.trim() ? text.trim().split(/\s+/u).length : 0
+  const { lines, words } = useMemo(() => ({
+    lines: text.split(/\r\n|\r|\n/u).length,
+    words: text.trim() ? text.trim().split(/\s+/u).length : 0
+  }), [text])
   const toolbar = [
     { title: '제목', icon: Heading2, action: () => editorRef.current?.prefixLines('## ') },
     { title: '굵게', icon: Bold, action: () => editorRef.current?.wrapSelection('**') },

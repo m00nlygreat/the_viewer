@@ -1,8 +1,8 @@
 import PostalMime from 'postal-mime'
 import type { Address, Attachment, Header } from 'postal-mime'
 import type { EmailAddress, EmailAttachment, EmailModel } from '../types'
+import { normalizeEmailAttachmentBytes } from '../emailAttachmentBytes'
 
-function bytesToArray(bytes: Uint8Array): number[] { return Array.from(bytes) }
 function addressList(value: Address | Address[] | undefined): EmailAddress[] {
   const entries = value ? (Array.isArray(value) ? value : [value]) : []
   return entries.flatMap((item) => {
@@ -45,7 +45,7 @@ export async function parseEmail(bytes: Uint8Array): Promise<EmailModel> {
     date: String(mail.date ?? ''), text: mail.text ?? '', html: typeof mail.html === 'string' ? mail.html : '',
     attachments: mail.attachments.map((attachment): EmailAttachment => ({
       filename: attachment.filename || '첨부 파일', mimeType: attachment.mimeType || 'application/octet-stream',
-      content: bytesToArray(attachmentBytes(attachment.content)),
+      content: attachmentBytes(attachment.content),
       contentId: attachment.contentId || undefined, disposition: attachment.disposition || undefined
     })),
     headers: mail.headers.map((header: Header) => ({ key: header.key, value: header.value, originalKey: header.originalKey }))
@@ -197,7 +197,7 @@ function serializeAttachmentPart(attachment: EmailAttachment, boundary: string, 
   const disposition = attachment.disposition === 'inline' ? 'inline' : 'attachment'
   const contentId = attachment.contentId ? `Content-ID: <${safeHeader(attachment.contentId).replace(/[<>]/g, '')}>${lineBreak}` : ''
   const extensionName = /[^\x20-\x7e]/.test(filename) ? `; filename*=UTF-8''${encodeURIComponent(filename).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)}` : ''
-  const base64 = utf8Base64(new Uint8Array(attachment.content)).match(/.{1,76}/g)?.join(lineBreak) ?? ''
+  const base64 = utf8Base64(normalizeEmailAttachmentBytes(attachment.content)).match(/.{1,76}/g)?.join(lineBreak) ?? ''
   return `--${boundary}${lineBreak}Content-Type: ${safeHeader(attachment.mimeType) || 'application/octet-stream'}${lineBreak}Content-Transfer-Encoding: base64${lineBreak}Content-Disposition: ${disposition}; filename="${quotedFilename}"${extensionName}${lineBreak}${contentId}${lineBreak}${base64}${lineBreak}`
 }
 
@@ -256,7 +256,7 @@ export function serializeEmail(model: EmailModel): string {
     const disposition = attachment.disposition === 'inline' ? 'inline' : 'attachment'
     const contentId = attachment.contentId ? `Content-ID: <${safeHeader(attachment.contentId).replace(/[<>]/g, '')}>\r\n` : ''
     const extensionName = /[^\x20-\x7e]/.test(filename) ? `; filename*=UTF-8''${encodeURIComponent(filename).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)}` : ''
-    parts.push(`--${boundary}\r\nContent-Type: ${safeHeader(attachment.mimeType) || 'application/octet-stream'}\r\nContent-Transfer-Encoding: base64\r\nContent-Disposition: ${disposition}; filename="${quotedFilename}"${extensionName}\r\n${contentId}\r\n${utf8Base64(new Uint8Array(attachment.content)).replace(/.{1,76}/g, '$&\r\n').trimEnd()}\r\n`)
+    parts.push(`--${boundary}\r\nContent-Type: ${safeHeader(attachment.mimeType) || 'application/octet-stream'}\r\nContent-Transfer-Encoding: base64\r\nContent-Disposition: ${disposition}; filename="${quotedFilename}"${extensionName}\r\n${contentId}\r\n${utf8Base64(normalizeEmailAttachmentBytes(attachment.content)).replace(/.{1,76}/g, '$&\r\n').trimEnd()}\r\n`)
   }
   parts.push(`--${boundary}--\r\n`)
   return `${headers.join('\r\n')}\r\n\r\n${parts.join('')}`

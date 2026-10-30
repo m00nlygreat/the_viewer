@@ -1,5 +1,5 @@
 import { ensureAutoOpenRules } from './autoOpen'
-import { assertTicketAvailable, deleteTicket, purgeExpiredTickets, readTicket, RelayStoreError, type RelayTicket } from './relayStore'
+import { assertTicketAvailable, commitTicket, purgeExpiredTickets, readCompletedTicket, readTicket, RelayStoreError, type CompletedRelayTicket, type RelayTicket } from './relayStore'
 import { bytesToBase64, isRelayMessage, isSupportedProtocolVersion, isTicketId, isTrustedPwaSender, PORT_NAME, PROTOCOL_VERSION, CHUNK_BYTES, type RelayErrorCode } from '../relay/protocol'
 
 const MENU_ID = 'open-with-the-viewer'
@@ -93,7 +93,20 @@ function handleRelayPort(port: chrome.runtime.Port): void {
           return
         }
         try {
-          const next = await readTicket(raw.ticketId, senderTabId)
+          let next: RelayTicket
+          try {
+            next = await readTicket(raw.ticketId, senderTabId)
+          } catch (error) {
+            if (!(error instanceof RelayStoreError) || error.code !== 'INVALID_TICKET') throw error
+            const completed = await readCompletedTicket(raw.ticketId)
+            if (!completed) throw error
+            if (!isTrustedPwaSender(senderInfo, completed.tabId)) {
+              throw new RelayStoreError('ACCESS_DENIED', '완료된 전달 티켓이 현재 탭에 속하지 않습니다.')
+            }
+            if (completed.kind === 'workspace-snapshot') await markLegacyMigrationCommitted(completed)
+            port.postMessage({ type: 'COMMITTED', ticketId: completed.id })
+            return
+          }
           if (next.version !== raw.version) {
             respondError(raw.ticketId, 'VERSION_MISMATCH', 'Chrome 확장과 PWA를 모두 최신 버전으로 업데이트한 뒤 다시 시도하세요.')
             return
@@ -149,8 +162,8 @@ function handleRelayPort(port: chrome.runtime.Port): void {
             respondError(raw.ticketId, 'SEQUENCE', '모든 파일 조각을 받기 전에는 완료할 수 없습니다.')
             return
           }
-          if (active.kind === 'workspace-snapshot') await markLegacyMigrationCommitted(active)
-          await deleteTicket(active.id, active.byteLength)
+          const completed = await commitTicket(active.id)
+          if (completed.kind === 'workspace-snapshot') await markLegacyMigrationCommitted(completed)
           activeTickets.delete(active.id)
           ticket = null
           lockedTicketId = ''
@@ -169,16 +182,18 @@ function handleRelayPort(port: chrome.runtime.Port): void {
   })
 }
 
-async function markLegacyMigrationCommitted(ticket: RelayTicket): Promise<void> {
+async function markLegacyMigrationCommitted(ticket: Pick<RelayTicket | CompletedRelayTicket, 'name'>): Promise<void> {
   const prefix = 'legacy:'
   if (!ticket.name.startsWith(prefix)) return
   const documentId = ticket.name.slice(prefix.length)
   const stored = await chrome.storage.local.get(LEGACY_MIGRATION_KEY)
-  const state = stored[LEGACY_MIGRATION_KEY] as { documentIds?: unknown; completedIds?: unknown } | undefined
+  const state = stored[LEGACY_MIGRATION_KEY] as { documentIds?: unknown; completedIds?: unknown; jobs?: Record<string, unknown> } | undefined
   if (!state || !Array.isArray(state.documentIds) || !Array.isArray(state.completedIds)) return
   if (!state.documentIds.includes(documentId)) return
   const completedIds = [...new Set([...state.completedIds.filter((id): id is string => typeof id === 'string'), documentId])]
-  await chrome.storage.local.set({ [LEGACY_MIGRATION_KEY]: { documentIds: state.documentIds, completedIds } })
+  const jobs = { ...(state.jobs ?? {}) }
+  delete jobs[documentId]
+  await chrome.storage.local.set({ [LEGACY_MIGRATION_KEY]: { ...state, documentIds: state.documentIds, completedIds, jobs } })
 }
 
 function relayErrorCode(error: unknown): RelayErrorCode {

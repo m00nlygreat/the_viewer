@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { FORMAT_MIME, FORMATS } from './src/domain/fileFormats.ts'
 
 const packageVersion = JSON.parse(readFileSync(resolve('package.json'), 'utf8')).version as string
 
@@ -11,12 +12,13 @@ function extensionAssets(): Plugin {
     name: 'viewer-extension-assets',
     apply: 'build',
     generateBundle() {
-      const iconsDir = resolve('public/icons')
+      const assetsDir = resolve('dist/build-assets')
+      const iconsDir = resolve(assetsDir, 'icons')
       this.emitFile({ type: 'asset', fileName: 'icons/viewer.svg', source: readFileSync(resolve(iconsDir, 'viewer.svg')) })
       for (const name of readdirSync(iconsDir).filter((file) => /^extension-\d+\.png$/.test(file))) {
         this.emitFile({ type: 'asset', fileName: `icons/${name.replace('extension-', '')}`, source: readFileSync(resolve(iconsDir, name)) })
       }
-      const licensesDir = resolve('public/licenses')
+      const licensesDir = resolve(assetsDir, 'licenses')
       for (const name of readdirSync(licensesDir)) this.emitFile({ type: 'asset', fileName: `licenses/${name}`, source: readFileSync(resolve(licensesDir, name)) })
       this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version: packageVersion, base: './' }, null, 2) })
       this.emitFile({ type: 'asset', fileName: 'manifest.json', source: JSON.stringify({
@@ -63,7 +65,7 @@ export default defineConfig(({ mode }) => {
     : { index: resolve('index.html') }
   return {
     base,
-    publicDir: extension ? false : 'public',
+    publicDir: extension ? false : 'dist/build-assets',
     plugins: [
       react(),
       ...(extension ? [extensionAssets(), verifyExtensionBundle()] : [VitePWA({
@@ -91,10 +93,8 @@ export default defineConfig(({ mode }) => {
             { src: `${base}icons/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
             { src: `${base}icons/maskable-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
           ],
-          file_handlers: [{ action: base, accept: {
-            'message/rfc822': ['.eml'], 'text/csv': ['.csv'], 'text/markdown': ['.md'], 'text/calendar': ['.ics'], 'text/vcard': ['.vcf']
-          } }],
-          share_target: { action: `${base}share/`, method: 'POST', enctype: 'multipart/form-data', params: { files: [{ name: 'files', accept: ['message/rfc822', 'text/csv', 'text/markdown', 'text/calendar', 'text/vcard'] }] } }
+          file_handlers: [{ action: base, accept: Object.fromEntries(FORMATS.map((format) => [FORMAT_MIME[format], [`.${format}`]])) }],
+          share_target: { action: `${base}share/`, method: 'POST', enctype: 'multipart/form-data', params: { files: [{ name: 'files', accept: FORMATS.map((format) => FORMAT_MIME[format]) }] } }
         }
       })]),
     ],

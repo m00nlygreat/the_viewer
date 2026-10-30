@@ -1,5 +1,5 @@
 import type { EditorView } from '@codemirror/view'
-import { markdownCodeLanguage, markdownCodeLanguageLabel, type MarkdownCodeLanguage } from '../domain/formats/markdownCodeBlock'
+import { markdownCodeLanguage, markdownCodeLanguageLabel, type MarkdownCodeLanguage } from '../../domain/formats/markdownCodeBlock'
 
 export interface MarkdownCodeBlockSnapshot {
   from: number

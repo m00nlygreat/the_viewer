@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { EditorSelection, EditorState } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { buildMarkdownFrontmatterDecorations, buildMarkdownPreviewDecorations, taskMarkerRangesForSelection } from '../src/components/markdownPreview'
-import { MarkdownFrontmatterState } from '../src/components/markdownFrontmatterState'
+import { buildMarkdownFrontmatterDecorations, buildMarkdownPreviewDecorations, taskMarkerRangesForSelection } from '../src/features/markdown/preview'
+import { MarkdownFrontmatterState } from '../src/features/markdown/frontmatterState'
 import { detectMarkdownFrontmatter } from '../src/domain/formats/markdownFrontmatter'
 import { markdownLinkAttributes } from '../src/domain/markdown'
+import { parseMarkdownTable, serializeMarkdownTable } from '../src/domain/formats/markdownTable'
 
 function makeState(text: string, position = text.length): EditorState {
   return EditorState.create({
@@ -26,6 +27,13 @@ function collectDecorations(state: EditorState, composingPosition: number | null
 }
 
 describe('Markdown live preview decorations', () => {
+  it('parses and serializes large tables without spreading rows into function arguments', () => {
+    const source = `| name | value |\n| --- | --- |\n${'| row | 1 |\n'.repeat(20_000)}`
+    const table = parseMarkdownTable(source)
+    expect(table?.rows).toHaveLength(20_000)
+    expect(parseMarkdownTable(serializeMarkdownTable(table!))?.rows).toEqual(table?.rows)
+  })
+
   it('hides parsed inline and block syntax while preserving the original source text', () => {
     const text = '# Heading\n\n**bold** *italic* ~~deleted~~ `code` [link](https://example.com)\n'
     const state = makeState(text)

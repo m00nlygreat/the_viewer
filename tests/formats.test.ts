@@ -37,6 +37,12 @@ describe('CSV', () => {
     expect(parsed.headers).toEqual([])
     expect(parsed.rows).toEqual([['코드', '값'], ['0007', 'false']])
   })
+
+  it('parses a short CSV with 200,000 rows without spreading rows into function arguments', () => {
+    const parsed = parseCsv(`column\n${'x\n'.repeat(200_000)}`, 'UTF-8', false, '\n')
+    expect(parsed.rows).toHaveLength(200_000)
+    expect(parsed.rows.at(-1)).toEqual(['x'])
+  })
 })
 
 describe('Markdown', () => {
@@ -63,13 +69,14 @@ describe('EML', () => {
       '--source-boundary', 'Content-Type: application/octet-stream; name="raw.bin"', 'Content-Transfer-Encoding: base64', 'Content-Disposition: attachment; filename="raw.bin"', '', '/wAB', '--source-boundary--', ''
     ].join('\r\n'))
     const parsed = await parseEmail(source)
+    expect(parsed.attachments[0]?.content).toBeInstanceOf(Uint8Array)
     parsed.subject = '수정한 메일'
     const output = serializeEmail(parsed)
     expect(output).toContain('X-Trace: keep-this-header')
     const reopened = await parseEmail(new TextEncoder().encode(output))
     expect(reopened.subject).toBe('수정한 메일')
     expect(reopened.text).toBe(parsed.text)
-    expect(reopened.attachments[0]?.content).toEqual([255, 0, 1])
+    expect(reopened.attachments[0]?.content).toEqual(new Uint8Array([255, 0, 1]))
   })
 
   it('patches a simple message without rebuilding unchanged headers or body', async () => {
@@ -92,14 +99,14 @@ describe('EML', () => {
     const source = ['Subject: Original', 'X-Trace: keep-this-header', 'Content-Type: text/plain; charset=UTF-8', '', 'Original body', ''].join('\r\n')
     const model = await parseEmail(new TextEncoder().encode(source))
     model.text = '바뀐 본문'
-    model.attachments.push({ filename: 'data.bin', mimeType: 'application/octet-stream', content: [255, 0, 1] })
+    model.attachments.push({ filename: 'data.bin', mimeType: 'application/octet-stream', content: new Uint8Array([255, 0, 1]) })
     const output = await serializeEmailPreserving(model, source)
     expect(output).toContain('X-Trace: keep-this-header')
     expect(output).toContain('Content-Type: multipart/mixed; boundary="viewer-')
     expect(isEditableEmailMime(output)).toBe(true)
     const reopened = await parseEmail(new TextEncoder().encode(output))
     expect(reopened.text).toBe('바뀐 본문')
-    expect(reopened.attachments[0]?.content).toEqual([255, 0, 1])
+    expect(reopened.attachments[0]?.content).toEqual(new Uint8Array([255, 0, 1]))
   })
 })
 
@@ -133,6 +140,30 @@ describe('ICS', () => {
     expect(timezoneOutput).toContain('TZID=America/New_York')
     expect(timezoneEvent?.start).toBe('2026-10-20T09:30:00')
     expect(expandCalendarEvent(changedTimezone, changedTimezone.events[0]!)).toEqual(dates)
+  })
+
+  it('does not mutate its input when serializing a calendar after deleting an event', () => {
+    const source = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Test//EN',
+      'BEGIN:VEVENT', 'UID:a', 'SUMMARY:First', 'DTSTART:20261020T093000Z', 'END:VEVENT',
+      'BEGIN:VEVENT', 'UID:b', 'SUMMARY:Second', 'DTSTART:20261021T093000Z', 'END:VEVENT',
+      'END:VCALENDAR', ''
+    ].join('\r\n')
+    const parsed = parseCalendar(source)
+    const originalTree = structuredClone(parsed.jcal)
+    const afterDelete = { ...parsed, events: parsed.events.filter((event) => event.uid !== 'a') }
+
+    const firstOutput = serializeCalendar(afterDelete)
+    const changedRemaining = {
+      ...afterDelete,
+      events: afterDelete.events.map((event) => ({ ...event, summary: 'Updated second' }))
+    }
+    const secondOutput = serializeCalendar(changedRemaining)
+
+    expect(parsed.jcal).toEqual(originalTree)
+    expect(parseCalendar(firstOutput).events.map((event) => event.uid)).toEqual(['b'])
+    expect(parseCalendar(secondOutput).events.map((event) => event.summary)).toEqual(['Updated second'])
+    expect(serializeCalendar(changedRemaining)).toBe(secondOutput)
   })
 })
 

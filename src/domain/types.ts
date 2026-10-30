@@ -1,6 +1,6 @@
-import type { Format } from '../platform/fileTypes'
-export { FORMATS, FORMAT_MIME, FORMAT_MIME_ALIASES, GENERIC_FILE_MIME_TYPES, FORMAT_LABEL, getFormat } from '../platform/fileTypes'
-export type { Format } from '../platform/fileTypes'
+import type { Format } from './fileFormats'
+export { FORMATS, FORMAT_MIME, FORMAT_MIME_ALIASES, GENERIC_FILE_MIME_TYPES, FORMAT_LABEL, getFormat } from './fileFormats'
+export type { Format } from './fileFormats'
 export type EditorMode = 'view' | 'source'
 export type ThemePreference = 'system' | 'light' | 'dark'
 
@@ -29,7 +29,7 @@ export interface EmailAddress { name?: string; address: string }
 export interface EmailAttachment {
   filename: string
   mimeType: string
-  content: number[]
+  content: Uint8Array
   contentId?: string
   disposition?: string
 }
@@ -82,7 +82,14 @@ export interface ContactCard {
 }
 export interface ContactModel { cards: ContactCard[]; diagnostics: string[] }
 
-export type DocumentModel = CsvModel | EmailModel | CalendarModel | ContactModel | { text: string }
+export interface DocumentModelByFormat {
+  csv: CsvModel
+  eml: EmailModel
+  md: { text: string }
+  ics: CalendarModel
+  vcf: ContactModel
+}
+export type DocumentModel = DocumentModelByFormat[Format]
 
 export interface ViewerDocument {
   id: string
@@ -114,4 +121,13 @@ export interface ViewerDocument {
   lastEditedAt: number
   parentId?: string
   relayTicketId?: string
+  shareTicketId?: string
+  shareFileIndex?: number
 }
+
+type PersistedDocumentFor<K extends Format> = Omit<ViewerDocument, 'format' | 'model'> & {
+  schemaVersion: 3
+  format: K
+  model: DocumentModelByFormat[K]
+}
+export type PersistedViewerDocument = { [K in Format]: PersistedDocumentFor<K> }[Format]

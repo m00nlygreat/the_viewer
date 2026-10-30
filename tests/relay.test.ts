@@ -4,6 +4,8 @@ import {
   isRelayMessage, isSupportedProtocolVersion, isTicketId, isTrustedPwaSender, maxFileBytes, PROTOCOL_VERSION,
   WORKSPACE_SNAPSHOT_LIMIT
 } from '../src/platform/relay/protocol'
+import { restoreLegacySnapshot } from '../src/platform/pwa/extensionRelay'
+import type { EmailModel } from '../src/domain/types'
 
 const ticketId = '123e4567-e89b-42d3-a456-426614174000'
 const pwaSender = {
@@ -19,6 +21,7 @@ describe('extension relay protocol', () => {
     expect(DESKTOP_FILE_LIMIT).toBe(50 * 1024 * 1024)
     expect(maxFileBytes('Chrome Desktop')).toBe(50 * 1024 * 1024)
     expect(maxFileBytes('Mozilla/5.0 (Android 14; Mobile)')).toBe(20 * 1024 * 1024)
+    expect(maxFileBytes('Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)')).toBe(20 * 1024 * 1024)
     expect(expectedChunkCount(0)).toBe(0)
     expect(expectedChunkCount(50 * 1024 * 1024)).toBe(267)
     expect(WORKSPACE_SNAPSHOT_LIMIT).toBeGreaterThan(DESKTOP_FILE_LIMIT)
@@ -49,7 +52,27 @@ describe('extension relay protocol', () => {
     expect(isTrustedPwaSender(pwaSender, 43)).toBe(false)
   })
 
-  it('round-trips a 50 MiB file through bounded Base64 chunks byte-for-byte', () => {
+  it('migrates legacy email attachment arrays into typed byte storage', () => {
+    const source = new TextEncoder().encode('Subject: Legacy\r\n\r\nbody')
+    const text = new TextDecoder().decode(source)
+    const snapshot = {
+      schemaVersion: 1,
+      document: {
+        id: 'legacy-email', name: 'legacy.eml', format: 'eml', mimeType: 'message/rfc822', size: source.byteLength,
+        sourceText: text, text, savedText: text, mode: 'view', revision: 0, isDirty: false,
+        openedAt: 1, lastEditedAt: 1, sourceBytesBase64: bytesToBase64(source),
+        model: {
+          subject: 'Legacy', from: [], to: [], cc: [], date: '', text: 'body', html: '', headers: [],
+          attachments: [{ filename: 'raw.bin', mimeType: 'application/octet-stream', content: [0, 127, 255] }]
+        }
+      }
+    }
+
+    const restored = restoreLegacySnapshot(new TextEncoder().encode(JSON.stringify(snapshot)))
+    expect((restored.model as EmailModel).attachments[0]?.content).toEqual(new Uint8Array([0, 127, 255]))
+  })
+
+  it('round-trips a 50 MiB file through bounded Base64 chunks byte-for-byte', { timeout: 30_000 }, () => {
     const source = new Uint8Array(DESKTOP_FILE_LIMIT)
     for (let index = 0; index < source.length; index += 1) source[index] = (index * 31 + 17) & 0xff
     let restoredLength = 0

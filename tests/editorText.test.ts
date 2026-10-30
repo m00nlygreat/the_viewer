@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { EditorState } from '@codemirror/state'
-import { applyCodeMirrorChanges, applyLineBasedTextChanges, createTextPositionMapper, findTextChanges, mergeTextDuringComposition, normalizeLineEndings } from '../src/components/editorText'
+import { applyCodeMirrorChanges, applyLineBasedTextChanges, createTextPositionMapper, EditorTextSyncSession, findTextChanges, mergeTextDuringComposition, normalizeLineEndings } from '../src/components/editorText'
 import { remapCodeEditorState } from '../src/components/codeEditorState'
 
 describe('CodeMirror source text mapping', () => {
@@ -48,6 +48,30 @@ describe('CodeMirror source text mapping', () => {
     const local = 'title\n한글\nfooter'
     const remote = 'updated title\ncompose\nupdated footer'
     expect(mergeTextDuringComposition(base, local, remote)).toBe('updated title\n한글\nupdated footer')
+  })
+
+  it('shares the external update and composition lifecycle between editor adapters', () => {
+    const sync = new EditorTextSyncSession()
+    const base = 'title\ncompose\nfooter'
+    sync.beginComposition(base)
+
+    expect(sync.receiveExternal('updated title\ncompose\nfooter', 'title\ncompose\nfooter', true)).toEqual({ status: 'defer', matchesEditor: false })
+    const local = 'title\n한글\nfooter'
+    const merged = sync.mergeLocal(local)
+    expect(merged).toBe('updated title\n한글\nfooter')
+
+    const finished = sync.finishComposition(merged)
+    expect(finished).toEqual({ text: merged, changed: false, pendingExternalValue: merged })
+    expect(sync.receiveExternal(merged, merged, false)).toEqual({ status: 'same', matchesEditor: true })
+    expect(sync.pendingExternalValue).toBeNull()
+  })
+
+  it('keeps an IME insertion when an external edit overlaps the composing range', () => {
+    const sync = new EditorTextSyncSession()
+    sync.beginComposition('draft')
+    sync.receiveExternal('older', 'draft', true)
+
+    expect(sync.finishComposition('한글')).toEqual({ text: '한글', changed: true, pendingExternalValue: '한글' })
   })
 
   it('maps positions between multiple external edits instead of collapsing them to one replacement', () => {

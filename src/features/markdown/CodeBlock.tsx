@@ -1,11 +1,11 @@
 import { lazy, Suspense, useSyncExternalStore } from 'react'
 import DOMPurify from 'dompurify'
 import { Check, Code2 } from 'lucide-react'
-import { highlightMarkdownCode } from './markdownCodeHighlight'
-import type { MarkdownCodeBlockState } from './markdownCodeBlockState'
-import { useOutsideClick } from './useOutsideClick'
+import { highlightMarkdownCode } from './codeHighlight'
+import type { MarkdownCodeBlockState } from './codeBlockState'
+import { useOutsideClick } from '../../components/useOutsideClick'
 
-const MarkdownCodeBlockMonacoEditor = lazy(() => import('../features/MarkdownCodeBlockMonacoEditor'))
+const MarkdownCodeBlockMonacoEditor = lazy(() => import('./CodeBlockEditor'))
 
 interface Props { block: MarkdownCodeBlockState }
 

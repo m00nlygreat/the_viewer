@@ -1,14 +1,13 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
-import { EditorSelection, EditorState, Prec, type ChangeSpec } from '@codemirror/state'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { EditorSelection, EditorState, Prec, type ChangeSpec, type Extension } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view'
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands'
-import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { markdownLivePreview, taskMarkerRangesForSelection } from './markdownPreview'
 import { csvEditorLanguage } from './csvLanguage'
-import { applyCodeMirrorChanges, findTextChanges, mergeTextDuringComposition, normalizeLineEndings } from './editorText'
+import { applyCodeMirrorChanges, EditorTextSyncSession, findTextChanges, normalizeLineEndings } from './editorText'
 import { readCodeEditorState, remapCodeEditorState, saveCodeEditorState } from './codeEditorState'
 
 type ChangeGroup = 'typing' | 'command'
+type TaskMarkerFinder = (state: EditorState) => Array<{ from: number; to: number; checked: boolean }>
 
 export interface CodeEditorHandle {
   wrapSelection: (before: string, after?: string) => void
@@ -99,8 +98,8 @@ function prefixSelectedLines(view: EditorView, prefix: string): void {
   applyChanges(view, [...starts].sort((left, right) => left - right).map((from) => ({ from, insert: prefix })))
 }
 
-function applyChecklist(view: EditorView): void {
-  const markers = taskMarkerRangesForSelection(view.state)
+function applyChecklist(view: EditorView, findTaskMarkers: TaskMarkerFinder | null): void {
+  const markers = findTaskMarkers?.(view.state) ?? []
   if (markers.length) {
     applyChanges(view, markers.map(({ from, to, checked }) => ({ from, to, insert: checked ? '[ ]' : '[x]' })))
   } else {
@@ -119,31 +118,49 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
   const undo = useRef(onUndo)
   const redo = useRef(onRedo)
   const syncing = useRef(false)
-  const pendingExternalValue = useRef<string | null>(null)
-  const compositionBaseValue = useRef<string | null>(null)
+  const textSync = useRef(new EditorTextSyncSession())
+  const [previewExtensions, setPreviewExtensions] = useState<Extension[] | null>(null)
+  const [markdownExtension, setMarkdownExtension] = useState<Extension | null>(null)
+  const findTaskMarkers = useRef<TaskMarkerFinder | null>(null)
   change.current = onChange
   undo.current = onUndo
   redo.current = onRedo
   const hasExternalHistory = Boolean(onUndo || onRedo)
 
+  useEffect(() => {
+    if (!livePreview) return
+    let cancelled = false
+    void import('../features/markdown/preview').then(({ markdownLivePreview }) => {
+      if (cancelled) return
+      setPreviewExtensions(markdownLivePreview(markdownTheme, () => undo.current?.(), () => redo.current?.()))
+    })
+    return () => { cancelled = true }
+  }, [livePreview, markdownTheme])
+
+  useEffect(() => {
+    if (!markdownMode) return
+    let cancelled = false
+    void Promise.all([import('@codemirror/lang-markdown'), import('../features/markdown/taskMarkers')]).then(([language, markers]) => {
+      if (cancelled) return
+      findTaskMarkers.current = markers.taskMarkerRangesForSelection
+      setMarkdownExtension(() => language.markdown({ base: language.markdownLanguage }))
+    })
+    return () => { cancelled = true }
+  }, [markdownMode])
+
   const syncValue = (editor: EditorView, externalValue: string) => {
-    const normalized = normalizeLineEndings(externalValue)
-    if (editor.composing || compositionBaseValue.current !== null) {
-      if (editor.state.doc.toString() === normalized) {
-        valueRef.current = externalValue
-        if (pendingExternalValue.current === null) editorText.current = externalValue
-      } else {
-        pendingExternalValue.current = externalValue
-        valueRef.current = externalValue
-      }
+    const update = textSync.current.receiveExternal(externalValue, editor.state.doc.toString(), editor.composing)
+    if (update.status === 'defer') {
+      valueRef.current = externalValue
+      if (update.matchesEditor && textSync.current.pendingExternalValue === null) editorText.current = externalValue
       return
     }
-    if (editor.state.doc.toString() === normalized) {
+    if (update.status === 'same') {
       valueRef.current = externalValue
       editorText.current = externalValue
-      pendingExternalValue.current = null
       return
     }
+    const normalized = normalizeLineEndings(externalValue)
     const previous = editor.state.doc.toString()
     const changes = editor.state.changes(findTextChanges(previous, normalized))
     const top = editor.scrollDOM.scrollTop
@@ -155,11 +172,12 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     syncing.current = false
     valueRef.current = externalValue
     editorText.current = externalValue
-    pendingExternalValue.current = null
+    textSync.current.completeExternalUpdate()
   }
 
   useEffect(() => {
-    if (!host.current) return
+    if (!host.current || (livePreview && previewExtensions === null) || (markdownMode && markdownExtension === null)) return
+    const textSession = textSync.current
     const saved = stateKey ? readCodeEditorState(stateKey) : undefined
     const restored = saved ? remapCodeEditorState(saved, valueRef.current) : undefined
     const selection = restored
@@ -183,43 +201,34 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
           { key: 'Mod-Shift-z', run: () => { redo.current?.(); return true } }
         ]))] : []),
         highlightActiveLine(),
-        ...(markdownMode ? [markdown({ base: markdownLanguage })] : []),
+        ...(markdownMode && markdownExtension ? [markdownExtension] : []),
         ...(csvMode ? csvEditorLanguage(csvDelimiter) : []),
         ...(livePreview ? [EditorView.lineWrapping] : []),
-        ...(livePreview ? markdownLivePreview(markdownTheme, () => undo.current?.(), () => redo.current?.()) : []),
+        ...(livePreview ? previewExtensions ?? [] : []),
         EditorView.updateListener.of((update) => {
           if (!update.docChanged || syncing.current) return
           const localText = applyCodeMirrorChanges(update.startState, update.changes, editorText.current)
           editorText.current = localText
-          const compositionBase = compositionBaseValue.current
-          const externalText = pendingExternalValue.current
-          const nextText = compositionBase !== null && externalText !== null
-            ? mergeTextDuringComposition(compositionBase, localText, externalText)
-            : localText
-          if (compositionBase !== null && externalText !== null) pendingExternalValue.current = nextText
+          const nextText = textSync.current.mergeLocal(localText)
           valueRef.current = nextText
           const group: ChangeGroup = update.transactions.some((transaction) => transaction.isUserEvent('input.format')) ? 'command' : 'typing'
           change.current(nextText, group)
         }),
         EditorView.domEventHandlers({
           compositionstart() {
-            compositionBaseValue.current = editorText.current
+            textSync.current.beginComposition(editorText.current)
             return false
           },
           compositionend() {
             const editor = view.current
-            const pending = pendingExternalValue.current
-            const base = compositionBaseValue.current
-            if (editor && base !== null && pending !== null) {
-              const merged = mergeTextDuringComposition(base, editorText.current, pending)
-              valueRef.current = merged
-              pendingExternalValue.current = merged
-              if (merged !== pending) change.current(merged, 'typing')
+            const finished = textSync.current.finishComposition(editorText.current)
+            if (editor && finished.pendingExternalValue !== null) {
+              valueRef.current = finished.text
+              if (finished.changed) change.current(finished.text, 'typing')
             }
-            compositionBaseValue.current = null
             window.requestAnimationFrame(() => {
               const currentEditor = view.current
-              const latest = pendingExternalValue.current
+              const latest = textSync.current.pendingExternalValue
               if (currentEditor && latest !== null) syncValue(currentEditor, latest)
             })
             return false
@@ -261,10 +270,9 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
       }
       view.current?.destroy()
       view.current = null
-      pendingExternalValue.current = null
-      compositionBaseValue.current = null
+      textSession.reset()
     }
-  }, [csvDelimiter, csvMode, hasExternalHistory, livePreview, markdownMode, markdownTheme, stateKey])
+  }, [csvDelimiter, csvMode, hasExternalHistory, livePreview, markdownExtension, markdownMode, markdownTheme, previewExtensions, stateKey])
 
   useEffect(() => {
     const editor = view.current
@@ -282,7 +290,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     },
     toggleChecklist() {
       const editor = view.current
-      if (editor) applyChecklist(editor)
+      if (editor) applyChecklist(editor, findTaskMarkers.current)
     }
   }), [])
 

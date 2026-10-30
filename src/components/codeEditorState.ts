@@ -42,3 +42,5 @@ export function saveCodeEditorState(key: string, state: SavedCodeEditorState): v
 export function disposeCodeEditorState(key: string): void {
   savedEditorStates.delete(key)
 }
+
+export function clearCodeEditorStates(): void { savedEditorStates.clear() }

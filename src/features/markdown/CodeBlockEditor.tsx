@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react'
-import '../../node_modules/monaco-editor/min/vs/editor/editor.main.css'
-import { configureMonacoWorker, defineViewerMonacoThemes, monaco } from '../components/monacoRuntime'
-import { registerMonacoJsonLanguage } from '../components/monacoJsonLanguage'
-import { createTextPositionMapper, findTextChanges, normalizeLineEndings } from '../components/editorText'
+import '../../../node_modules/monaco-editor/min/vs/editor/editor.main.css'
+import { configureMonacoWorker, defineViewerMonacoThemes, monaco } from '../../components/monacoRuntime'
+import { registerMonacoJsonLanguage } from '../../components/monacoJsonLanguage'
+import { EditorTextSyncSession, findTextChangesWithMapper, normalizeLineEndings } from '../../components/editorText'
 
 interface Props {
   code: string
@@ -44,6 +44,7 @@ export default function MarkdownCodeBlockMonacoEditor({ code, language, theme, o
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const modelRef = useRef<monaco.editor.ITextModel | null>(null)
   const externalUpdate = useRef(false)
+  const textSync = useRef(new EditorTextSyncSession())
   const codeRef = useRef(code)
   const themeRef = useRef(theme)
   const onChangeRef = useRef(onChange)
@@ -57,11 +58,14 @@ export default function MarkdownCodeBlockMonacoEditor({ code, language, theme, o
 
   useEffect(() => {
     if (!host.current) return
+    const textSession = textSync.current
     let cancelled = false
     let editor: monaco.editor.IStandaloneCodeEditor | null = null
     let model: monaco.editor.ITextModel | null = null
     let contentListener: monaco.IDisposable | null = null
     let commandListener: monaco.IDisposable | null = null
+    let compositionStartListener: monaco.IDisposable | null = null
+    let compositionEndListener: monaco.IDisposable | null = null
 
     const createEditor = async () => {
       configureMonacoWorker()
@@ -93,7 +97,29 @@ export default function MarkdownCodeBlockMonacoEditor({ code, language, theme, o
       })
       editorRef.current = editor
       contentListener = model.onDidChangeContent(() => {
-        if (!externalUpdate.current) onChangeRef.current(model?.getValue() ?? '')
+        if (externalUpdate.current) return
+        const text = textSync.current.mergeLocal(model?.getValue() ?? '')
+        codeRef.current = text
+        onChangeRef.current(text)
+      })
+      compositionStartListener = editor.onDidCompositionStart(() => {
+        textSync.current.beginComposition(model?.getValue() ?? codeRef.current)
+      })
+      compositionEndListener = editor.onDidCompositionEnd(() => {
+        const finished = textSync.current.finishComposition(model?.getValue() ?? codeRef.current)
+        codeRef.current = finished.text
+        if (finished.pendingExternalValue !== null && finished.changed) onChangeRef.current(finished.text)
+        window.requestAnimationFrame(() => {
+          const latest = textSync.current.pendingExternalValue
+          const currentModel = modelRef.current
+          const currentEditor = editorRef.current
+          if (latest === null || !currentModel || currentModel.isDisposed()) return
+          externalUpdate.current = true
+          syncMonacoCode(currentModel, latest, currentEditor)
+          externalUpdate.current = false
+          codeRef.current = latest
+          textSync.current.completeExternalUpdate()
+        })
       })
       commandListener = editor.onKeyDown((event) => {
         const command = event.ctrlKey || event.metaKey
@@ -117,10 +143,13 @@ export default function MarkdownCodeBlockMonacoEditor({ code, language, theme, o
       cancelled = true
       contentListener?.dispose()
       commandListener?.dispose()
+      compositionStartListener?.dispose()
+      compositionEndListener?.dispose()
       editor?.dispose()
       model?.dispose()
       editorRef.current = null
       modelRef.current = null
+      textSession.reset()
     }
   }, [language])
 
@@ -133,10 +162,25 @@ export default function MarkdownCodeBlockMonacoEditor({ code, language, theme, o
   useEffect(() => {
     const model = modelRef.current
     const editor = editorRef.current
-    if (!model || model.isDisposed() || normalizeLineEndings(model.getValue()) === normalizeLineEndings(code)) return
+    if (!model || model.isDisposed()) {
+      codeRef.current = code
+      textSync.current.completeExternalUpdate()
+      return
+    }
+    const update = textSync.current.receiveExternal(code, model.getValue(), editor?.inComposition ?? false)
+    if (update.status === 'defer') {
+      codeRef.current = code
+      return
+    }
+    if (update.status === 'same') {
+      codeRef.current = code
+      return
+    }
     externalUpdate.current = true
     syncMonacoCode(model, code, editor)
     externalUpdate.current = false
+    codeRef.current = code
+    textSync.current.completeExternalUpdate()
   }, [code])
 
   return <div className="cm-md-code-monaco-host" ref={host} aria-label={`${language} Monaco 편집기`} />
@@ -146,8 +190,7 @@ function syncMonacoCode(model: monaco.editor.ITextModel, value: string, editor: 
   const previous = normalizeLineEndings(model.getValue())
   const next = normalizeLineEndings(value)
   if (previous === next) return
-  const changes = findTextChanges(previous, next)
-  const mapPosition = createTextPositionMapper(previous, next)
+  const { changes, mapPosition } = findTextChangesWithMapper(previous, next)
   const edits = changes.map((change) => {
     const start = model.getPositionAt(change.from)
     const end = model.getPositionAt(change.to)

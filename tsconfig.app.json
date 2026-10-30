@@ -3,5 +3,23 @@
   "compilerOptions": {
     "types": ["vite/client", "chrome"]
   },
-  "files": ["src/types/global.d.ts", "src/main.tsx", "tests/formats.test.ts", "tests/session.test.ts"]
+  "include": [
+    "src/types/global.d.ts",
+    "src/main.tsx",
+    "src/app/**/*.ts",
+    "src/app/**/*.tsx",
+    "src/components/**/*.ts",
+    "src/components/**/*.tsx",
+    "src/domain/**/*.ts",
+    "src/features/**/*.ts",
+    "src/features/**/*.tsx",
+    "src/platform/pwa/**/*.ts",
+    "src/platform/relay/**/*.ts",
+    "src/platform/storage.ts",
+    "src/platform/attachmentResources.ts",
+    "src/platform/browserFiles.ts",
+    "src/platform/fileTypes.ts",
+    "src/platform/FilePicker.tsx"
+  ],
+  "exclude": ["src/platform/extension/**", "tests/**", "vite.config.ts"]
 }

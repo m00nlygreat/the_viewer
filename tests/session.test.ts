@@ -62,7 +62,7 @@ describe('document session', () => {
 
   it('exports saved bytes exactly when unchanged and encodes edited UTF-8 text with its BOM', () => {
     const originalBytes = new Uint8Array([0xff, 0xfe, 0x41, 0x00]).buffer
-    const unchanged = makeDocument({ savedBytes: originalBytes, encoding: 'UTF-16LE' })
+    const unchanged = makeDocument({ savedBytes: originalBytes, encoding: 'UTF-16LE', bom: true })
     expect([...buildExportSnapshot(unchanged.id, unchanged).bytes]).toEqual([255, 254, 65, 0])
     expect(buildExportSnapshot(unchanged.id, unchanged).encoding).toBe('UTF-16LE')
 
@@ -83,6 +83,37 @@ describe('document session', () => {
     const redone = redoDocument(original.id, restored, historyEntry(edited))
     expect(redone.text).toBe(edited.text)
     expect(redone.revision).toBe(3)
+  })
+
+  it('recomputes dirty state after exporting, undoing, and redoing', () => {
+    const original = makeDocument()
+    const edited = applySourceEdit(original.id, 'name,value\nbeta,2', original)
+    const savedSnapshot = buildExportSnapshot(edited.id, edited)
+    const saved = {
+      ...edited,
+      savedText: savedSnapshot.text,
+      savedBytes: savedSnapshot.bytes.slice().buffer as ArrayBuffer,
+      isDirty: false
+    }
+
+    const undone = undoDocument(saved.id, saved, historyEntry(original))
+    expect(undone.text).toBe(original.text)
+    expect(undone.isDirty).toBe(true)
+    expect(buildExportSnapshot(undone.id, undone).text).toBe(original.text)
+    expect(new TextDecoder().decode(buildExportSnapshot(undone.id, undone).bytes)).toBe(original.text)
+
+    const redone = redoDocument(saved.id, undone, historyEntry(saved))
+    expect(redone.text).toBe(savedSnapshot.text)
+    expect(redone.isDirty).toBe(false)
+    expect(buildExportSnapshot(redone.id, redone).bytes).toEqual(savedSnapshot.bytes)
+  })
+
+  it('restores the BOM metadata with the matching history entry', () => {
+    const original = makeDocument()
+    const edited = { ...original, bom: true, isDirty: true }
+    const undone = undoDocument(original.id, edited, historyEntry(original))
+    expect(undone.bom).toBe(false)
+    expect(undone.isDirty).toBe(false)
   })
 
   it('shares Markdown view and source text through undo, redo, and immediate export', () => {

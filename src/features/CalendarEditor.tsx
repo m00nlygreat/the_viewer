@@ -32,18 +32,28 @@ export function CalendarEditor({ document, model, onChange }: Props) {
   const events = model.events
   const visible = useMemo(() => events.filter((event) => !query || `${event.summary} ${event.location} ${event.description}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).sort((a, b) => a.start.localeCompare(b.start)), [events, query])
   const current = events.find((event) => eventIdentity(event) === selected) ?? events[0] ?? null
+  const { grouped, occurrences } = useMemo(() => {
+    const grouped = new Map<string, Array<{ event: CalendarEvent; start: string }>>()
+    const occurrences = new Map<string, string[]>()
+    for (const event of visible) {
+      const starts = expandCalendarEvent(model, event)
+      occurrences.set(eventIdentity(event), starts)
+      for (const start of starts) {
+        const date = start ? start.slice(0, 10) : '날짜 미정'
+        const items = grouped.get(date)
+        const entry = { event, start }
+        if (items) items.push(entry)
+        else grouped.set(date, [entry])
+      }
+    }
+    for (const items of grouped.values()) items.sort((first, second) => first.start.localeCompare(second.start))
+    return { grouped, occurrences }
+  }, [model, visible])
+  const currentOccurrences = current ? occurrences.get(eventIdentity(current)) ?? [] : []
   const update = (uid: string, change: Partial<CalendarEvent>) => { if (canEdit) onChange({ ...model, events: events.map((event) => eventIdentity(event) === uid ? { ...event, ...change } : event) }, 'typing') }
   const add = () => { if (!canEdit) return; const event = newEvent(); onChange({ ...model, events: [...events, event] }); setSelected(eventIdentity(event)); setSelectedStart(event.start); setEditing(true) }
   const remove = () => { if (!current || !canEdit) return; const next = events.filter((event) => eventIdentity(event) !== eventIdentity(current)); onChange({ ...model, events: next }); setSelected(next[0] ? eventIdentity(next[0]) : ''); setSelectedStart(next[0]?.start ?? ''); setEditing(false) }
-  const grouped = new Map<string, Array<{ event: CalendarEvent; start: string }>>()
-  for (const event of visible) {
-    for (const start of expandCalendarEvent(model, event)) {
-      const date = start ? start.slice(0, 10) : '날짜 미정'
-      grouped.set(date, [...(grouped.get(date) ?? []), { event, start }])
-    }
-  }
-  for (const items of grouped.values()) items.sort((first, second) => first.start.localeCompare(second.start))
-  const week = new Intl.DateTimeFormat('ko-KR', { weekday: 'short' })
+  const week = useMemo(() => new Intl.DateTimeFormat('ko-KR', { weekday: 'short' }), [])
 
   return <section className={`calendar-layout${editing ? ' editing' : ''}`}>
     <div className="calendar-agenda">
@@ -73,7 +83,7 @@ export function CalendarEditor({ document, model, onChange }: Props) {
         <label className="form-field"><span>반복 규칙</span><input value={current.recurrence ?? ''} placeholder="예: FREQ=WEEKLY;BYDAY=MO" onChange={(event) => update(eventIdentity(current), { recurrence: event.target.value || undefined })} /><small>복잡한 반복 예외는 원본의 해당 일정으로 이동해 편집하세요.</small></label>
       </> : <>
         <div className="detail-heading"><h2>일정</h2>{canEdit && <button className="subtle-button" onClick={() => setEditing(true)}><Pencil size={13} /> 편집</button>}</div><h1>{current.summary || '(제목 없음)'}</h1>
-        <p className="event-detail-time">{displayDate(expandCalendarEvent(model, current).includes(selectedStart) ? selectedStart : current.start).toLocaleString('ko-KR')}{current.allDay ? ' · 종일' : ''}</p>
+        <p className="event-detail-time">{displayDate(currentOccurrences.includes(selectedStart) ? selectedStart : current.start).toLocaleString('ko-KR')}{current.allDay ? ' · 종일' : ''}</p>
         {current.end && <p className="event-detail-time">종료 · {displayDate(current.end).toLocaleString('ko-KR')}</p>}
         {current.timezone && <p className="event-detail-time">시간대 · {current.timezone}</p>}
         {current.location && <p className="event-detail-place"><MapPin size={14} />{current.location}</p>}
