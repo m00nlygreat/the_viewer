@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import type { EmailModel, ViewerDocument } from '../domain/types'
 import { isEditableEmailMime } from '../domain/formats/email'
 import { createInlineImageUrls, releaseObjectUrls } from '../platform/attachmentResources'
+import { createEmailPreviewDocument } from './emailPreviewDocument'
 
 interface Props {
   document: ViewerDocument
@@ -47,7 +48,7 @@ export function EmailEditor({ document, model, onChange, onOpenAttachment, onDow
     FORBID_ATTR: ['style', 'srcset', 'background', 'action', 'formaction'],
     ALLOWED_URI_REGEXP: /^(?:blob:|data:image\/(?:png|gif|jpeg|webp);base64,)/i
   })
-  const frame = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:"><style>body{font:17px/1.75 system-ui,sans-serif;color:#d4d5d8;margin:16px;overflow-wrap:anywhere}a{color:#a4aaf7}</style></head><body>${safeHtml}</body></html>`
+  const frame = createEmailPreviewDocument(safeHtml)
   const sender = model.from[0]
   const details = [
     ['보낸 사람', sender?.name || sender?.address || '—'], ['주소', sender?.address || '—'],
@@ -67,7 +68,6 @@ export function EmailEditor({ document, model, onChange, onOpenAttachment, onDow
         <label className="form-field"><span>본문 형식</span><select value={bodyFormat} onChange={(event) => setBodyFormat(event.target.value as 'text' | 'html')}><option value="text">일반 텍스트</option><option value="html">HTML 원문</option></select></label>
         <label className="form-field body-field"><span>{bodyFormat === 'html' ? 'HTML 본문' : '텍스트 본문'}</span><textarea value={bodyFormat === 'html' ? model.html : model.text} onChange={(event) => onChange({ ...model, [bodyFormat]: event.target.value }, 'typing')} rows={15} spellCheck /></label>
         {bodyFormat === 'html' && <div className="email-edit-preview"><span className="small-muted">정제된 미리보기</span><iframe className="email-html-frame" title="정제된 HTML 본문 미리보기" sandbox="" referrerPolicy="no-referrer" srcDoc={frame} /></div>}
-        <AttachmentList model={model} editable onAdd={onAddAttachments} onRemove={onRemoveAttachment} onOpen={onOpenAttachment} onDownload={onDownloadAttachment} />
       </div> : <>
         <div className="email-heading"><div className="email-subject-row"><h1>{model.subject || '(제목 없음)'}</h1>{document.isDirty && <span className="modified-pill">수정됨</span>}</div>
           <div className="email-edit-action">{canEdit ? <button className="subtle-button" onClick={() => setEditing(true)}><Pencil size={13} /> 이메일 편집</button> : <><span className="small-muted" title="원본 MIME 파트와 안전한 수정 구간을 연결할 수 없습니다.">이 구조는 원본 탭에서 편집하세요.</span><button className="subtle-button" onClick={onOpenSource}>원본 열기</button></>}</div>
@@ -75,12 +75,12 @@ export function EmailEditor({ document, model, onChange, onOpenAttachment, onDow
           <div className="email-recipient">받는 사람 · {model.to.map((item) => item.address).join(', ') || '알 수 없음'}{model.cc.length ? ` · 참조 ${model.cc.map((item) => item.address).join(', ')}` : ''}</div>
         </div>
         {model.html ? <iframe className="email-html-frame" title="안전하게 정제된 이메일 본문" sandbox="" referrerPolicy="no-referrer" srcDoc={frame} /> : <div className="email-body">{content || '본문이 없습니다.'}</div>}
-        <AttachmentList model={model} onOpen={onOpenAttachment} onDownload={onDownloadAttachment} />
       </>}
     </main>
     <aside className="email-details" aria-label="이메일 속성">
       <h2>속성</h2>
       {details.map(([key, value]) => <div className="property-row" key={key}><span>{key}</span><strong title={value}>{value}</strong></div>)}
+      <AttachmentList model={model} editable={editing && canEdit} onAdd={onAddAttachments} onRemove={onRemoveAttachment} onOpen={onOpenAttachment} onDownload={onDownloadAttachment} />
       {!safeMimeStructure && <div className="inline-warning">기존 MIME 파트를 안전하게 연결할 수 없는 구조입니다. 원본 탭에서만 편집할 수 있고, 보기에서는 원문을 유지합니다.</div>}
       {model.headers.length > 0 && <details className="headers-details"><summary>전체 헤더</summary>{model.headers.map((header, index) => <div className="header-detail" key={`${header.key}-${index}`}><span>{header.key}</span><code>{header.value}</code></div>)}</details>}
     </aside>

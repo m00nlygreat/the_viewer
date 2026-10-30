@@ -319,8 +319,8 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .markdown-prose .task-list-item[data-checked='true'] { color: var(--text-muted); }
 .markdown-prose blockquote { margin: 15px 0; padding: 1px 0 1px 15px; border-left: 2px solid var(--line); color: var(--text-muted); }
 .markdown-prose code { padding: 2px 5px; border: 1px solid var(--line); border-radius: 0; color: var(--accent); background: var(--control); font: var(--markdown-inline-code-size) var(--font-mono); }
-.markdown-prose pre { overflow: auto; margin: 15px 0; padding: 13px; border: 1px solid var(--line); border-radius: 0; background: var(--control); }
-.markdown-prose pre code { padding: 0; border: 0; color: var(--body); background: transparent; font-size: var(--markdown-code-block-size); }
+.markdown-prose pre { overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; margin: 15px 0; padding: 13px; border: 1px solid var(--line); border-radius: 0; background: var(--control); }
+.markdown-prose pre code { padding: 0; border: 0; color: var(--body); background: transparent; font-size: var(--markdown-code-block-size); white-space: inherit; }
 .markdown-prose table { width: 100%; margin: 16px 0; border-collapse: collapse; }
 .markdown-prose th, .markdown-prose td { padding: 7px 9px; border: 1px solid var(--line); text-align: left; }
 .markdown-prose th { color: var(--text-strong); background: var(--control); font-weight: 530; }
@@ -397,8 +397,8 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .cm-md-code-toolbar > span:first-child { display: inline-flex; align-items: center; gap: 6px; }
 .cm-md-code-toolbar .toolbar-button { height: 24px; padding: 0 7px; color: var(--text-weak); font-size: 11px; }
 .cm-md-code-toolbar .toolbar-button:has(svg) { display: inline-flex; align-items: center; gap: 4px; }
-.cm-md-code-preview pre { max-width: 100%; margin: 0; padding: 13px 14px; overflow: auto; color: var(--body); background: transparent; font: var(--markdown-code-block-size) / 1.65 var(--font-mono); tab-size: 2; }
-.cm-md-code-preview code { display: block; min-width: max-content; white-space: pre; }
+.cm-md-code-preview pre { max-width: 100%; margin: 0; padding: 13px 14px; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; color: var(--body); background: transparent; font: var(--markdown-code-block-size) / 1.65 var(--font-mono); tab-size: 2; }
+.cm-md-code-preview code { display: block; min-width: 0; white-space: inherit; }
 .cm-md-code-preview .hljs-comment, .cm-md-code-preview .hljs-quote, .cm-md-code-preview .hljs-meta { color: var(--text-weak); font-style: italic; }
 .cm-md-code-preview .hljs-keyword, .cm-md-code-preview .hljs-literal, .cm-md-code-preview .hljs-selector-tag, .cm-md-code-preview .hljs-section { color: var(--accent); font-weight: 550; }
 .cm-md-code-preview .hljs-string, .cm-md-code-preview .hljs-addition, .cm-md-code-preview .hljs-attr, .cm-md-code-preview .hljs-template-tag { color: var(--csv-column-1); }
@@ -462,6 +462,10 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .email-body { width: min(720px, 100%); margin: 22px auto 0; color: var(--body); font-size: 17px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
 .email-html-frame { width: min(720px, 100%); min-height: 220px; margin: 22px auto 0; display: block; border: 0; background: transparent; }
 .attachments { width: min(720px, 100%); margin: 24px auto 0; }
+.email-details > .attachments { width: 100%; margin: 20px 0 0; padding-top: 17px; border-top: 1px solid var(--line); }
+.email-details .attachments-heading { margin-bottom: 9px; display: flex; align-items: center; justify-content: space-between; gap: 7px; }
+.email-details .attachments-heading h2 { margin: 0; display: flex; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 12px; font-weight: 520; }
+.email-details .attachments-heading h2 span { color: var(--text-weak); font: 12px var(--font-mono); }
 .attachments > h2 { margin: 0 0 10px; display: flex; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 12px; font-weight: 520; }
 .attachments > h2 span { color: var(--text-weak); font: 12px var(--font-mono); }
 .attachment-row { min-height: 40px; margin-top: 7px; padding: 5px 8px; display: flex; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--control) 72%, transparent); }
@@ -562,6 +566,7 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
   .email-layout { grid-template-columns: minmax(0, 1fr); }
   .email-details { padding: 16px 24px; border-top: 1px solid var(--line); border-left: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
   .email-details > h2 { grid-column: 1 / -1; }
+  .email-details > .attachments { grid-column: 1 / -1; }
   .email-details .headers-details { grid-column: 1 / -1; }
 }
 @media (max-width: 900px) {
