@@ -345,6 +345,7 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .code-editor-live-preview .cm-content { min-height: 100%; color: var(--body); overflow-wrap: anywhere; }
 .code-editor-live-preview .cm-line { padding: 0; border-radius: 0; transition: background-color .12s ease; }
 .code-editor-live-preview .cm-line.cm-activeLine { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.code-editor-live-preview .cm-editor:not(.cm-focused) .cm-line.cm-activeLine { background: transparent; }
 .code-editor-live-preview .cm-line.cm-md-heading-1 { padding-top: 0; padding-bottom: 15px; color: var(--text-strong); font-size: var(--markdown-heading-1-size); font-weight: 600; letter-spacing: -.02em; line-height: 1.35; }
 .code-editor-live-preview .cm-line.cm-md-heading-2 { padding-top: 24px; padding-bottom: 8px; color: var(--text-strong); font-size: var(--markdown-heading-2-size); font-weight: 560; letter-spacing: -.02em; line-height: 1.4; }
 .code-editor-live-preview .cm-line.cm-md-heading-3,

@@ -139,7 +139,8 @@ export function taskMarkerRangesForSelection(state: EditorState): Array<{ from: 
 export function buildMarkdownPreviewDecorations(
   state: EditorState,
   composingPosition: number | null = null,
-  codeBlocksAreWidgets = false
+  codeBlocksAreWidgets = false,
+  editorIsFocused = true
 ): DecorationSet {
   const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
   const frontmatter = frontmatterRange(state)
@@ -176,7 +177,7 @@ export function buildMarkdownPreviewDecorations(
       const lastLine = state.doc.lineAt(Math.min(lastPosition, state.doc.length))
       for (let number = firstLine.number; number <= lastLine.number; number += 1) {
         const line = state.doc.line(number)
-        if (line.from === editingLine.from) continue
+        if (editorIsFocused && line.from === editingLine.from) continue
         addLineClass(line.from, line.to, `cm-md-list-depth-${Math.min(currentDepth, 6)}`)
       }
     }
@@ -214,7 +215,7 @@ export function buildMarkdownPreviewDecorations(
     }
   } })
   const editingFrontmatter = Boolean(frontmatter && editingPosition >= frontmatter.from && editingPosition < frontmatter.to)
-  if (!editingRenderedBlock && !editingFrontmatter) addLineClass(editingLine.from, editingLine.to, 'cm-md-editing-block')
+  if (editorIsFocused && !editingRenderedBlock && !editingFrontmatter) addLineClass(editingLine.from, editingLine.to, 'cm-md-editing-block')
 
   const visit = (node: MarkdownNode, editingLine?: { from: number; to: number }): void => {
     const overlapsEditingLine = (from: number, to: number) => Boolean(editingLine && from < editingLine.to && to > editingLine.from)
@@ -295,7 +296,7 @@ export function buildMarkdownPreviewDecorations(
     if (canPreviewBlock && (block.name === 'BulletList' || block.name === 'OrderedList' || block.name === 'Blockquote')) addNestedListLineClasses(block)
 
     if (isPositionInBlock(state, block.from, block.to, editingPosition)) {
-      if (canPreviewBlock) visit(block, editingLine)
+      if (canPreviewBlock) visit(block, editorIsFocused ? editingLine : undefined)
       continue
     }
     if (!canPreviewBlock) continue
@@ -446,12 +447,17 @@ function markdownCodeBlockDecorations(theme: 'light' | 'dark', undo: () => void,
 class MarkdownPreviewPlugin {
   decorations: DecorationSet
   private composingPosition: number | null = null
+  private editorIsFocused: boolean
 
-  constructor(view: EditorView) { this.decorations = buildMarkdownPreviewDecorations(view.state, null, true) }
+  constructor(view: EditorView) {
+    this.editorIsFocused = view.hasFocus
+    this.decorations = buildMarkdownPreviewDecorations(view.state, null, true, this.editorIsFocused)
+  }
 
   update(update: ViewUpdate): void {
     if (update.docChanged && this.composingPosition !== null) this.composingPosition = update.changes.mapPos(this.composingPosition, 1)
-    let needsRefresh = update.docChanged || update.selectionSet
+    let needsRefresh = update.docChanged || update.selectionSet || update.focusChanged
+    if (update.focusChanged) this.editorIsFocused = update.view.hasFocus
     for (const transaction of update.transactions) {
       for (const effect of transaction.effects) {
         if (effect.is(setCompositionPosition) && effect.value !== this.composingPosition) {
@@ -460,7 +466,7 @@ class MarkdownPreviewPlugin {
         }
       }
     }
-    if (needsRefresh) this.decorations = buildMarkdownPreviewDecorations(update.state, this.composingPosition, true)
+    if (needsRefresh) this.decorations = buildMarkdownPreviewDecorations(update.state, this.composingPosition, true, this.editorIsFocused)
   }
 }
 

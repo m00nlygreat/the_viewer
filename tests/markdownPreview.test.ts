@@ -84,6 +84,23 @@ describe('Markdown live preview decorations', () => {
     expect(state.doc.toString()).toBe(text)
   })
 
+  it('keeps the complete Markdown preview visible before the editor is focused', () => {
+    const text = '**first**\n\n**second**\n'
+    const firstStart = text.indexOf('**first**')
+    const state = makeState(text, firstStart + 3)
+    const decorations = buildMarkdownPreviewDecorations(state, null, false, false)
+    const items: Array<{ from: number; className?: string }> = []
+    decorations.between(0, state.doc.length, (from, _to, decoration) => {
+      items.push({ from, className: decoration.spec.class })
+    })
+
+    expect(items.some((item) => item.className === 'cm-md-editing-block')).toBe(false)
+    expect(items.filter((item) => item.className === 'cm-md-bold').map((item) => item.from)).toEqual([
+      firstStart + 2,
+      text.indexOf('**second**') + 2
+    ])
+  })
+
   it('keeps a multi-line paragraph in preview except for the active source line', () => {
     const text = '**first**\n**second**\n**third**\n'
     const secondStart = text.indexOf('**second**')
