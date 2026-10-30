@@ -385,7 +385,7 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .code-editor-live-preview .cm-md-image-preview p { display: inline; margin: 0; }
 .code-editor-live-preview .cm-md-image-preview img { max-width: min(420px, 100%); max-height: 320px; border-radius: 0; vertical-align: middle; }
 .code-editor-live-preview .cm-md-table-widget { box-sizing: border-box; width: 100%; max-width: 100%; margin: 16px 0; white-space: normal; }
-.cm-md-table-preview { min-width: 0; }
+.cm-md-table-preview { min-width: 0; margin-inline: 10px; }
 .cm-md-table-frame { box-sizing: border-box; position: relative; width: fit-content; max-width: 100%; min-width: 0; margin: 0 auto; padding-top: 28px; }
 .cm-md-table-actions { position: absolute; top: 0; right: 0; height: 28px; display: flex; justify-content: flex-end; align-items: center; }
 .cm-md-table-actions .toolbar-button { height: 24px; padding: 0 8px; color: var(--text-weak); font-size: 11px; }
@@ -414,7 +414,7 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .cm-md-code-monaco-host { width: 100%; height: clamp(190px, 46vh, 460px); min-height: 190px; overflow: hidden; background: var(--panel); }
 .cm-md-code-monaco-host .monaco-editor, .cm-md-code-monaco-host .monaco-editor .overflow-guard { max-width: 100%; }
 .cm-md-code-loading { min-height: 190px; padding: 14px; color: var(--text-weak); background: var(--panel); font: 12px var(--font-mono); }
-.cm-md-table-editor { min-width: 0; overflow: hidden; border: 1px solid var(--line); background: var(--panel); }
+.cm-md-table-editor { box-sizing: border-box; min-width: 0; margin-inline: 10px; overflow: hidden; border: 1px solid var(--line); background: var(--panel); }
 .cm-md-table-editor-toolbar { min-height: 38px; padding: 0 7px; display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--line); color: var(--text-weak); font-size: 11px; }
 .cm-md-table-editor-toolbar > span:first-child { margin: 0 5px; color: var(--text); font-weight: 550; }
 .cm-md-table-editor-toolbar .toolbar-button { height: 26px; padding: 0 7px; gap: 4px; font-size: 11px; }
@@ -434,7 +434,7 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
   .code-editor-live-preview .cm-md-table-widget:has(.cm-md-table-preview) { position: relative; left: calc((100% - 100cqw) / 2); width: 100cqw; max-width: 100cqw; }
   .code-editor-live-preview .cm-content:has(.cm-md-table-editor) { width: 100%; min-width: 0; }
   .code-editor-live-preview .cm-line:has(.cm-md-table-editor) { min-width: 0; }
-  .code-editor-live-preview .cm-md-table-editor { position: relative; left: calc((100% - 100cqw) / 2); width: 100cqw; }
+  .code-editor-live-preview .cm-md-table-editor { position: relative; left: calc((100% - 100cqw) / 2 + 10px); width: calc(100cqw - 20px); margin-inline: 0; }
 }
 .code-editor { min-height: 280px; flex: 1; overflow: hidden; }
 .code-editor .cm-editor { height: 100%; outline: 0; }
