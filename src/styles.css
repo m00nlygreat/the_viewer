@@ -465,12 +465,15 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .email-from-row time { margin-left: auto; color: var(--text-weak); font-size: 12px; white-space: nowrap; }
 .email-recipient { margin: 9px 0 0 42px; color: var(--text-weak); font-size: 12px; }
 .email-body { width: min(720px, 100%); margin: 22px auto 0; color: var(--body); font-size: 17px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
-.email-html-content { box-sizing: border-box; width: min(720px, 100%); margin: 22px auto 0; padding: 16px; color: #202124; color-scheme: light; background: #fff; font-size: 17px; line-height: 1.75; overflow-wrap: anywhere; }
-.email-html-content a { color: #0b57d0; }
+.email-forwarded-text { margin: 16px 0 0 8px; padding-left: 15px; border-left: 2px solid color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.email-html-content { box-sizing: border-box; width: min(720px, 100%); margin: 22px auto 0; padding: 16px; color: var(--body); background: var(--bg); font-size: 17px; line-height: 1.75; overflow-wrap: anywhere; }
+.email-html-content a { color: var(--accent); }
 .email-html-content img { max-width: 100%; height: auto; }
 .email-html-content table { max-width: 100%; }
-:root:not([data-theme='light']) .email-html-content { filter: invert(1) hue-rotate(180deg); }
-:root:not([data-theme='light']) .email-html-content img { filter: invert(1) hue-rotate(180deg); }
+.email-html-content blockquote,
+.email-html-content .gmail_quote,
+.email-html-content .gmail_quote_container,
+.email-html-content .yahoo_quoted { margin: 16px 0 0 8px; padding: 1px 0 1px 15px; border-left: 2px solid color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .attachments { width: min(720px, 100%); margin: 24px auto 0; }
 .email-details > .attachments { width: 100%; margin: 20px 0 0; padding-top: 17px; border-top: 1px solid var(--line); }
 .email-details .attachments-heading { margin-bottom: 9px; display: flex; align-items: center; justify-content: space-between; gap: 7px; }

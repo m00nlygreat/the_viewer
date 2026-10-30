@@ -44,7 +44,7 @@ export function EmailEditor({ document, model, onOpenAttachment, onDownloadAttac
         <div className="email-from-row"><div className="email-avatar">{(sender?.name || sender?.address || '?').slice(0, 1).toUpperCase()}</div><div><strong>{sender?.name || sender?.address || '보낸 사람 없음'}</strong><span>{sender?.address && sender.name ? sender.address : ''}</span></div><time>{model.date ? new Date(model.date).toLocaleString() : ''}</time></div>
         <div className="email-recipient">받는 사람 · {model.to.map((item) => item.address).join(', ') || '알 수 없음'}{model.cc.length ? ` · 참조 ${model.cc.map((item) => item.address).join(', ')}` : ''}</div>
       </div>
-      {model.html ? <div className="email-html-content" dangerouslySetInnerHTML={{ __html: safeHtml }} /> : <div className="email-body">{content || '본문이 없습니다.'}</div>}
+      {model.html ? <div className="email-html-content" dangerouslySetInnerHTML={{ __html: safeHtml }} /> : <EmailTextBody content={content || '본문이 없습니다.'} />}
     </main>
     <aside className="email-details" aria-label="이메일 속성">
       <h2>속성</h2>
@@ -53,6 +53,20 @@ export function EmailEditor({ document, model, onOpenAttachment, onDownloadAttac
       {model.headers.length > 0 && <details className="headers-details"><summary>전체 헤더</summary>{model.headers.map((header, index) => <div className="header-detail" key={`${header.key}-${index}`}><span>{header.key}</span><code>{header.value}</code></div>)}</details>}
     </aside>
   </section>
+}
+
+function EmailTextBody({ content }: { content: string }) {
+  const lines = content.split(/\r\n|\n|\r/u)
+  const forwardedIndex = lines.findIndex((line) => /^\s*(?:-{2,}\s*(?:forwarded|original)\s+message\s*-{2,}|begin\s+forwarded\s+message\s*:|forwarded\s+message\s*:|(?:-{2,}\s*)?(?:전달(?:된)?\s*(?:메시지|메일|이메일)|원본\s*(?:메시지|메일|이메일))(?:\s*-{2,})?)\s*$/iu.test(line))
+
+  if (forwardedIndex < 0) return <div className="email-body">{content}</div>
+
+  const introduction = lines.slice(0, forwardedIndex).join('\n').trimEnd()
+  const forwarded = lines.slice(forwardedIndex).join('\n')
+  return <div className="email-body">
+    {introduction && <div>{introduction}</div>}
+    <div className="email-forwarded-text">{forwarded}</div>
+  </div>
 }
 
 function AttachmentList({ model, onOpen, onDownload }: { model: EmailModel; onOpen: (index: number) => void; onDownload: (index: number) => void }) {
