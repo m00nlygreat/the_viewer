@@ -233,7 +233,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
             lineHeight: livePreview ? '1.7' : '1.72',
             overflow: 'auto'
           },
-          '.cm-content': { padding: livePreview ? '22px max(20px, calc((100% - 720px) / 2))' : '20px 22px', caretColor: 'var(--accent)' },
+          '.cm-content': { padding: livePreview ? '22px max(20px, calc((100cqw - 720px) / 2))' : '20px 22px', caretColor: 'var(--accent)' },
           '.cm-gutters': { backgroundColor: 'var(--panel)', color: 'var(--text-weak)', border: 'none', borderRight: '1px solid var(--line)' },
           '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--accent) 6%, transparent)' },
           '.cm-activeLineGutter': { color: 'var(--accent)' },
