@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { EditorSelection, EditorState } from '@codemirror/state'
+import type { EditorView } from '@codemirror/view'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { buildMarkdownFrontmatterDecorations, buildMarkdownPreviewDecorations, taskMarkerRangesForSelection } from '../src/components/markdownPreview'
+import { MarkdownFrontmatterState } from '../src/components/markdownFrontmatterState'
+import { detectMarkdownFrontmatter } from '../src/domain/formats/markdownFrontmatter'
 import { markdownLinkAttributes } from '../src/domain/markdown'
 
 function makeState(text: string, position = text.length): EditorState {
@@ -163,6 +166,28 @@ describe('Markdown live preview decorations', () => {
     expect(decorations.some((item) => item.from < codeEnd && item.to > codeStart && !item.className)).toBe(false)
     expect(decorations.some((item) => item.hasWidget && item.from === text.indexOf('!['))).toBe(true)
     expect(state.doc.toString()).toBe(text)
+  })
+
+  it('edits frontmatter delimiters with the YAML and stops recognizing it when a delimiter is broken', () => {
+    const text = '---\ntitle: Note\n---\n\n# Body\n'
+    const frontmatter = detectMarkdownFrontmatter(text)
+    expect(frontmatter?.raw).toBe('---\ntitle: Note\n---\n\n')
+    expect(frontmatter?.content).toBe('title: Note\n')
+    if (!frontmatter) throw new Error('Expected Markdown frontmatter')
+
+    let dispatched: unknown = null
+    const editor = new MarkdownFrontmatterState(frontmatter, 'dark', () => {}, () => {})
+    editor.attachView({ dispatch: (transaction: unknown) => { dispatched = transaction } } as unknown as EditorView)
+    const closingDelimiter = frontmatter.raw.lastIndexOf('---')
+    const brokenRaw = `${frontmatter.raw.slice(0, closingDelimiter)}--${frontmatter.raw.slice(closingDelimiter + 3)}`
+    editor.replaceRaw(brokenRaw)
+
+    expect(dispatched).toEqual({
+      changes: { from: frontmatter.from, to: frontmatter.to, insert: brokenRaw },
+      userEvent: 'input.type'
+    })
+    const updated = `${text.slice(0, frontmatter.from)}${brokenRaw}${text.slice(frontmatter.to)}`
+    expect(detectMarkdownFrontmatter(updated)).toBeNull()
   })
 
   it('styles the opening and closing lines of inactive fenced code without changing its source', () => {

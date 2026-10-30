@@ -34,7 +34,8 @@ export class MarkdownFrontmatterState {
   update(frontmatter: MarkdownFrontmatter, theme: 'light' | 'dark'): void {
     if (this.snapshot.from === frontmatter.from && this.snapshot.to === frontmatter.to &&
       this.snapshot.contentFrom === frontmatter.contentFrom && this.snapshot.contentTo === frontmatter.contentTo &&
-      this.snapshot.content === frontmatter.content && this.snapshot.lineEnding === frontmatter.lineEnding && this.snapshot.theme === theme) return
+      this.snapshot.content === frontmatter.content && this.snapshot.raw === frontmatter.raw &&
+      this.snapshot.lineEnding === frontmatter.lineEnding && this.snapshot.theme === theme) return
     this.snapshot = { ...this.snapshot, ...frontmatter, theme }
     this.emit()
   }
@@ -45,14 +46,13 @@ export class MarkdownFrontmatterState {
     this.emit()
   }
 
-  replaceContent(content: string): void {
+  replaceRaw(content: string): void {
     if (!this.view) return
     const lineEnding = this.snapshot.lineEnding || '\n'
-    let nextContent = content.replace(/\r\n|\n|\r/gu, lineEnding)
-    if (nextContent && !nextContent.endsWith(lineEnding)) nextContent += lineEnding
-    if (nextContent === this.snapshot.content) return
+    const nextRaw = content.replace(/\r\n|\n|\r/gu, lineEnding)
+    if (nextRaw === this.snapshot.raw) return
     this.view.dispatch({
-      changes: { from: this.snapshot.contentFrom, to: this.snapshot.contentTo, insert: nextContent },
+      changes: { from: this.snapshot.from, to: this.snapshot.to, insert: nextRaw },
       userEvent: 'input.type'
     })
   }

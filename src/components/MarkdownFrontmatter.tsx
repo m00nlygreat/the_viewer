@@ -17,10 +17,10 @@ export function MarkdownFrontmatterBlock({ frontmatter }: Props) {
       </div>
       <Suspense fallback={<div className="cm-md-code-loading">Monaco 불러오는 중…</div>}>
         <MarkdownCodeBlockMonacoEditor
-          code={snapshot.content}
+          code={snapshot.raw}
           language="yaml"
           theme={snapshot.theme}
-          onChange={(content) => frontmatter.replaceContent(content)}
+          onChange={(content) => frontmatter.replaceRaw(content)}
           onUndo={() => frontmatter.undoDocument()}
           onRedo={() => frontmatter.redoDocument()}
         />

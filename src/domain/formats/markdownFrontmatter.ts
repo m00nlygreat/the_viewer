@@ -4,6 +4,7 @@ export interface MarkdownFrontmatter {
   contentFrom: number
   contentTo: number
   content: string
+  raw: string
   lineEnding: string
 }
 
@@ -54,6 +55,7 @@ export function detectMarkdownFrontmatter(source: string): MarkdownFrontmatter |
         contentFrom: opening.next,
         contentTo: line.from,
         content: source.slice(opening.next, line.from),
+        raw: source.slice(0, to),
         lineEnding: source.slice(opening.to, opening.next)
       }
     }
