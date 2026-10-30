@@ -2,6 +2,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { WidgetType, type EditorView } from '@codemirror/view'
 import { MarkdownTableBlock } from '../features/MarkdownTableGrid'
 import type { MarkdownTableState } from './markdownTableState'
+import { unmountWidgetRoot } from './reactWidgetRoot'
 
 const roots = new WeakMap<HTMLElement, Root>()
 
@@ -31,7 +32,8 @@ export class MarkdownTableWidget extends WidgetType {
   ignoreEvent(): boolean { return true }
 
   destroy(element: HTMLElement): void {
-    roots.get(element)?.unmount()
+    const root = roots.get(element)
+    if (root) unmountWidgetRoot(root)
     roots.delete(element)
   }
 }

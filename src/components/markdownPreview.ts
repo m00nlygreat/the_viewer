@@ -4,6 +4,8 @@ import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, typ
 import { markdownLinkAttributes, renderMarkdown } from '../domain/markdown'
 import { detectMarkdownFrontmatter } from '../domain/formats/markdownFrontmatter'
 import { parseMarkdownTable } from '../domain/formats/markdownTable'
+import { MarkdownFrontmatterState } from './markdownFrontmatterState'
+import { MarkdownFrontmatterWidget } from './MarkdownFrontmatterWidget'
 import { MarkdownCodeBlockState, type MarkdownCodeBlockContext } from './markdownCodeBlockState'
 import { MarkdownCodeBlockWidget } from './MarkdownCodeBlockWidget'
 import { MarkdownTableState } from './markdownTableState'
@@ -32,41 +34,6 @@ class ImagePreviewWidget extends WidgetType {
     image.className = 'cm-md-image-preview'
     image.innerHTML = renderMarkdown(this.source)
     return image
-  }
-}
-
-class MarkdownFrontmatterWidget extends WidgetType {
-  constructor(private readonly content: string, private readonly from: number) { super() }
-  eq(other: WidgetType): boolean { return other instanceof MarkdownFrontmatterWidget && other.content === this.content && other.from === this.from }
-  toDOM(view: EditorView): HTMLElement {
-    const section = document.createElement('section')
-    section.className = 'markdown-frontmatter cm-md-frontmatter-widget'
-    section.setAttribute('aria-label', 'YAML frontmatter')
-
-    const label = document.createElement('div')
-    label.className = 'markdown-frontmatter-label'
-    label.textContent = 'YAML'
-
-    const edit = document.createElement('button')
-    edit.type = 'button'
-    edit.className = 'toolbar-button'
-    edit.textContent = 'YAML 원문 편집'
-    edit.addEventListener('mousedown', (event) => event.preventDefault())
-    edit.addEventListener('click', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      view.dispatch({ selection: { anchor: this.from } })
-      view.focus()
-    })
-    label.append(edit)
-
-    const pre = document.createElement('pre')
-    const code = document.createElement('code')
-    code.className = 'language-yaml'
-    code.textContent = this.content
-    pre.append(code)
-    section.append(label, pre)
-    return section
   }
 }
 
@@ -246,7 +213,8 @@ export function buildMarkdownPreviewDecorations(
       editingRenderedBlock = true
     }
   } })
-  if (!editingRenderedBlock) addLineClass(editingLine.from, editingLine.to, 'cm-md-editing-block')
+  const editingFrontmatter = Boolean(frontmatter && editingPosition >= frontmatter.from && editingPosition < frontmatter.to)
+  if (!editingRenderedBlock && !editingFrontmatter) addLineClass(editingLine.from, editingLine.to, 'cm-md-editing-block')
 
   const visit = (node: MarkdownNode, editingLine?: { from: number; to: number }): void => {
     const overlapsEditingLine = (from: number, to: number) => Boolean(editingLine && from < editingLine.to && to > editingLine.from)
@@ -338,37 +306,48 @@ export function buildMarkdownPreviewDecorations(
   return Decoration.set(decorations, true)
 }
 
-export function buildMarkdownFrontmatterDecorations(state: EditorState, composingPosition: number | null = null): DecorationSet {
+export function buildMarkdownFrontmatterDecorations(
+  state: EditorState,
+  theme: 'light' | 'dark' = 'dark',
+  undo: () => void = () => {},
+  redo: () => void = () => {}
+): DecorationSet {
   const frontmatter = frontmatterRange(state)
-  const editingPosition = composingPosition ?? state.selection.main.head
-  if (!frontmatter || (editingPosition >= frontmatter.from && editingPosition < frontmatter.to)) return Decoration.set([], true)
+  if (!frontmatter) return Decoration.set([], true)
+  const block = new MarkdownFrontmatterState(frontmatter, theme, undo, redo)
   return Decoration.set([
-    Decoration.replace({ widget: new MarkdownFrontmatterWidget(frontmatter.content, frontmatter.from), inclusive: false, block: true }).range(frontmatter.from, frontmatter.to)
+    Decoration.replace({ widget: new MarkdownFrontmatterWidget(block), inclusive: false, block: true }).range(frontmatter.from, frontmatter.to)
   ], true)
 }
 
 interface MarkdownFrontmatterDecorationValue {
-  composingPosition: number | null
+  frontmatter: MarkdownFrontmatterState | null
   decorations: DecorationSet
 }
 
-function markdownFrontmatterDecorations() {
+function buildMarkdownFrontmatterDecorationValue(
+  state: EditorState,
+  theme: 'light' | 'dark',
+  undo: () => void,
+  redo: () => void,
+  previous: MarkdownFrontmatterState | null = null
+): MarkdownFrontmatterDecorationValue {
+  const frontmatter = frontmatterRange(state)
+  if (!frontmatter) return { frontmatter: null, decorations: Decoration.set([], true) }
+  const block = previous ?? new MarkdownFrontmatterState(frontmatter, theme, undo, redo)
+  block.update(frontmatter, theme)
+  const decorations = Decoration.set([
+    Decoration.replace({ widget: new MarkdownFrontmatterWidget(block), inclusive: false, block: true }).range(frontmatter.from, frontmatter.to)
+  ], true)
+  return { frontmatter: block, decorations }
+}
+
+function markdownFrontmatterDecorations(theme: 'light' | 'dark', undo: () => void, redo: () => void) {
   return StateField.define<MarkdownFrontmatterDecorationValue>({
-    create: (state) => ({ composingPosition: null, decorations: buildMarkdownFrontmatterDecorations(state) }),
-    update: (value, transaction) => {
-      let composingPosition = transaction.docChanged && value.composingPosition !== null
-        ? transaction.changes.mapPos(value.composingPosition, 1)
-        : value.composingPosition
-      let needsRefresh = transaction.docChanged || Boolean(transaction.selection && !transaction.selection.eq(transaction.startState.selection))
-      for (const effect of transaction.effects) {
-        if (!effect.is(setCompositionPosition) || effect.value === composingPosition) continue
-        composingPosition = effect.value
-        needsRefresh = true
-      }
-      return needsRefresh
-        ? { composingPosition, decorations: buildMarkdownFrontmatterDecorations(transaction.state, composingPosition) }
-        : value
-    },
+    create: (state) => buildMarkdownFrontmatterDecorationValue(state, theme, undo, redo),
+    update: (value, transaction) => transaction.docChanged
+      ? buildMarkdownFrontmatterDecorationValue(transaction.state, theme, undo, redo, value.frontmatter)
+      : value,
     provide: (field) => EditorView.decorations.from(field, (value) => value.decorations)
   })
 }
@@ -487,7 +466,7 @@ class MarkdownPreviewPlugin {
 
 export function markdownLivePreview(theme: 'light' | 'dark', undo: () => void = () => {}, redo: () => void = () => {}) {
   return [
-    markdownFrontmatterDecorations(),
+    markdownFrontmatterDecorations(theme, undo, redo),
     markdownTableDecorations(theme),
     markdownCodeBlockDecorations(theme, undo, redo),
     ViewPlugin.fromClass(MarkdownPreviewPlugin, { decorations: (plugin) => plugin.decorations }),

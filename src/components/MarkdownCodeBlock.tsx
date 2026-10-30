@@ -19,10 +19,12 @@ export function MarkdownCodeBlock({ block }: Props) {
       </div>
       <Suspense fallback={<div className="cm-md-code-loading">Monaco 불러오는 중…</div>}>
         <MarkdownCodeBlockMonacoEditor
-          block={block}
           code={snapshot.code}
           language={snapshot.language?.monaco ?? 'plaintext'}
           theme={snapshot.theme}
+          onChange={(code) => block.replaceCode(code)}
+          onUndo={() => block.undoDocument()}
+          onRedo={() => block.redoDocument()}
         />
       </Suspense>
     </section>

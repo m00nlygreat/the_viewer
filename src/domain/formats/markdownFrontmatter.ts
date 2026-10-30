@@ -1,7 +1,10 @@
 export interface MarkdownFrontmatter {
   from: number
   to: number
+  contentFrom: number
+  contentTo: number
   content: string
+  lineEnding: string
 }
 
 interface MarkdownLine {
@@ -34,7 +37,14 @@ export function detectMarkdownFrontmatter(source: string): MarkdownFrontmatter |
     if (line.text.trim() === '---' || line.text.trim() === '...') {
       const followingLine = line.next < source.length ? readMarkdownLine(source, line.next) : null
       const to = followingLine?.text.trim() === '' ? followingLine.next : line.next
-      return { from: 0, to, content: source.slice(opening.next, line.from) }
+      return {
+        from: 0,
+        to,
+        contentFrom: opening.next,
+        contentTo: line.from,
+        content: source.slice(opening.next, line.from),
+        lineEnding: source.slice(opening.to, opening.next)
+      }
     }
     if (line.next === line.to) break
     lineStart = line.next

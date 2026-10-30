@@ -3,13 +3,14 @@ import '../../node_modules/monaco-editor/min/vs/editor/editor.main.css'
 import { configureMonacoWorker, defineViewerMonacoThemes, monaco } from '../components/monacoRuntime'
 import { registerMonacoJsonLanguage } from '../components/monacoJsonLanguage'
 import { createTextPositionMapper, findTextChanges, normalizeLineEndings } from '../components/editorText'
-import type { MarkdownCodeBlockState } from '../components/markdownCodeBlockState'
 
 interface Props {
-  block: MarkdownCodeBlockState
   code: string
   language: string
   theme: 'light' | 'dark'
+  onChange: (code: string) => void
+  onUndo: () => void
+  onRedo: () => void
 }
 
 const languageLoaders: Record<string, () => Promise<unknown>> = {
@@ -38,15 +39,21 @@ const languageLoaders: Record<string, () => Promise<unknown>> = {
   yaml: () => import('monaco-editor/languages/definitions/yaml/register.js')
 }
 
-export default function MarkdownCodeBlockMonacoEditor({ block, code, language, theme }: Props) {
+export default function MarkdownCodeBlockMonacoEditor({ code, language, theme, onChange, onUndo, onRedo }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const modelRef = useRef<monaco.editor.ITextModel | null>(null)
   const externalUpdate = useRef(false)
   const codeRef = useRef(code)
   const themeRef = useRef(theme)
+  const onChangeRef = useRef(onChange)
+  const onUndoRef = useRef(onUndo)
+  const onRedoRef = useRef(onRedo)
   codeRef.current = code
   themeRef.current = theme
+  onChangeRef.current = onChange
+  onUndoRef.current = onUndo
+  onRedoRef.current = onRedo
 
   useEffect(() => {
     if (!host.current) return
@@ -86,7 +93,7 @@ export default function MarkdownCodeBlockMonacoEditor({ block, code, language, t
       })
       editorRef.current = editor
       contentListener = model.onDidChangeContent(() => {
-        if (!externalUpdate.current) block.replaceCode(model?.getValue() ?? '')
+        if (!externalUpdate.current) onChangeRef.current(model?.getValue() ?? '')
       })
       commandListener = editor.onKeyDown((event) => {
         const command = event.ctrlKey || event.metaKey
@@ -94,12 +101,12 @@ export default function MarkdownCodeBlockMonacoEditor({ block, code, language, t
         if (event.keyCode === monaco.KeyCode.KeyZ) {
           event.preventDefault()
           event.stopPropagation()
-          if (event.shiftKey) block.redoDocument()
-          else block.undoDocument()
+          if (event.shiftKey) onRedoRef.current()
+          else onUndoRef.current()
         } else if (event.keyCode === monaco.KeyCode.KeyY) {
           event.preventDefault()
           event.stopPropagation()
-          block.redoDocument()
+          onRedoRef.current()
         }
       })
       window.requestAnimationFrame(() => { if (!cancelled) editor?.focus() })
@@ -115,7 +122,7 @@ export default function MarkdownCodeBlockMonacoEditor({ block, code, language, t
       editorRef.current = null
       modelRef.current = null
     }
-  }, [block, language])
+  }, [language])
 
   useEffect(() => {
     const editor = editorRef.current

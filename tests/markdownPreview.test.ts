@@ -14,7 +14,7 @@ function makeState(text: string, position = text.length): EditorState {
 
 function collectDecorations(state: EditorState, composingPosition: number | null = null) {
   const items: Array<{ from: number; to: number; className?: string; tagName?: string; attributes?: Record<string, string>; hasWidget: boolean }> = []
-  for (const decorations of [buildMarkdownPreviewDecorations(state, composingPosition), buildMarkdownFrontmatterDecorations(state, composingPosition)]) {
+  for (const decorations of [buildMarkdownPreviewDecorations(state, composingPosition), buildMarkdownFrontmatterDecorations(state)]) {
     decorations.between(0, state.doc.length, (from, to, decoration) => {
       items.push({ from, to, className: decoration.spec.class, tagName: decoration.spec.tagName, attributes: decoration.spec.attributes, hasWidget: Boolean(decoration.spec.widget) })
     })

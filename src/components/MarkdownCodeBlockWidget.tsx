@@ -2,6 +2,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { WidgetType, type EditorView } from '@codemirror/view'
 import { MarkdownCodeBlock } from './MarkdownCodeBlock'
 import type { MarkdownCodeBlockState } from './markdownCodeBlockState'
+import { unmountWidgetRoot } from './reactWidgetRoot'
 
 const roots = new WeakMap<HTMLElement, Root>()
 
@@ -28,7 +29,8 @@ export class MarkdownCodeBlockWidget extends WidgetType {
   ignoreEvent(): boolean { return true }
 
   destroy(element: HTMLElement): void {
-    roots.get(element)?.unmount()
+    const root = roots.get(element)
+    if (root) unmountWidgetRoot(root)
     roots.delete(element)
   }
 }
