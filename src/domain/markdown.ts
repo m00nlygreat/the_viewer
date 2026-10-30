@@ -6,6 +6,8 @@ const markdown = new MarkdownIt({ html: false, linkify: true, breaks: false, typ
 const safeLinkTarget = '_blank'
 const safeLinkRel = 'noopener noreferrer'
 markdown.renderer.rules.image = (tokens, index) => `<span class="blocked-image">이미지: ${markdown.utils.escapeHtml(tokens[index]!.content || '외부 이미지 차단')}</span>`
+markdown.renderer.rules.table_open = () => '<div class="markdown-table-scroll"><table>'
+markdown.renderer.rules.table_close = () => '</table></div>'
 markdown.renderer.rules.link_open = (tokens, index, options, _env, self) => {
   tokens[index]!.attrSet('target', safeLinkTarget)
   tokens[index]!.attrSet('rel', safeLinkRel)

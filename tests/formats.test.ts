@@ -46,6 +46,12 @@ describe('Markdown', () => {
     expect(html).toContain('☐ 남음')
     expect(html).not.toContain('<input')
   })
+
+  it('wraps rendered tables in a full-width scroll container', () => {
+    const html = renderMarkdownMarkup('| 항목 | 값 |\n| --- | --- |\n| 이름 | 예시 |')
+    expect(html).toContain('<div class="markdown-table-scroll"><table>')
+    expect(html).toContain('</table></div>')
+  })
 })
 
 describe('EML', () => {
