@@ -443,8 +443,8 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
   .cm-md-table-content th, .cm-md-table-content td { padding: 6px 7px; }
 }
 
-.email-layout { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 288px; overflow: auto; }
-.email-main { min-width: 0; padding: 40px clamp(20px, 4vw, 48px); }
+.email-layout { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 288px; grid-template-rows: minmax(0, 1fr); overflow: auto; }
+.email-main { min-width: 0; min-height: 0; padding: 40px clamp(20px, 4vw, 48px); display: flex; flex-direction: column; }
 .email-heading { width: min(720px, 100%); margin: 0 auto; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
 .email-edit-action { margin: 10px 0 0 42px; }
 .email-edit-preview { min-height: 220px; display: flex; flex-direction: column; gap: 6px; }
@@ -461,6 +461,7 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .email-recipient { margin: 9px 0 0 42px; color: var(--text-weak); font-size: 12px; }
 .email-body { width: min(720px, 100%); margin: 22px auto 0; color: var(--body); font-size: 17px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
 .email-html-frame { width: min(720px, 100%); min-height: 220px; margin: 22px auto 0; display: block; border: 0; background: transparent; }
+.email-main > .email-html-frame { min-height: 0; flex: 1; }
 .attachments { width: min(720px, 100%); margin: 24px auto 0; }
 .email-details > .attachments { width: 100%; margin: 20px 0 0; padding-top: 17px; border-top: 1px solid var(--line); }
 .email-details .attachments-heading { margin-bottom: 9px; display: flex; align-items: center; justify-content: space-between; gap: 7px; }
@@ -563,7 +564,7 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .mobile-action-bar { display: none; }
 
 @media (max-width: 1100px) {
-  .email-layout { grid-template-columns: minmax(0, 1fr); }
+  .email-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
   .email-details { padding: 16px 24px; border-top: 1px solid var(--line); border-left: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
   .email-details > h2 { grid-column: 1 / -1; }
   .email-details > .attachments { grid-column: 1 / -1; }
