@@ -28,8 +28,19 @@ function readMarkdownLine(source: string, from: number): MarkdownLine {
 }
 
 export function detectMarkdownFrontmatter(source: string): MarkdownFrontmatter | null {
-  const opening = readMarkdownLine(source, 0)
-  if (opening.text.replace(/^\uFEFF/u, '').trim() !== '---' || opening.next === opening.to) return null
+  let opening: MarkdownLine | null = null
+  let openingFrom = 0
+  while (openingFrom < source.length) {
+    const line = readMarkdownLine(source, openingFrom)
+    const text = line.text.replace(/^\uFEFF/u, '')
+    if (text.trim() === '---') {
+      opening = line
+      break
+    }
+    if (text.trim() !== '' || line.next === line.to) return null
+    openingFrom = line.next
+  }
+  if (!opening || opening.next === opening.to) return null
 
   let lineStart = opening.next
   while (lineStart < source.length) {
