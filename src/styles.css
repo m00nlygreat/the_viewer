@@ -321,8 +321,8 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .markdown-prose code { padding: 2px 5px; border: 1px solid var(--line); border-radius: 0; color: var(--accent); background: var(--control); font: var(--markdown-inline-code-size) var(--font-mono); }
 .markdown-prose pre { overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; margin: 15px 0; padding: 13px; border: 1px solid var(--line); border-radius: 0; background: var(--control); }
 .markdown-prose pre code { padding: 0; border: 0; color: var(--body); background: transparent; font-size: var(--markdown-code-block-size); white-space: inherit; }
-.markdown-table-scroll { box-sizing: border-box; width: 100%; padding: 0 6px; overflow-x: auto; }
-.markdown-prose table { width: max-content; min-width: 100%; margin: 16px 0; border-collapse: collapse; }
+.markdown-table-scroll { box-sizing: border-box; width: 100%; padding: 0 6px; display: flex; justify-content: center; overflow-x: auto; }
+.markdown-prose table { width: max-content; max-width: 100%; min-width: 0; margin: 16px auto; border-collapse: collapse; }
 .markdown-prose th, .markdown-prose td { padding: 7px 9px; border: 1px solid var(--line); text-align: left; }
 .markdown-prose th { color: var(--text-strong); background: var(--control); font-weight: 530; }
 .markdown-prose hr { border: 0; border-top: 1px solid var(--line); }
@@ -390,7 +390,7 @@ kbd { min-height: 17px; padding: 1px 5px; display: inline-flex; align-items: cen
 .cm-md-table-actions .toolbar-button { height: 24px; padding: 0 8px; color: var(--text-weak); font-size: 11px; }
 .cm-md-table-content { box-sizing: border-box; width: 100%; max-width: 100%; overflow-x: auto; }
 .cm-md-table-content .markdown-table-scroll { width: 100%; padding: 0; overflow-x: visible; }
-.cm-md-table-content table { width: max-content; min-width: 100%; border-collapse: collapse; }
+.cm-md-table-content table { width: max-content; max-width: 100%; min-width: 0; margin: 0 auto; border-collapse: collapse; }
 .cm-md-table-content th, .cm-md-table-content td { min-width: 72px; padding: 8px 10px; border: 1px solid var(--line); text-align: left; }
 .cm-md-table-content th { color: var(--text-strong); background: var(--control); font-weight: 530; }
 .cm-md-table-content code { padding: 2px 5px; border: 1px solid var(--line); border-radius: 0; color: var(--accent); background: var(--control); font: var(--markdown-inline-code-size) var(--font-mono); }
