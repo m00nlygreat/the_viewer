@@ -73,8 +73,6 @@ export function App() {
   const [relayRoute, setRelayRoute] = useState<RelayRoute | null>(() => parseRelayRoute(window.location.hash))
   const [relayError, setRelayError] = useState('')
   const inputRef = useRef<FilePickerHandle>(null)
-  const attachmentInputRef = useRef<FilePickerHandle>(null)
-  const attachmentTarget = useRef('')
   const historyRef = useRef(new Map<string, { undo: HistoryEntry[]; redo: HistoryEntry[] }>())
   const historyGroupRef = useRef(new Map<string, { group: 'typing' | 'command'; at: number }>())
   const sourceParseTimers = useRef(new Map<string, { revision: number; timer: number }>())
@@ -482,28 +480,6 @@ export function App() {
     downloadLocalFile(attachment.filename || 'attachment.bin', attachment.mimeType, new Uint8Array(attachment.content))
   }, [activeDocument])
 
-  const receiveAttachments = useCallback((files: PickedFile[]) => {
-    const id = attachmentTarget.current
-    attachmentTarget.current = ''
-    const item = documents.find((document) => document.id === id)
-    if (!item || item.format !== 'eml') return
-    const model = item.model as EmailModel
-    const attachments = files.map((file) => ({ filename: file.name, mimeType: file.type || 'application/octet-stream', content: Array.from(file.bytes) }))
-    changeModel(item.id, item.revision, { ...model, attachments: [...model.attachments, ...attachments] })
-  }, [documents, changeModel])
-
-  const addAttachment = useCallback(() => {
-    if (!activeDocument || activeDocument.format !== 'eml') return
-    attachmentTarget.current = activeDocument.id
-    attachmentInputRef.current?.open(undefined, '*/*')
-  }, [activeDocument])
-
-  const removeAttachment = useCallback((index: number) => {
-    if (!activeDocument || activeDocument.format !== 'eml') return
-    const model = activeDocument.model as EmailModel
-    changeModel(activeDocument.id, activeDocument.revision, { ...model, attachments: model.attachments.filter((_, itemIndex) => itemIndex !== index) })
-  }, [activeDocument, changeModel])
-
   const handlePaste = useCallback(async () => {
     try {
       const text = await readClipboardText()
@@ -617,13 +593,12 @@ export function App() {
     document,
     (model, group) => changeModel(document.id, document.revision, model, group),
     (text, group) => applySourceText(document.id, text, group),
-    openAttachment, downloadAttachment, addAttachment, removeAttachment, resolvedTheme,
-    () => undo(), () => undo(true), () => setMode('source')
+    openAttachment, downloadAttachment, resolvedTheme,
+    () => undo(), () => undo(true)
   )
 
   return <div className="app-shell" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <FilePicker ref={inputRef} onFiles={(files, format) => { void openFiles(files, format) }} onError={notify} />
-    <FilePicker ref={attachmentInputRef} onFiles={(files) => { void receiveAttachments(files) }} onError={notify} />
     <aside id="document-sidebar" className={`sidebar${sidebarCollapsed ? ' collapsed' : ''}`}>
       <div className="sidebar-brand"><img src={`${__APP_BASE__}icons/viewer.svg`} alt="" /><span>The Viewer</span><button className="sidebar-toggle" aria-label={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'} title={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'} aria-controls="document-sidebar" aria-expanded={!sidebarCollapsed} onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}>{sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
       <button className="sidebar-open" aria-label="파일 열기" title="파일 열기" onClick={() => pickFiles()}><FolderOpen size={15} /><span>파일 열기</span><kbd>⌘ O</kbd></button>
@@ -688,7 +663,7 @@ export function App() {
   </div>
 }
 
-function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel, group?: 'typing' | 'command') => void, onText: (text: string, group?: 'typing' | 'command') => void, onOpenAttachment: (index: number) => void, onDownloadAttachment: (index: number) => void, onAddAttachment: () => void, onRemoveAttachment: (index: number) => void, theme: 'light' | 'dark', onUndo: () => void, onRedo: () => void, onOpenSource: () => void) {
+function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel, group?: 'typing' | 'command') => void, onText: (text: string, group?: 'typing' | 'command') => void, onOpenAttachment: (index: number) => void, onDownloadAttachment: (index: number) => void, theme: 'light' | 'dark', onUndo: () => void, onRedo: () => void) {
   if (document.mode === 'source') return <SourceEditor documentId={document.id} format={document.format} csvDelimiter={document.format === 'csv' ? (document.model as CsvModel).delimiter : ','} value={document.text} diagnostics={document.diagnostics} theme={theme} onChange={onText} onUndo={onUndo} onRedo={onRedo} label={`${document.name} 원본 편집기`} />
   switch (document.format) {
     case 'csv': return <CsvEditor document={document} model={document.model as CsvModel} onChange={(model, group) => onModel(model, group)} theme={theme} />
