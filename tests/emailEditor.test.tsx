@@ -35,8 +35,7 @@ describe('email rendering', () => {
       savedText: source, isDirty: false, openedAt: 0, lastEditedAt: 0
     }
     const html = renderToStaticMarkup(createElement(EmailEditor, {
-      document, model, onChange: () => {}, onOpenAttachment: () => {}, onDownloadAttachment: () => {},
-      onAddAttachments: () => {}, onRemoveAttachment: () => {}, onOpenSource: () => {}
+      document, model, onOpenAttachment: () => {}, onDownloadAttachment: () => {}
     }))
     const detailsPanel = html.match(/<aside\b[^>]*>[\s\S]*?<\/aside>/u)?.[0]
     const messageBody = html.match(/<main\b[^>]*>[\s\S]*?<\/main>/u)?.[0]

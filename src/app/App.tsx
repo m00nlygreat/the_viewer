@@ -693,7 +693,7 @@ function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel
   switch (document.format) {
     case 'csv': return <CsvEditor document={document} model={document.model as CsvModel} onChange={(model, group) => onModel(model, group)} theme={theme} />
     case 'md': return <MarkdownEditor document={document} text={document.text} theme={theme} onChange={onText} onUndo={onUndo} onRedo={onRedo} />
-    case 'eml': return <EmailEditor document={document} model={document.model as EmailModel} onChange={(model, group) => onModel(model, group)} onOpenAttachment={onOpenAttachment} onDownloadAttachment={onDownloadAttachment} onAddAttachments={onAddAttachment} onRemoveAttachment={onRemoveAttachment} onOpenSource={onOpenSource} />
+    case 'eml': return <EmailEditor document={document} model={document.model as EmailModel} onOpenAttachment={onOpenAttachment} onDownloadAttachment={onDownloadAttachment} />
     case 'ics': return <CalendarEditor document={document} model={document.model as CalendarModel} onChange={(model, group) => onModel(model, group)} />
     case 'vcf': return <ContactsEditor document={document} model={document.model as ContactModel} onChange={(model, group) => onModel(model, group)} />
   }
