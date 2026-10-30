@@ -15,7 +15,7 @@ for (const file of ['index.html', 'manifest.webmanifest', 'sw.js']) {
 const html = readFileSync(path.join(output, 'index.html'), 'utf8')
 assert.ok(!html.includes('/src/main.tsx'), 'PWA HTML still references source code')
 const assetReferences = [...html.matchAll(/\b(?:src|href)="([^"#]+)"/gu)].map((match) => match[1])
-assert.ok(assetReferences.some((reference) => reference.endsWith('/index.js')), 'PWA entry script is missing')
+assert.ok(assetReferences.some((reference) => /\/index-[A-Za-z0-9_-]+\.js$/u.test(reference)), 'Versioned PWA entry script is missing')
 assert.ok(assetReferences.some((reference) => reference.endsWith('/manifest.webmanifest')), 'PWA manifest link is missing')
 for (const reference of assetReferences) {
   if (!reference.startsWith('/')) continue

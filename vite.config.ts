@@ -106,7 +106,7 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
       rollupOptions: {
         input,
-        output: { entryFileNames: '[name].js', chunkFileNames: 'assets/[name]-[hash].js', assetFileNames: 'assets/[name]-[hash][extname]' }
+        output: { entryFileNames: extension ? '[name].js' : '[name]-[hash].js', chunkFileNames: 'assets/[name]-[hash].js', assetFileNames: 'assets/[name]-[hash][extname]' }
       }
     },
     worker: { format: 'es' },
