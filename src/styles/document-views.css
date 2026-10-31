@@ -34,7 +34,7 @@
 .attachment-info span { color: var(--text-weak); font-size: 11px; }
 .subtle-button { min-height: 25px; padding: 0 7px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--line); border-radius: 5px; color: var(--text-muted); background: var(--control); font-size: 11px; white-space: nowrap; }
 .subtle-button:hover { color: var(--text); background: var(--control-active); }
-.email-details { min-width: 0; padding: 20px; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--sidebar) 48%, var(--bg)); }
+.email-details { position: sticky; top: 0; align-self: start; min-width: 0; max-height: 100%; overflow-y: auto; padding: 20px; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--sidebar) 48%, var(--bg)); }
 .email-details > h2 { margin: 0 0 13px; color: var(--text-secondary); font-size: 13px; font-weight: 520; }
 .property-row { min-height: 32px; display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 6px; border-bottom: 1px solid var(--row-line); }
 .property-row > span { color: var(--text-weak); font-size: 11px; }

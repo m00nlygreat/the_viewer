@@ -30,7 +30,7 @@ export function MarkdownFrontmatterBlock({ frontmatter }: Props) {
     </section>
   }
 
-  return <section className="markdown-frontmatter" aria-label="YAML frontmatter">
+  return <section className="markdown-frontmatter" aria-label="YAML frontmatter" onDoubleClick={() => frontmatter.setEditing(true)}>
     <div className="markdown-frontmatter-label">
       <span>YAML</span>
       <button type="button" className="toolbar-button" aria-label="YAML 편집" title="YAML 편집" onMouseDown={(event) => event.preventDefault()} onClick={() => frontmatter.setEditing(true)}>YAML 편집</button>
