@@ -50,13 +50,14 @@
 .code-editor-live-preview .cm-line.cm-md-task-line[aria-checked='true'] { color: var(--text-muted); }
 .code-editor-live-preview .cm-line.cm-md-editing-block { padding-left: 10px; border-left: 2px solid color-mix(in srgb, var(--accent) 48%, transparent); background: color-mix(in srgb, var(--accent) 5%, transparent); font-family: var(--font-mono); }
 .code-editor-live-preview .cm-line.cm-md-blockquote.cm-md-editing-block:not(.cm-md-list-line) { padding-left: 15px; }
-.code-editor-live-preview .cm-md-frontmatter-widget { box-sizing: border-box; width: min(720px, 100%); max-width: 100%; min-width: 0; margin: 0 auto 20px; white-space: normal; }
+/* Keep vertical spacing inside block widget boxes so CodeMirror hit testing includes it. */
+.code-editor-live-preview .cm-md-frontmatter-widget { box-sizing: border-box; width: min(720px, 100%); max-width: 100%; min-width: 0; margin: 0 auto; padding-bottom: 20px; white-space: normal; }
 .code-editor-live-preview .cm-md-frontmatter-widget .markdown-frontmatter { width: 100%; max-width: 100%; margin: 0; }
 .code-editor-live-preview .cm-md-frontmatter-editor { width: 100%; max-width: 100%; min-width: 0; margin: 0; box-sizing: border-box; }
 .code-editor-live-preview .cm-md-image-preview { display: inline-block; padding: 2px 5px; border: 1px solid var(--line); border-radius: 0; color: var(--text-weak); background: var(--control); font-size: var(--markdown-image-label-size); vertical-align: baseline; }
 .code-editor-live-preview .cm-md-image-preview p { display: inline; margin: 0; }
 .code-editor-live-preview .cm-md-image-preview img { max-width: min(420px, 100%); max-height: 320px; border-radius: 0; vertical-align: middle; }
-.code-editor-live-preview .cm-md-table-widget { box-sizing: border-box; width: 100%; max-width: 100%; margin: 16px 0; white-space: normal; }
+.code-editor-live-preview .cm-md-table-widget { box-sizing: border-box; width: 100%; max-width: 100%; margin: 0; padding: 16px 0; white-space: normal; }
 .cm-md-table-preview { min-width: 0; margin-inline: 10px; }
 .cm-md-table-frame { box-sizing: border-box; position: relative; width: fit-content; max-width: 100%; min-width: 0; margin: 0 auto; padding-top: 28px; }
 .cm-md-table-actions { position: absolute; top: 0; right: 0; height: 28px; display: flex; justify-content: flex-end; align-items: center; }
@@ -67,7 +68,7 @@
 .cm-md-table-content th, .cm-md-table-content td { box-sizing: border-box; min-width: 0; max-width: 100%; padding: 8px 10px; border: 1px solid var(--line); overflow-wrap: anywhere; text-align: left; }
 .cm-md-table-content th { color: var(--text-strong); background: var(--control); font-weight: 530; }
 .cm-md-table-content code { padding: 2px 5px; border: 1px solid var(--line); border-radius: 0; color: var(--accent); background: var(--control); font: var(--markdown-inline-code-size) var(--font-mono); }
-.cm-md-code-widget { width: 100%; min-width: 0; margin: 15px 0; white-space: normal; }
+.cm-md-code-widget { box-sizing: border-box; width: 100%; min-width: 0; margin: 0; padding: 15px 0; white-space: normal; }
 .cm-md-code-preview { min-width: 0; overflow: hidden; border: 1px solid var(--line); background: color-mix(in srgb, var(--control) 72%, var(--panel)); }
 .cm-md-code-toolbar { min-height: 32px; padding: 0 8px 0 11px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--line); color: var(--text-weak); background: color-mix(in srgb, var(--panel) 78%, var(--control)); font: 11px var(--font-mono); }
 .cm-md-code-toolbar > span:first-child { display: inline-flex; align-items: center; gap: 6px; }
