@@ -1,4 +1,5 @@
 .email-layout { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 288px; grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+.viewer-zoom-content:has(> .email-layout) { min-height: 0; flex: 1 1 0; }
 .email-main { min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 40px clamp(20px, 4vw, 48px); display: flex; flex-direction: column; }
 .email-heading { width: min(720px, 100%); margin: 0 auto; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
 .email-subject-row { display: flex; align-items: center; gap: 9px; }
