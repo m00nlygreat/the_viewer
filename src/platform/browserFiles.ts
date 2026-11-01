@@ -1,4 +1,4 @@
-import { FORMAT_MIME, type Format } from '../domain/fileFormats'
+import { FORMAT_EXTENSIONS, FORMAT_MIME, type Format } from '../domain/fileFormats'
 import { assertInputFileSize } from '../domain/inputPolicy'
 import type { PickedFile } from './fileTypes'
 
@@ -8,7 +8,7 @@ export async function saveLocalFile(name: string, format: Format, bytes: Uint8Ar
   const mime = FORMAT_MIME[format]
   try {
     if (window.showSaveFilePicker) {
-      const handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: format.toUpperCase(), accept: { [mime]: [`.${format}`] } }] })
+      const handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: format.toUpperCase(), accept: { [mime]: FORMAT_EXTENSIONS[format].map((extension) => `.${extension}`) } }] })
       const writable = await handle.createWritable()
       await writable.write(new Blob([bytes as unknown as BlobPart], { type: mime }))
       await writable.close()

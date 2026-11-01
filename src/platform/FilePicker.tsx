@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef } from 'react'
-import { FORMATS } from '../domain/fileFormats'
+import { FORMAT_EXTENSIONS } from '../domain/fileFormats'
 import { readDroppedFiles } from './browserFiles'
 import type { Format, PickedFile } from './fileTypes'
 
@@ -14,7 +14,7 @@ export const FilePicker = forwardRef<FilePickerHandle, Props>(function FilePicke
   useImperativeHandle(ref, () => ({
     open(format, accept) {
       pendingFormat.current = format
-      pendingAccept.current = accept ?? FORMATS.map((format) => `.${format}`).join(',')
+      pendingAccept.current = accept ?? Object.values(FORMAT_EXTENSIONS).flat().map((extension) => `.${extension}`).join(',')
       if (input.current) { input.current.accept = pendingAccept.current; input.current.click() }
     }
   }), [])
@@ -28,5 +28,5 @@ export const FilePicker = forwardRef<FilePickerHandle, Props>(function FilePicke
     } catch (error) { onError?.(error instanceof Error ? error.message : '선택한 파일을 읽지 못했습니다.') }
     finally { pendingFormat.current = undefined }
   }
-  return <input ref={input} className="visually-hidden" type="file" multiple={multiple} accept={FORMATS.map((format) => `.${format}`).join(',')} onChange={(event) => { void receive(event) }} />
+  return <input ref={input} className="visually-hidden" type="file" multiple={multiple} accept={Object.values(FORMAT_EXTENSIONS).flat().map((extension) => `.${extension}`).join(',')} onChange={(event) => { void receive(event) }} />
 })

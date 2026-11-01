@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react'
 import 'monaco-editor/languages/definitions/markdown/register.js'
+import 'monaco-editor/languages/definitions/yaml/register.js'
 import '../../node_modules/monaco-editor/min/vs/editor/editor.main.css'
 import type { ParseDiagnostic } from '../domain/types'
 import type { Format } from '../platform/fileTypes'
 import { registerCsvMonacoLanguage } from './csvMonacoLanguage'
+import { registerMonacoJsonLanguage } from './monacoJsonLanguage'
 import { configureMonacoWorker, defineViewerMonacoThemes, monaco } from './monacoRuntime'
 import { registerSourceEditorDisposer } from './sourceEditorRegistry'
 import { applyLineBasedTextChanges, EditorTextSyncSession, findTextChangesWithMapper, normalizeLineEndings } from './editorText'
@@ -106,7 +108,8 @@ export default function MonacoSourceEditor({ documentId, format, csvDelimiter = 
     if (!host.current) return
     const textSession = textSync.current
     configureMonacoWorker()
-    const language = format === 'md' ? 'markdown' : format === 'csv' ? registerCsvMonacoLanguage(csvDelimiter) : 'plaintext'
+    if (format === 'json') registerMonacoJsonLanguage()
+    const language = format === 'md' ? 'markdown' : format === 'csv' ? registerCsvMonacoLanguage(csvDelimiter) : format === 'json' || format === 'yaml' ? format : 'plaintext'
     const uri = monaco.Uri.parse(`inmemory://the-viewer/${encodeURIComponent(documentId)}.${format}`)
     let model = models.get(documentId)
     if (!model || model.isDisposed()) {

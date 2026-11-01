@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
-import { FORMAT_MIME, FORMATS } from './src/domain/fileFormats.ts'
+import { FORMAT_EXTENSIONS, FORMAT_MIME, FORMATS } from './src/domain/fileFormats.ts'
 
 const packageVersion = JSON.parse(readFileSync(resolve('package.json'), 'utf8')).version as string
 
@@ -93,7 +93,7 @@ export default defineConfig(({ mode }) => {
             { src: `${base}icons/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
             { src: `${base}icons/maskable-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
           ],
-          file_handlers: [{ action: base, accept: Object.fromEntries(FORMATS.map((format) => [FORMAT_MIME[format], [`.${format}`]])) }],
+          file_handlers: [{ action: base, accept: Object.fromEntries(FORMATS.map((format) => [FORMAT_MIME[format], FORMAT_EXTENSIONS[format].map((extension) => `.${extension}`)])) }],
           share_target: { action: `${base}share/`, method: 'POST', enctype: 'multipart/form-data', params: { files: [{ name: 'files', accept: FORMATS.map((format) => FORMAT_MIME[format]) }] } }
         }
       })]),

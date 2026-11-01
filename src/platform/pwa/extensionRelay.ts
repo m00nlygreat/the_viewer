@@ -1,4 +1,5 @@
 import { FORMATS, type Format, type PickedFile } from '../fileTypes'
+import { isStructuredModel } from '../../domain/structured/validate'
 import type { CalendarModel, ContactModel, CsvModel, EmailModel, ViewerDocument } from '../../domain/types'
 import { normalizeEmailAttachmentBytes } from '../../domain/emailAttachmentBytes'
 import {
@@ -256,6 +257,9 @@ function isLegacyDocumentShape(value: Record<string, unknown>, format: Format): 
 
 function isDocumentModel(format: Format, value: unknown): value is ViewerDocument['model'] {
   if (!isRecord(value)) return false
+  if (format === 'json' || format === 'yaml' || format === 'toml') {
+    return isStructuredModel(value)
+  }
   if (format === 'csv') {
     const model = value as unknown as CsvModel
     return isStringArray(model.headers) && isStringArray(model.headerRow) && isStringRows(model.rows) &&

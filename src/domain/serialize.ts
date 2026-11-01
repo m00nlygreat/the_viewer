@@ -10,5 +10,6 @@ export async function serializeDocument(format: Format, model: DocumentModel, so
     }
     case 'ics': return (await import('./formats/calendar')).serializeCalendar(model as CalendarModel)
     case 'vcf': return (await import('./vcard')).serializeVCF(model as ContactModel)
+    case 'json': case 'yaml': case 'toml': return (await import('./structured/output')).serializeStructured(model as import('./structured/model').StructuredModel, format)
   }
 }

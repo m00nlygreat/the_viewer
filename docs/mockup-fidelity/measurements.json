@@ -1,0 +1,284 @@
+{
+  "date": "2026-11-01",
+  "branch": "json",
+  "viewport": { "width": 1440, "height": 980 },
+  "zoom": 1,
+  "sourceSha256": "83e3a3dd16280a36a1de6c90408a999d1a62ca893650225d4a6b20acac0a5453",
+  "reference": {
+    "containerRowAlign": "position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 6px 8px 6px 12px; background: rgb(245, 245, 245); border-radius: 8px; width: fit-content; min-height: 40px; box-sizing: border-box; box-shadow: none; opacity: 1; cursor: grab; touch-action: none;",
+    "idRow": { "bottom": 187, "height": 40, "left": 278, "right": 461.34375, "top": 147, "width": 183.34375, "x": 278, "y": 147 },
+    "key": { "color": "rgb(64, 64, 64)", "fontFamily": "Geist, \"Noto Sans KR\", system-ui, sans-serif", "fontSize": "13px", "fontWeight": "500", "lineHeight": "19.5px" },
+    "root": { "bottom": 896, "height": 795, "left": 268, "right": 603.3125, "top": 101, "width": 335.3125, "x": 268, "y": 101 },
+    "rowGap": "12px",
+    "value": { "color": "rgb(21, 128, 61)", "fontFamily": "Geist, \"Noto Sans KR\", system-ui, sans-serif", "fontSize": "13px", "fontWeight": "400", "lineHeight": "19.5px" }
+  },
+  "previousLiveCaptureBeforeTabularNumbers": {
+    "containerRowAlign": "flex-start",
+    "root": { "bottom": 876, "height": 795, "left": 277, "right": 610.953125, "top": 81, "width": 333.953125, "x": 277, "y": 81 },
+    "idRow": { "bottom": 167, "height": 40, "left": 287, "right": 470.34375, "top": 127, "width": 183.34375, "x": 287, "y": 127 },
+    "rowGap": "12px",
+    "font": {
+      "loaded": true,
+      "family": "\"Geist Variable\", \"Noto Sans KR Variable\", sans-serif",
+      "key": { "color": "rgb(64, 64, 64)", "fontSize": "13px", "fontWeight": "500", "lineHeight": "19.5px" },
+      "value": { "color": "rgb(21, 128, 61)", "fontSize": "13px", "fontWeight": "400", "lineHeight": "19.5px" },
+      "output": { "fontFamily": "\"Geist Mono Variable\", \"Noto Sans Mono\", monospace", "fontSize": "12px", "fontWeight": "400", "lineHeight": "21.6px" }
+    },
+    "containerDepths": [
+      { "depth": 1, "padding": "6px 8px 8px", "radius": "10px", "childrenGap": "5px", "childrenTopPadding": "6px" },
+      { "depth": 2, "padding": "5px 7px 7px", "radius": "9px", "childrenGap": "5px", "childrenTopPadding": "5px" },
+      { "depth": "3+", "padding": "4px 6px 6px", "radius": "8px", "childrenGap": "5px", "childrenTopPadding": "4px" }
+    ],
+    "depthFonts": [
+      { "depth": 0, "size": "13px", "weight": "500", "lineHeight": "19.5px", "color": "rgb(64, 64, 64)" },
+      { "depth": 1, "size": "12.5px", "weight": "500", "lineHeight": "18.75px", "color": "rgb(64, 64, 64)" },
+      { "depth": 2, "size": "12px", "weight": "500", "lineHeight": "18px", "color": "rgb(64, 64, 64)" },
+      { "depth": 3, "size": "12px", "weight": "500", "lineHeight": "18px", "color": "rgb(64, 64, 64)" }
+    ],
+    "outputPanel": {
+      "toolbarHeight": 44,
+      "toolbarPadding": "0px",
+      "code": { "top": 44, "height": 798.5, "padding": "16px", "fontSize": "12px", "lineHeight": "21.6px", "fontFamily": "Geist Mono Variable" },
+      "inspection": { "top": 842.5, "height": 137.5, "headingHeight": 34, "rowHeight": 31.5, "headingPadding": "12px 16px 4px", "rowPadding": "6px 16px", "rowGap": "10px", "bottomPadding": "8px" },
+      "scrollOwners": { "canvas": "auto", "code": "auto", "inspection": "auto" }
+    },
+    "typeMenu": {
+      "width": 200,
+      "fourItemHeight": 142,
+      "padding": "4px",
+      "gap": "2px",
+      "itemHeight": 32,
+      "itemPadding": "0px 8px",
+      "itemFont": "13px/19.5px Geist Variable",
+      "previewFont": "12px/18px Geist Variable",
+      "radius": "10px",
+      "shadow": "0 8px 24px rgba(0, 0, 0, 0.10), 0 1px 3px rgba(0, 0, 0, 0.08)",
+      "focusOutline": "2px solid #111",
+      "focusOutlineOffset": "2px"
+    },
+    "valueEdit": {
+      "chip": { "width": 105, "height": 28, "padding": "0px 8px 0px 7px", "shadow": "0 0 0 1.5px #111" },
+      "input": { "width": 72, "height": 19.5, "padding": "0px", "border": "0px", "fontSize": "13px", "lineHeight": "19.5px", "color": "rgb(0, 64, 255)" },
+      "errorBorder": "1px solid #DC2626"
+    },
+    "numberGuide": {
+      "reading": { "text": "1,284,500,000 · 약 12.8억", "fontSize": "12px", "lineHeight": "18px", "color": "rgb(115, 115, 115)" },
+      "warning": { "text": "정확히 저장할 수 없는 크기 · 텍스트로 바꿀까요?", "fontSize": "12px", "lineHeight": "18px", "color": "rgb(220, 38, 38)", "gap": "6px", "dot": "6px" }
+    },
+    "emptySlots": [
+      { "path": "$.total", "width": 96, "height": 26 },
+      { "path": "$.tags[2]", "width": 84, "height": 24 },
+      { "path": "depth 2–3", "width": 76, "height": 22 }
+    ],
+    "zoomToolbarAt100": ["−", "100%", "+", "맞춤"],
+    "rgbHexConversion": { "input": "rgb(37 99 235)", "output": "#2563EB", "nodeTypeAfter": "string", "previewUpdated": true },
+    "longTextExpanded": { "height": 58.5, "width": 420, "whiteSpace": "pre-wrap", "overflowWrap": "anywhere" },
+    "datePopover": { "width": 272, "height": 239 },
+    "colorPopover": {
+      "reference": { "width": 248, "height": 317.5 },
+      "current": { "width": 248, "height": 318 }
+    },
+    "dragVisual": {
+      "sourceOpacity": 0.35,
+      "ghostOpacity": 0.85,
+      "ghostRotationDegrees": -2,
+      "ghostShadow": "0 10px 20px rgba(0, 0, 0, 0.18)",
+      "afterIndicatorHeight": 2,
+      "afterIndicatorHorizontalInset": 2,
+      "gridBackgroundSize": "20px 20px",
+      "gridBackgroundPosition": "0% 0%"
+    },
+    "priorLivePointerDragObservation": {
+      "date": "2026-11-01",
+      "fixture": "order",
+      "sourcePath": "$.customer",
+      "realPointerDrag": true,
+      "sourceFadeObserved": true,
+      "floatingGhostObserved": true,
+      "insertionLine": "not clearly distinguishable in the live frame",
+      "screenshotPersisted": false,
+      "dropChangedModel": true,
+      "fixtureReloadedToBaseline": true,
+      "panAttempts": ["Space+pointer", "middle-button+pointer"],
+      "panMovementObserved": false,
+      "note": "CUA drag supplies left-button movement. The separate key/middle-button hold could not overlap with pointer movement, so pan remains unverified."
+    },
+    "latestLivePointerDragObservation": {
+      "date": "2026-11-01",
+      "fixture": "order",
+      "viewport": { "width": 1280, "height": 720 },
+      "canvasZoom": 0.25,
+      "sourcePath": "$.id",
+      "targetPath": "$.customer",
+      "targetPosition": "before",
+      "realPointerDrag": true,
+      "pointerStart": [265.25, 67.5],
+      "pointerTarget": [267.25, 80.25],
+      "pointerDistance": 12.906,
+      "sourceOpacity": 0.35,
+      "ghostOpacity": 0.85,
+      "ghostRotationDegrees": -2,
+      "insertionLine": {
+        "observed": true,
+        "class": "sd-entry is-drop-before",
+        "path": "$.customer",
+        "computedHeight": "2px",
+        "rect": { "left": 243.5, "top": 74, "right": 309.5, "bottom": 114.5, "width": 66, "height": 40.5 }
+      },
+      "screenshotDisplayedDuringLiveDrag": true,
+      "screenshotPersisted": false,
+      "fixtureReloadedToBaseline": true,
+      "panAttempts": ["Space+pointer", "middle-button+pointer"],
+      "panMovementObserved": false,
+      "note": "The active pointer frame confirmed the source fade, floating ghost, and before indicator on one live frame. The screenshot was shown by CUA but not written to the workspace. CUA drag supplies left-button movement and cannot overlap a Space or middle-button hold."
+    },
+    "importDialog": {
+      "valid": { "width": 480, "height": 431, "textareaWidth": 438, "textareaHeight": 220 },
+      "invalid": { "ariaInvalid": true, "status": "JSON InvalidSymbol (1:3)", "applyDisabled": true }
+    },
+    "detachedCanvasAt1161x634": {
+      "before": { "gridScrollWidth": 568, "gridRight": 797, "detachedRight": 986.72, "rightOverflow": 189.72 },
+      "afterAt100": { "gridScrollWidth": 858, "gridRight": 1035, "detachedRight": 986.72, "containsDetached": true },
+      "fit": { "zoom": 0.437432, "viewportWidth": 583, "viewportHeight": 527, "rootAndDetachedVisible": true }
+    },
+    "detachedAutoLayoutAt100": {
+      "root": { "left": 48, "top": 40, "right": 383, "bottom": 714 },
+      "blocks": [
+        { "label": "memo", "position": { "x": 620, "y": 620 }, "bounds": { "left": 620, "top": 620, "right": 757.72, "bottom": 652 } },
+        { "label": "id", "position": { "x": 48, "y": 855 }, "bounds": { "left": 48, "top": 855, "right": 153.45, "bottom": 887 } },
+        { "label": "customer", "position": { "x": 48, "y": 905 }, "bounds": { "left": 48, "top": 905, "right": 252, "bottom": 1079 } }
+      ],
+      "minimumBlockGap": 18,
+      "connectedRows": 12,
+      "overlapsRootOrAnotherBlock": false
+    }
+  },
+  "derivedAdjustmentAfter2026-11-01": {
+    "basis": "CSS box arithmetic from the previous 1440x980 reference/current captures; not a fresh browser measurement",
+    "rootChildren": 10,
+    "rootGaps": 9,
+    "before": { "gap": 8, "paddingTop": 5, "paddingBottom": 8, "rootHeight": 803 },
+    "after": { "gap": 6, "paddingTop": 11, "paddingBottom": 12, "expectedRootHeight": 795 },
+    "expectedHeightDelta": -8,
+    "keyWidth": { "min": 72, "max": 120, "sizing": "max-content" },
+    "fourRowScalarTypeMenuHeight": 142,
+    "screenshotRecaptured": false,
+    "freshLiveBrowserCaptureInspected": true,
+    "savedScreenshotsUpdated": false
+  },
+  "latestLiveRecheck": {
+    "date": "2026-11-01",
+    "viewport": { "width": 1440, "height": 980 },
+    "devicePixelRatio": 1,
+    "canvasZoom": 1,
+    "case": "order",
+    "root": { "width": 335.3125, "height": 795 },
+    "referenceRootDifference": { "width": 0, "height": 0 },
+    "idRow": { "width": 183.34375, "height": 40 },
+    "placedAtRow": { "width": 315.3125, "height": 40 },
+    "dateButton": { "width": 211.3125, "height": 25.5, "iconWidth": 12, "textWidth": 177.3125, "gap": "6px", "padding": "3px 9px 3px 7px" },
+    "dateFontVariantNumeric": "tabular-nums",
+    "cause": "The important font shorthand reset the non-important font-variant-numeric declaration; matching its priority restores the reference width.",
+    "savedScreenshotUpdated": false
+  },
+  "latestCaseRouteAudit": {
+    "date": "2026-11-01",
+    "viewport": { "width": 1440, "height": 980 },
+    "canvasZoom": 1,
+    "documentHorizontalOverflow": false,
+    "cases": [
+      { "id": "order", "root": { "width": 335.3125, "height": 795 }, "rows": 9, "nodes": 16 },
+      { "id": "text", "root": { "width": 556.390625, "height": 352.5 }, "rows": 5, "nodes": 6 },
+      { "id": "date-links", "root": { "width": 430.390625, "height": 362 }, "rows": 6, "nodes": 7 },
+      { "id": "colors", "root": { "width": 347.046875, "height": 362 }, "rows": 6, "nodes": 7 },
+      { "id": "numbers", "root": { "width": 542.703125, "height": 500 }, "rows": 9, "nodes": 10 },
+      { "id": "containers", "root": { "width": 397.671875, "height": 571 }, "rows": 4, "nodes": 7 },
+      { "id": "deep", "root": { "width": 644, "height": 407 }, "rows": 1, "nodes": 5 },
+      { "id": "keys", "root": { "width": 276.5, "height": 408 }, "rows": 7, "nodes": 8, "duplicateRows": 2 },
+      { "id": "interaction", "root": { "width": 335, "height": 598 }, "rows": 5, "nodes": 10 }
+    ],
+    "scope": "Product routes and rendered nodes were inspected; this does not cover every state combination or replace saved visual captures."
+  },
+  "latestInteractionStateAudit": {
+    "date": "2026-11-01",
+    "selectedPath": "$.count",
+    "focusTarget": "count value button",
+    "hoverPath": "$.children[0]",
+    "hoverDragHandleOpacity": 1,
+    "input": { "value": "125", "ariaInvalid": "false" },
+    "inputError": { "value": "NaN", "ariaInvalid": "true", "borderColor": "rgb(220, 38, 38)" },
+    "typeMenu": { "width": 200, "height": 142, "disabledOptions": 2 },
+    "dragReviewState": { "sourceOpacity": 0.35, "ghostOpacity": 0.85, "ghostRotationDegrees": -2, "dropLineHeight": 2 },
+    "datePopover": { "width": 272, "height": 239 },
+    "colorPopover": { "width": 248, "height": 317 },
+    "expandedText": { "whiteSpace": "pre-wrap", "height": 59 },
+    "keyError": { "ariaInvalid": "true", "duplicateRows": 2 },
+    "actualPointerFrame": { "sourceOpacity": 0.35, "ghostOpacity": 0.85, "ghostRotationDegrees": -2, "insertionPath": "$.customer", "insertionPosition": "before", "insertionHeight": "2px", "canvasZoom": 0.25, "insertionIndicatorObserved": true, "screenshotSaved": false }
+  },
+  "latestMobileLiveAudit": {
+    "date": "2026-11-01",
+    "height": 844,
+    "viewports": [
+      { "width": 390, "themes": ["light", "dark"], "documentScrollWidth": 390 },
+      { "width": 430, "themes": ["light", "dark"], "documentScrollWidth": 430 }
+    ],
+    "390pxCanvas": { "viewport": { "width": 375, "height": 289 }, "scrollExtent": { "width": 862, "height": 861 } },
+    "390pxDarkPopovers": {
+      "date": { "left": 110, "top": 475.92, "right": 382, "bottom": 714.92, "width": 272, "height": 239, "withinViewport": true },
+      "color": { "left": 122, "top": 351.92, "right": 370, "bottom": 668.92, "width": 248, "height": 317, "withinViewport": true }
+    },
+    "actualDeviceOrTouchVerified": false,
+    "screenshotsUpdated": false
+  },
+  "latestSupportedStateMatrixAudit": {
+    "date": "2026-11-01",
+    "viewport": { "width": 1280, "height": 720 },
+    "reviewedScreenCount": 9,
+    "caseGroupCount": 8,
+    "routeCount": 32,
+    "usedProductComponents": true,
+    "stateRoutesByCase": {
+      "order": ["default", "selected", "date-popover", "color-popover"],
+      "text": ["default", "selected", "expanded-text"],
+      "date-links": ["default", "selected", "date-popover"],
+      "colors": ["default", "selected", "color-popover"],
+      "numbers": ["default", "selected"],
+      "containers": ["default", "selected"],
+      "deep": ["default", "selected", "isolated"],
+      "keys": ["default", "selected", "input-error"],
+      "interaction": ["default", "selected", "focus", "hover", "input", "input-error", "type-menu", "drag", "drop-target"]
+    },
+    "baselineAndSelectionCoveredForEveryScreen": true,
+    "documentHorizontalOverflow": { "routes": 32, "overflowCount": 0, "isolatedDeepRootPath": "$.level1.level2.level3.level4" },
+    "stateFindings": {
+      "datePopoverCases": ["order", "date-links"],
+      "colorPopoverCases": ["order", "colors"],
+      "expandedTextCase": "text",
+      "isolatedDeepRootPath": "$.level1.level2.level3.level4",
+      "invalidInputCases": ["keys", "interaction"],
+      "disabledTypeMenuOptions": 2,
+      "disabledPaletteArrayAdd": "The isolated deep route has no array items, so the 0-add control is disabled.",
+      "dragAndDropCase": "interaction"
+    },
+    "screenshotsPersisted": false,
+    "scope": "Live product routes and DOM state markers were inspected. Coverage includes all relevant displayed states, not every pairwise state combination; URL-fixed states are not actual user input.",
+    "userDataPolicy": "The user cannot share actual input data; synthetic fixtures only.",
+    "actualPanVerified": false,
+    "actualMobileTouchVerified": false
+  },
+  "latestPanGestureRetest": {
+    "date": "2026-11-01",
+    "case": "order",
+    "viewport": { "width": 1280, "height": 720 },
+    "canvasBefore": { "scrollLeft": 0, "scrollTop": 0, "scrollWidth": 862, "scrollHeight": 917, "clientWidth": 687, "clientHeight": 664 },
+    "attempts": [
+      { "gesture": "Space key held for 4 seconds with concurrent left drag", "from": [800, 250], "to": [770, 220], "scrollAfter": { "left": 0, "top": 0 } },
+      { "gesture": "middle-button click held for 4 seconds with concurrent left drag", "from": [800, 250], "to": [770, 220], "scrollAfter": { "left": 0, "top": 0 } },
+      { "gesture": "Space modifier click with concurrent left drag", "from": [800, 250], "to": [770, 220], "scrollAfter": { "left": 0, "top": 0 } }
+    ],
+    "wheelControl": { "down": { "left": 0, "top": 253 }, "upRestored": { "left": 0, "top": 0 } },
+    "actualPanVerified": false,
+    "note": "The scroll viewport responds to wheel input and was restored. CUA drag does not expose a single held-middle-or-Space pointer gesture; attempts combining its hold/click and drag operations did not move the viewport. JSDOM gesture tests pass, but they do not prove live pan."
+  },
+  "note": "previousLiveCaptureBeforeTabularNumbers records the earlier 1440x980 capture before the numeric correction; its root was 1.359375px narrower. latestLiveRecheck records the same order fixture in Chrome at the reference 1440x980 viewport and 100% canvas zoom: root width and height match the stored reference exactly. capture=1 hides only the review header; the product draft notice and output lock remain visible. The latest live screenshots were inspected but saved current*.png files were not refreshed. latestSupportedStateMatrixAudit records 32 relevant product route states across order and eight case groups, but not every pairwise state combination. latestPanGestureRetest records live wheel control and unsuccessful concurrent pan attempts. Popover and drag dimensions are rendered states, not universal fixed widths."
+}

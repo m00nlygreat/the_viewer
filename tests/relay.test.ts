@@ -6,6 +6,7 @@ import {
 } from '../src/platform/relay/protocol'
 import { restoreLegacySnapshot } from '../src/platform/pwa/extensionRelay'
 import type { EmailModel } from '../src/domain/types'
+import { parseStructured } from '../src/domain/structured/parse'
 
 const ticketId = '123e4567-e89b-42d3-a456-426614174000'
 const pwaSender = {
@@ -70,6 +71,20 @@ describe('extension relay protocol', () => {
 
     const restored = restoreLegacySnapshot(new TextEncoder().encode(JSON.stringify(snapshot)))
     expect((restored.model as EmailModel).attachments[0]?.content).toEqual(new Uint8Array([0, 127, 255]))
+  })
+
+  it('accepts only well-formed structured models in a legacy snapshot', () => {
+    const source = new TextEncoder().encode('{"value":1}')
+    const text = new TextDecoder().decode(source)
+    const document = {
+      id: 'legacy-json', name: 'legacy.json', format: 'json', mimeType: 'application/json', size: source.byteLength,
+      sourceText: text, text, savedText: text, mode: 'view', revision: 0, isDirty: false,
+      openedAt: 1, lastEditedAt: 1, sourceBytesBase64: bytesToBase64(source), model: parseStructured(text, 'json')
+    }
+    const encode = (model: unknown) => new TextEncoder().encode(JSON.stringify({ schemaVersion: 1, document: { ...document, model } }))
+    expect(restoreLegacySnapshot(encode(document.model)).model).toEqual(document.model)
+    expect(() => restoreLegacySnapshot(encode({ root: { id: 'root', kind: 'object', items: 'invalid' }, loose: [] }))).toThrow()
+    expect(() => restoreLegacySnapshot(encode({ root: { id: 'root', kind: 'scalar', dataType: 'boolean', raw: 'maybe' }, loose: [] }))).toThrow()
   })
 
   it('round-trips a 50 MiB file through bounded Base64 chunks byte-for-byte', { timeout: 30_000 }, () => {

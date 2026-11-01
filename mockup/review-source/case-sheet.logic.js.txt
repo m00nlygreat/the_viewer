@@ -1,0 +1,33 @@
+
+class Component extends DCLogic {
+renderVals() {
+const s = this.state || {};
+const longOpen = !!s.longOpen;
+const custOpen = s.custOpen !== false;
+const shipOpen = !!s.shipOpen;
+const itemsOpen = !!s.itemsOpen;
+const longText = '주문 시 요청 사항입니다. 문 앞에 두지 마시고 1층 경비실에 맡겨 주세요. 부재 시에는 휴대폰 말고 사무실 번호로 연락 부탁드립니다. 포장은 최소한으로 해 주시고, 영수증은 동봉하지 말아 주세요.';
+const rot = (o) => o ? 'rotate(90deg)' : 'none';
+return {
+longText: longText,
+longLen: longText.length,
+longOpen: longOpen,
+longClosed: !longOpen,
+longBtn: longOpen ? '접기' : '펼치기',
+toggleLong: () => this.setState({ longOpen: !longOpen }),
+custOpen: custOpen,
+custClosed: !custOpen,
+custRot: rot(custOpen),
+toggleCust: () => this.setState({ custOpen: !custOpen }),
+shipOpen: shipOpen,
+shipClosed: !shipOpen,
+shipRot: rot(shipOpen),
+toggleShip: () => this.setState({ shipOpen: !shipOpen }),
+itemsOpen: itemsOpen,
+itemsClosed: !itemsOpen,
+itemsRot: rot(itemsOpen),
+toggleItems: () => this.setState({ itemsOpen: !itemsOpen }),
+itemRows: [{ i: 0, label: 'SKU-0001' }, { i: 1, label: 'SKU-0002' }, { i: 2, label: 'SKU-0003' }]
+};
+}
+}

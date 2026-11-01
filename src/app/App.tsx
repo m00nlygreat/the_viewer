@@ -13,9 +13,12 @@ import { safeDisplayFileName } from './displayName'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 import { FORMAT_LABEL, FORMAT_MIME, FORMATS, getFormat, type CalendarModel, type ContactModel, type CsvModel, type DocumentModel, type EmailModel, type Format, type ThemePreference, type ViewerDocument } from '../domain/types'
 import { DocumentController } from '../domain/documentController'
-import { buildExportSnapshot, diagnosticsFromMessages, documentIsDirty, flushDocument, hasByteOrderMark, makeDocumentFromBytes } from '../domain/session'
+import { buildExportSnapshot, canPersistRecovery, diagnosticsFromMessages, documentIsDirty, flushDocument, hasByteOrderMark, makeDocumentFromBytes } from '../domain/session'
 import { parseWithWorker } from '../domain/workerClient'
 import { hasFatalDiagnostics } from '../domain/parseDiagnostics'
+import { FORMAT_EXTENSIONS } from '../domain/fileFormats'
+import { isStructuredFormat, type StructuredFormat, type StructuredModel } from '../domain/structured/model'
+import { outputStructured } from '../domain/structured/output'
 import { clearAllData, clearDocuments, completeShareTicketFile, loadDocuments, loadTheme, readSetting, readShareTicket, removeDocument, saveDocument, writeSetting } from '../platform/storage'
 import { DocumentWriteQueue } from '../platform/documentWriteQueue'
 import { FilePicker, type FilePickerHandle } from '../platform/FilePicker'
@@ -28,11 +31,12 @@ const MarkdownEditor = lazy(() => import('../features/MarkdownEditor').then((mod
 const EmailEditor = lazy(() => import('../features/EmailEditor').then((module) => ({ default: module.EmailEditor })))
 const CalendarEditor = lazy(() => import('../features/CalendarEditor').then((module) => ({ default: module.CalendarEditor })))
 const ContactsEditor = lazy(() => import('../features/ContactsEditor').then((module) => ({ default: module.ContactsEditor })))
+const StructuredDataEditor = lazy(() => import('../features/structured/StructuredDataEditor').then((module) => ({ default: module.StructuredDataEditor })))
 const SourceEditor = lazy(() => import('../components/SourceEditor'))
 
 interface Notice { id: number; tone: 'success' | 'error' | 'info'; message: string }
 interface BeforeInstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
-const fileAccept = FORMATS.map((format) => `.${format}`).join(',')
+const fileAccept = Object.values(FORMAT_EXTENSIONS).flat().map((extension) => `.${extension}`).join(',')
 const labels = FORMAT_LABEL
 
 export function App() {
@@ -50,6 +54,7 @@ export function App() {
   const [showPaste, setShowPaste] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const [pasteFormat, setPasteFormat] = useState<Format>('md')
+  const [structuredFormats, setStructuredFormats] = useState<Record<string, StructuredFormat>>({})
   const [notices, setNotices] = useState<Notice[]>([])
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPrompt | null>(null)
   const [updateReady, setUpdateReady] = useState(false)
@@ -106,7 +111,8 @@ export function App() {
         publishDocument({ ...latest, parseState: 'error', diagnostics: diagnosticsFromMessages(parsed.diagnostics, 'error'), sourceError: message })
         return
       }
-      publishDocument({ ...latest, model: parsed.model, modelRevision: revision, parseState: 'ready', diagnostics: diagnosticsFromMessages(parsed.diagnostics), sourceError: undefined })
+      const model = isStructuredFormat(latest.format) ? { ...(parsed.model as StructuredModel), loose: (latest.model as StructuredModel).loose } : parsed.model
+      publishDocument({ ...latest, model, modelRevision: revision, parseState: 'ready', diagnostics: diagnosticsFromMessages(parsed.diagnostics), sourceError: undefined, isDirty: documentIsDirty({ ...latest, model }) })
     } catch (error) {
       const latest = documentsRef.current.find((item) => item.id === id)
       if (sourceRequestTokens.current.get(id) !== token || !latest || latest.revision !== revision) return
@@ -123,7 +129,7 @@ export function App() {
       pending = next && next !== pending ? next : undefined
     }
     const current = documentsRef.current.find((item) => item.id === id)
-    if (!recoveryEnabledRef.current || closingDocumentIds.current.has(id) || !current || current.textRevision !== current.revision) return
+    if (!recoveryEnabledRef.current || closingDocumentIds.current.has(id) || !current || !canPersistRecovery(current)) return
     await saveDocument(current)
   }), [])
 
@@ -397,6 +403,13 @@ export function App() {
     const current = documentsRef.current.find((item) => item.id === activeId)
     if (!current || current.mode === mode) return
     if (mode === 'source') {
+      if (isStructuredFormat(current.format)) {
+        void (pendingSerializations.current.get(current.id) ?? Promise.resolve()).then(() => {
+          const latest = documentsRef.current.find((item) => item.id === current.id)
+          if (latest) publishDocument(documentController.current.changeMode(latest, 'source'))
+        })
+        return
+      }
       void flushDocument(current.id, () => documentsRef.current.find((item) => item.id === current.id) ?? null, () => pendingSerializations.current.get(current.id)).then((document) => {
         publishDocument(documentController.current.changeMode(document, 'source'))
       }).catch((error: unknown) => notify(error instanceof Error ? error.message : '원본 편집기를 준비하지 못했습니다.', 'error'))
@@ -423,7 +436,8 @@ export function App() {
       eml: 'Subject: \r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n',
       csv: '', md: '',
       ics: 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//The Viewer//EN\r\nCALSCALE:GREGORIAN\r\nEND:VCALENDAR\r\n',
-      vcf: 'BEGIN:VCARD\r\nVERSION:4.0\r\nFN:\r\nN:;;;;\r\nEND:VCARD\r\n'
+      vcf: 'BEGIN:VCARD\r\nVERSION:4.0\r\nFN:\r\nN:;;;;\r\nEND:VCARD\r\n',
+      json: '{}', yaml: '{}\n', toml: ''
     }
     const bytes = new TextEncoder().encode(templates[format])
     try {
@@ -440,6 +454,19 @@ export function App() {
   const saveCurrent = useCallback(async () => {
     if (!activeDocument) return
     const id = activeDocument.id
+    const selectedFormat = structuredFormats[id] ?? 'json'
+    if (activeDocument.mode === 'view' && isStructuredFormat(activeDocument.format) && selectedFormat !== activeDocument.format) {
+      const current = documentsRef.current.find((item) => item.id === id)
+      if (!current || current.parseState !== 'ready' || current.modelRevision !== current.revision) { notify('원본을 해석한 뒤 내보낼 수 있습니다.', 'error'); return }
+      const output = outputStructured(current.model as StructuredModel, selectedFormat)
+      if (output.text === null) { notify(output.issues[0] ?? '선택한 형식으로 내보낼 수 없습니다.', 'error'); return }
+      const name = current.name.replace(/\.[^.]+$/, '') + `.${selectedFormat}`
+      try {
+        const status = await saveLocalFile(name, selectedFormat, new TextEncoder().encode(output.text))
+        if (status !== 'cancelled') notify(status === 'saved' ? '선택한 형식의 파일을 저장했습니다.' : '선택한 형식의 내려받기를 시작했습니다.', 'success')
+      } catch (error) { if (!(error instanceof DOMException && error.name === 'AbortError')) notify(error instanceof Error ? `내보내기 실패: ${error.message}` : '내보내기 실패', 'error') }
+      return
+    }
     let snapshot: ReturnType<typeof buildExportSnapshot>
     try {
       const item = await flushDocument(id, () => documentsRef.current.find((document) => document.id === id) ?? null, () => pendingSerializations.current.get(id))
@@ -458,7 +485,7 @@ export function App() {
       publishDocument(documentController.current.markSaved(current, snapshot))
     }
     notify(status === 'saved' ? '파일을 저장했습니다.' : '내려받기를 시작했습니다.', 'success')
-  }, [activeDocument, notify, publishDocument])
+  }, [activeDocument, notify, publishDocument, structuredFormats])
 
   const revertCurrent = useCallback(async () => {
     if (!activeDocument || !window.confirm('마지막 저장·내보내기 기준으로 복원할까요? 현재 편집 내용은 사라집니다.')) return
@@ -466,15 +493,17 @@ export function App() {
     try {
       const parsed = await parseWithWorker(item.name, item.mimeType, new Uint8Array(item.savedBytes), item.format, { documentId: item.id, revision: item.revision, csvHasHeader: item.format === 'csv' ? (item.model as CsvModel).hasHeader : undefined })
       if (documentsRef.current.find((document) => document.id === item.id)?.revision !== item.revision) return
+      if (hasFatalDiagnostics(parsed.format, parsed.model, parsed.diagnostics)) throw new Error(parsed.diagnostics[0] ?? '저장된 원문을 해석하지 못했습니다.')
       const revision = item.revision + 1
-      publishDocument({ ...item, text: parsed.text, model: parsed.model, savedText: parsed.text, bom: hasByteOrderMark(item.savedBytes), sourceError: undefined, isDirty: false, revision, modelRevision: revision, textRevision: revision, parseState: 'ready', diagnostics: diagnosticsFromMessages(parsed.diagnostics), encoding: parsed.encoding })
+      publishDocument({ ...item, text: parsed.text, model: parsed.model, savedText: parsed.text, bom: hasByteOrderMark(item.savedBytes), sourceError: undefined, structuredDraft: false, isDirty: false, revision, modelRevision: revision, textRevision: revision, parseState: 'ready', diagnostics: diagnosticsFromMessages(parsed.diagnostics), encoding: parsed.encoding })
       documentController.current.clearHistory(item.id)
       notify('마지막 저장본으로 복원했습니다.', 'success')
     } catch (error) {
       const message = error instanceof Error ? error.message : '원본 파일을 해석하지 못했습니다.'
       if (documentsRef.current.find((document) => document.id === item.id)?.revision !== item.revision) return
       const revision = item.revision + 1
-      publishDocument({ ...item, text: item.savedText, bom: hasByteOrderMark(item.savedBytes), textRevision: revision, revision, parseState: 'error', diagnostics: [{ severity: 'error', message }], sourceError: message, isDirty: false })
+      const restored: ViewerDocument = { ...item, text: item.savedText, bom: hasByteOrderMark(item.savedBytes), textRevision: revision, revision, structuredDraft: false, parseState: 'error', diagnostics: [{ severity: 'error', message }], sourceError: message }
+      publishDocument({ ...restored, isDirty: documentIsDirty(restored) })
       documentController.current.clearHistory(item.id)
       notify('저장된 원문으로 복원했습니다. 구조 편집에는 유효한 문서가 필요합니다.', 'info')
     }
@@ -649,6 +678,7 @@ export function App() {
       const target = event.target as HTMLElement | null
       const editingText = Boolean(target?.closest('input, textarea, select, [contenteditable="true"], .cm-content'))
       const command = event.metaKey || event.ctrlKey
+      if (editingText && target?.closest('.structured-editor') && command && ['z', 'y'].includes(event.key.toLowerCase())) return
       if (command && event.key.toLowerCase() === 'k') { event.preventDefault(); setShowCommand((open) => !open); return }
       if (command && event.key.toLowerCase() === 'o') { event.preventDefault(); pickFiles(); return }
       if (command && event.shiftKey && event.key.toLowerCase() === 'l') { event.preventDefault(); changeTheme(theme === 'dark' ? 'light' : 'dark'); return }
@@ -665,6 +695,15 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [activeDocument, changeTheme, theme, showCommand, showSettings, showPaste, pickFiles, saveCurrent, undo])
 
+  useEffect(() => {
+    if (!activeId) return
+    const begin = () => documentController.current.beginContinuousGroup(activeId)
+    const end = () => documentController.current.endContinuousGroup(activeId)
+    window.addEventListener('structured:group-start', begin)
+    window.addEventListener('structured:group-end', end)
+    return () => { window.removeEventListener('structured:group-start', begin); window.removeEventListener('structured:group-end', end); end() }
+  }, [activeId])
+
   const onDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault()
     void readDroppedFiles(event.dataTransfer.files).then((files) => openFiles(files)).catch((error: unknown) => notify(error instanceof Error ? error.message : '놓은 파일을 읽지 못했습니다.', 'error'))
@@ -672,10 +711,11 @@ export function App() {
   const switchTab = (id: string) => { setActiveId(id); location.hash = `/file/${id}` }
   const renderActiveDocument = (document: ViewerDocument) => renderDocument(
     document,
-    (model, group) => changeModel(document.id, document.revision, model, group),
+    (model, group) => changeModel(document.id, isStructuredFormat(document.format) ? documentsRef.current.find((item) => item.id === document.id)?.revision ?? document.revision : document.revision, model, group),
     (text, group) => applySourceText(document.id, text, group),
     openAttachment, downloadAttachment, resolvedTheme,
-    () => undo(), () => undo(true)
+    () => undo(), () => undo(true), structuredFormats[document.id] ?? 'json',
+    (format) => setStructuredFormats((current) => ({ ...current, [document.id]: format }))
   )
 
   return <div className="app-shell" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
@@ -692,7 +732,7 @@ export function App() {
           {activeDocument.parseState === 'ready' && activeDocument.diagnostics.some((item) => item.severity === 'warning') && <div className="inline-warning" role="status">진단 {activeDocument.diagnostics.filter((item) => item.severity === 'warning').length}개 · {activeDocument.diagnostics.find((item) => item.severity === 'warning')?.message}</div>}
           <FeatureLoadBoundary key={activeDocument.id} fileName={activeDocument.name} sourceText={activeDocument.text}>
             <Suspense fallback={null}>
-              {activeDocument.mode === 'view' ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)}
+              {activeDocument.mode === 'view' && !isStructuredFormat(activeDocument.format) ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)}
             </Suspense>
           </FeatureLoadBoundary>
         </div>
@@ -712,7 +752,7 @@ export function App() {
   </div>
 }
 
-function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel, group?: 'typing' | 'command') => void, onText: (text: string, group?: 'typing' | 'command') => void, onOpenAttachment: (index: number) => void, onDownloadAttachment: (index: number) => void, theme: 'light' | 'dark', onUndo: () => void, onRedo: () => void) {
+function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel, group?: 'typing' | 'command') => void, onText: (text: string, group?: 'typing' | 'command') => void, onOpenAttachment: (index: number) => void, onDownloadAttachment: (index: number) => void, theme: 'light' | 'dark', onUndo: () => void, onRedo: () => void, structuredFormat: StructuredFormat, onStructuredFormat: (format: StructuredFormat) => void) {
   if (document.mode === 'source') return <SourceEditor documentId={document.id} format={document.format} csvDelimiter={document.format === 'csv' ? (document.model as CsvModel).delimiter : ','} value={document.text} diagnostics={document.diagnostics} theme={theme} onChange={onText} onUndo={onUndo} onRedo={onRedo} label={`${document.name} 원본 편집기`} />
   switch (document.format) {
     case 'csv': return <CsvEditor document={document} model={document.model as CsvModel} onChange={(model, group) => onModel(model, group)} theme={theme} />
@@ -720,6 +760,7 @@ function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel
     case 'eml': return <EmailEditor document={document} model={document.model as EmailModel} onOpenAttachment={onOpenAttachment} onDownloadAttachment={onDownloadAttachment} />
     case 'ics': return <CalendarEditor document={document} model={document.model as CalendarModel} onChange={(model, group) => onModel(model, group)} />
     case 'vcf': return <ContactsEditor document={document} model={document.model as ContactModel} onChange={(model, group) => onModel(model, group)} />
+    case 'json': case 'yaml': case 'toml': return <StructuredDataEditor document={document} model={document.model as StructuredModel} onChange={onModel} onUndo={onUndo} onRedo={onRedo} outputFormat={structuredFormat} onOutputFormat={onStructuredFormat} />
   }
 }
 

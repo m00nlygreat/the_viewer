@@ -3,6 +3,9 @@ import { parseWithWorker } from './workerClient'
 import { serializeDocument } from './serialize'
 import { hasFatalDiagnostics } from './parseDiagnostics'
 import { assertInputFileSize } from './inputPolicy'
+import { isStructuredFormat, sameStructuredNode, type StructuredModel } from './structured/model'
+import { serializeStructured } from './structured/output'
+import { patchSingleScalarSource, withoutSourceRanges } from './structured/sourcePatch'
 
 export interface HistoryEntry {
   model: DocumentModel
@@ -14,6 +17,7 @@ export interface HistoryEntry {
   parseState: ViewerDocument['parseState']
   diagnostics: ParseDiagnostic[]
   bom: boolean
+  structuredDraft?: boolean
 }
 
 export interface ExportSnapshot { documentId: string; revision: number; text: string; bytes: Uint8Array; encoding: string }
@@ -24,8 +28,17 @@ export function hasByteOrderMark(bytes: ArrayBuffer): boolean {
     (view[0] === 0xff && view[1] === 0xfe) || (view[0] === 0xfe && view[1] === 0xff)
 }
 
-export function documentIsDirty(document: Pick<ViewerDocument, 'text' | 'savedText' | 'bom' | 'savedBytes'>): boolean {
-  return document.text !== document.savedText || document.bom !== hasByteOrderMark(document.savedBytes)
+export function documentIsDirty(document: Pick<ViewerDocument, 'text' | 'savedText' | 'bom' | 'savedBytes'> & Partial<Pick<ViewerDocument, 'model' | 'structuredDraft'>>): boolean {
+  const loose = document.model && 'loose' in document.model ? (document.model as StructuredModel).loose.length : 0
+  return document.text !== document.savedText || document.bom !== hasByteOrderMark(document.savedBytes) || Boolean(document.structuredDraft || loose)
+}
+
+/** A structured draft deliberately keeps the last valid source at an older revision. */
+export function canPersistRecovery(document: ViewerDocument): boolean {
+  return document.textRevision === document.revision || (
+    isStructuredFormat(document.format) && document.structuredDraft === true &&
+    document.parseState === 'ready' && document.modelRevision === document.revision
+  )
 }
 
 export function diagnosticsFromMessages(messages: readonly string[], severity: ParseDiagnostic['severity'] = 'warning'): ParseDiagnostic[] {
@@ -36,7 +49,7 @@ export function diagnosticsFromMessages(messages: readonly string[], severity: P
 }
 
 export function historyEntry(document: ViewerDocument): HistoryEntry {
-  return { model: structuredClone(document.model), text: document.text, revision: document.revision, modelRevision: document.modelRevision, textRevision: document.textRevision, sourceError: document.sourceError, parseState: document.parseState, diagnostics: structuredClone(document.diagnostics), bom: document.bom }
+  return { model: structuredClone(document.model), text: document.text, revision: document.revision, modelRevision: document.modelRevision, textRevision: document.textRevision, sourceError: document.sourceError, parseState: document.parseState, diagnostics: structuredClone(document.diagnostics), bom: document.bom, structuredDraft: document.structuredDraft }
 }
 
 export function applySourceEdit(documentId: string, nextText: string, document: ViewerDocument): ViewerDocument {
@@ -52,6 +65,7 @@ export function applySourceEdit(documentId: string, nextText: string, document: 
     modelRevision: isMarkdown ? revision : document.modelRevision,
     parseState: isMarkdown ? 'ready' : 'pending',
     diagnostics: [],
+    structuredDraft: false,
     sourceError: undefined,
     isDirty: documentIsDirty({ ...document, text: nextText }), lastEditedAt: Date.now()
   }
@@ -60,13 +74,32 @@ export function applySourceEdit(documentId: string, nextText: string, document: 
 export async function applyViewCommand(documentId: string, baseRevision: number, model: DocumentModel, document: ViewerDocument): Promise<ViewerDocument> {
   if (document.id !== documentId || document.revision !== baseRevision) throw new Error('문서가 변경되어 편집 내용을 적용하지 못했습니다. 다시 시도하세요.')
   if (document.parseState !== 'ready' || document.modelRevision !== document.revision) throw new Error('원본을 먼저 수정해 구조 편집을 사용할 수 없습니다.')
+  if (isStructuredFormat(document.format)) return applyStructuredViewCommand(baseRevision, model as StructuredModel, document)
   const text = await serializeDocument(document.format, model, document.text)
   const bom = document.format === 'csv' ? Boolean('bom' in model && model.bom) : document.bom
   return {
     ...document, model, text, revision: baseRevision + 1, modelRevision: baseRevision + 1, textRevision: baseRevision + 1,
-    bom, parseState: 'ready', diagnostics: [], sourceError: undefined,
-    isDirty: documentIsDirty({ ...document, text, bom }), lastEditedAt: Date.now()
+    bom, parseState: 'ready', diagnostics: [], sourceError: undefined, structuredDraft: false,
+    isDirty: documentIsDirty({ ...document, model, text, bom, structuredDraft: false }), lastEditedAt: Date.now()
   }
+}
+
+export function applyStructuredViewCommand(baseRevision: number, model: StructuredModel, document: ViewerDocument): ViewerDocument {
+  if (!isStructuredFormat(document.format)) throw new Error('구조 데이터 문서가 아닙니다.')
+  const revision = baseRevision + 1
+  let text = document.text
+  let structuredDraft = false
+  let nextModel = model
+  if (document.structuredDraft || !sameStructuredNode((document.model as StructuredModel).root, model.root)) {
+    try {
+      const serialized = serializeStructured(model, document.format)
+      const patched = document.structuredDraft ? null : patchSingleScalarSource(document.model as StructuredModel, model, document.text, document.format)
+      text = patched?.text ?? serialized
+      nextModel = patched?.model ?? withoutSourceRanges(model)
+    }
+    catch { structuredDraft = true }
+  }
+  return { ...document, model: nextModel, text, revision, modelRevision: revision, textRevision: structuredDraft ? document.textRevision : revision, structuredDraft, parseState: 'ready', diagnostics: [], sourceError: undefined, isDirty: documentIsDirty({ ...document, model: nextModel, text, structuredDraft }), lastEditedAt: Date.now() }
 }
 
 export async function flushDocument(documentId: string, readDocument: () => ViewerDocument | null, readPending?: () => Promise<unknown> | undefined): Promise<ViewerDocument> {
@@ -79,15 +112,15 @@ export async function flushDocument(documentId: string, readDocument: () => View
   const document = readDocument()
   if (!document) throw new Error('문서를 찾을 수 없습니다.')
   if (document.id !== documentId) throw new Error('문서가 변경되어 작업을 반영하지 못했습니다.')
-  if (document.textRevision !== document.revision) throw new Error('보기 편집을 원문으로 반영하지 못했습니다. 내보내기 전에 다시 시도하세요.')
+  if (document.textRevision !== document.revision && !(document.structuredDraft && document.mode === 'source')) throw new Error('빈 자리나 출력할 수 없는 값을 해결한 뒤 내보내세요.')
   return document
 }
 
 export function undoDocument(documentId: string, document: ViewerDocument, entry: HistoryEntry): ViewerDocument {
   if (document.id !== documentId) return document
   const revision = document.revision + 1
-  const modelMatches = entry.parseState === 'ready' && entry.modelRevision === entry.revision && entry.textRevision === entry.revision
-  const restored: ViewerDocument = { ...document, ...entry, revision, textRevision: revision, modelRevision: modelMatches ? revision : entry.modelRevision, parseState: modelMatches ? 'ready' : entry.parseState === 'error' ? 'error' : 'pending', lastEditedAt: Date.now() }
+  const modelMatches = entry.parseState === 'ready' && entry.modelRevision === entry.revision && (entry.textRevision === entry.revision || entry.structuredDraft)
+  const restored: ViewerDocument = { ...document, ...entry, revision, textRevision: entry.structuredDraft ? revision - 1 : revision, modelRevision: modelMatches ? revision : entry.modelRevision, parseState: modelMatches ? 'ready' : entry.parseState === 'error' ? 'error' : 'pending', lastEditedAt: Date.now() }
   return { ...restored, isDirty: documentIsDirty(restored) }
 }
 
@@ -95,8 +128,8 @@ export const redoDocument = undoDocument
 
 export function buildExportSnapshot(documentId: string, document: ViewerDocument): ExportSnapshot {
   if (document.id !== documentId) throw new Error('내보낼 문서를 찾을 수 없습니다.')
-  if (document.textRevision !== document.revision) throw new Error('원문 반영이 끝나지 않아 내보낼 수 없습니다.')
-  if (!documentIsDirty(document)) return { documentId, revision: document.revision, text: document.savedText, bytes: new Uint8Array(document.savedBytes.slice(0)), encoding: document.encoding }
+  if (document.textRevision !== document.revision && !(document.structuredDraft && document.mode === 'source')) throw new Error('빈 자리나 출력할 수 없는 값을 해결한 뒤 내보내세요.')
+  if (document.text === document.savedText && document.bom === hasByteOrderMark(document.savedBytes)) return { documentId, revision: document.revision, text: document.savedText, bytes: new Uint8Array(document.savedBytes.slice(0)), encoding: document.encoding }
   const text = document.text
   const payload = new TextEncoder().encode(`${document.bom ? '\uFEFF' : ''}${text}`)
   return { documentId, revision: document.revision, text, bytes: payload, encoding: 'UTF-8' }

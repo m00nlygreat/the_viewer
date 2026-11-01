@@ -1,4 +1,5 @@
 import { FORMAT_MIME_ALIASES, FORMATS, GENERIC_FILE_MIME_TYPES } from '../fileTypes'
+import { FORMAT_EXTENSIONS } from '../../domain/fileFormats'
 
 const AUTO_OPEN_TOKEN_KEY = 'auto-open-token'
 const AUTO_OPEN_RULE_IDS = [73101, 73102, 73103, 73104, 73105]
@@ -14,7 +15,7 @@ function createAutoOpenRules(token: string): chrome.declarativeNetRequest.Rule[]
   const redirect = {
     regexSubstitution: `${extensionPage}#auto/${token}/\\0`
   }
-  const supportedPath = `[^?]*\\.(${FORMATS.join('|')})(\\?.*)?$`
+  const supportedPath = `[^?]*\\.(${Object.values(FORMAT_EXTENSIONS).flat().join('|')})(\\?.*)?$`
   const mimePatterns = (types: readonly string[]) => types.flatMap((type) => [type, `${type};*`, `${type} ;*`])
   const supportedMimeValues = mimePatterns(FORMATS.flatMap((format) => FORMAT_MIME_ALIASES[format]))
   const genericMimeValues = mimePatterns(GENERIC_FILE_MIME_TYPES)
@@ -63,9 +64,9 @@ function createAutoOpenRules(token: string): chrome.declarativeNetRequest.Rule[]
       action: { type: 'redirect', redirect },
       condition: {
         ...condition,
-        responseHeaders: [{ header: 'content-disposition', values: FORMATS.flatMap((format) => [
-          `*filename=*.${format}`, `*filename=*.${format};*`, `*filename="*.${format}"*`,
-          `*filename*=UTF-8''*.${format}`, `*filename*=UTF-8''*.${format};*`
+        responseHeaders: [{ header: 'content-disposition', values: Object.values(FORMAT_EXTENSIONS).flat().flatMap((extension) => [
+          `*filename=*.${extension}`, `*filename=*.${extension};*`, `*filename="*.${extension}"*`,
+          `*filename*=UTF-8''*.${extension}`, `*filename*=UTF-8''*.${extension};*`
         ]) }],
         excludedResponseHeaders: [{ header: 'content-type', excludedValues: [...supportedMimeValues, ...genericMimeValues] }]
       }

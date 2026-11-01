@@ -1,4 +1,5 @@
 import type { Format } from './fileFormats'
+import type { StructuredModel } from './structured/model'
 export { FORMATS, FORMAT_MIME, FORMAT_MIME_ALIASES, GENERIC_FILE_MIME_TYPES, FORMAT_LABEL, getFormat } from './fileFormats'
 export type { Format } from './fileFormats'
 export type EditorMode = 'view' | 'source'
@@ -88,6 +89,9 @@ export interface DocumentModelByFormat {
   md: { text: string }
   ics: CalendarModel
   vcf: ContactModel
+  json: StructuredModel
+  yaml: StructuredModel
+  toml: StructuredModel
 }
 export type DocumentModel = DocumentModelByFormat[Format]
 
@@ -116,6 +120,8 @@ export interface ViewerDocument {
   bom: boolean
   savedText: string
   isDirty: boolean
+  /** The block graph is a recoverable draft that cannot yet be written to source. */
+  structuredDraft?: boolean
   sourceError?: string
   openedAt: number
   lastEditedAt: number

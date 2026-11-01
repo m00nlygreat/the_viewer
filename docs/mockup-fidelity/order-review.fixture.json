@@ -1,0 +1,92 @@
+{
+  "name": "order-mockup-review",
+  "viewport": {
+    "width": 1440,
+    "height": 980
+  },
+  "theme": "light",
+  "zoom": 1,
+  "sourceFormat": "json",
+  "source": {
+    "id": "A-1042",
+    "customer": {
+      "name": "한서연",
+      "tier": "gold"
+    },
+    "recipient": {
+      "name": "이도윤"
+    },
+    "total": 0,
+    "paid": true,
+    "wrapColor": "#E11D48",
+    "placedAt": "2026-10-27T09:12:44+09:00",
+    "tags": [
+      "gift",
+      "express",
+      null
+    ],
+    "note": null,
+    "memo": "확인 필요"
+  },
+  "manualDraftSteps": [
+    {
+      "action": "detach",
+      "path": "$.total"
+    },
+    {
+      "action": "removeDetached",
+      "originalPath": "$.total"
+    },
+    {
+      "action": "detach",
+      "path": "$.tags[2]"
+    },
+    {
+      "action": "removeDetached",
+      "originalPath": "$.tags[2]"
+    },
+    {
+      "action": "detach",
+      "path": "$.memo"
+    },
+    {
+      "action": "removePropertySlot",
+      "path": "$.memo"
+    }
+  ],
+  "expectedDraft": {
+    "rootPropertyCount": 9,
+    "slots": [
+      "$.total",
+      "$.tags[2]"
+    ],
+    "nulls": [
+      "$.note"
+    ],
+    "detached": [
+      {
+        "key": "memo",
+        "type": "string",
+        "value": "확인 필요",
+        "referencePosition": {
+          "x": 620,
+          "y": 620
+        }
+      }
+    ]
+  },
+  "view": {
+    "collapsed": [
+      "$.recipient"
+    ],
+    "expanded": [
+      "$",
+      "$.customer",
+      "$.tags"
+    ],
+    "selected": "$.wrapColor",
+    "output": "json"
+  },
+  "note": "수동 재현용 명세. 앱 저장 모델이 아니다. placedAt은 문자열이며 비교를 위해 날짜 타입으로 변환하지 않는다."
+}
+

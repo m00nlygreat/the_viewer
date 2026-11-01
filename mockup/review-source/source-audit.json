@@ -1,0 +1,107 @@
+{
+  "basis": "extracted source executed in a Node VM with DOM stubs; not browser verification",
+  "sourceSha256": "83e3a3dd16280a36a1de6c90408a999d1a62ca893650225d4a6b20acac0a5453",
+  "initial": {
+    "palette": [
+      {
+        "name": "텍스트",
+        "label": "abc"
+      },
+      {
+        "name": "숫자",
+        "label": "0"
+      },
+      {
+        "name": "불리언",
+        "label": "true"
+      },
+      {
+        "name": "날짜",
+        "label": "2026-10-29"
+      },
+      {
+        "name": "색",
+        "label": "#E11D48"
+      },
+      {
+        "name": "없음",
+        "label": "없음"
+      }
+    ],
+    "schemas": [
+      {
+        "name": "customer",
+        "count": "2곳",
+        "fields": [
+          {
+            "key": "name",
+            "optional": false
+          },
+          {
+            "key": "tier",
+            "optional": true
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "dot": "#DC2626",
+        "label": "빈 자리",
+        "detail": "$.total"
+      },
+      {
+        "dot": "#DC2626",
+        "label": "빈 자리",
+        "detail": "$.tags[2]"
+      },
+      {
+        "dot": "#A3A3A3",
+        "label": "연결 안 된 블록",
+        "detail": "1개"
+      }
+    ],
+    "roots": [
+      {
+        "id": "doc",
+        "x": 48,
+        "y": 40,
+        "isDocument": true
+      },
+      {
+        "id": "n130",
+        "x": 620,
+        "y": 620,
+        "isDocument": false
+      }
+    ],
+    "zoom": "100%",
+    "leftWidth": 220,
+    "rightWidth": 340
+  },
+  "toml": {
+    "note": "TOML에는 '없음' 값이 없어서 note은(는) 빠졌어요.",
+    "checks": [
+      {
+        "dot": "#DC2626",
+        "label": "빈 자리",
+        "detail": "$.total"
+      },
+      {
+        "dot": "#DC2626",
+        "label": "빈 자리",
+        "detail": "$.tags[2]"
+      },
+      {
+        "dot": "#A3A3A3",
+        "label": "연결 안 된 블록",
+        "detail": "1개"
+      }
+    ]
+  },
+  "largeNumberAfterPrototypeImport": "9007199254740992",
+  "dragEnd": {
+    "error": "TypeError: Cannot read properties of null (reading 'kind')",
+    "reason": "dragEnd clears this._drag before findTarget reads this._drag.kind"
+  }
+}

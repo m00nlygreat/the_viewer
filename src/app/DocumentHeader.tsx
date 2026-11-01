@@ -1,5 +1,6 @@
 import { ChevronDown, Command, FileText, FolderOpen, LogOut, Moon, Redo2, Settings2, Share2, Sun, Undo2, Upload } from 'lucide-react'
 import type { ViewerDocument } from '../domain/types'
+import { isStructuredFormat } from '../domain/structured/model'
 import { safeDisplayFileName } from './displayName'
 
 interface HeaderProps {
@@ -29,6 +30,7 @@ export function DocumentHeader(props: HeaderProps) {
         <button className="icon-button desktop-only" aria-label="다시 실행" title="다시 실행" onClick={onRedo}><Redo2 size={15} /></button>
         <div className="topbar-divider desktop-only" />
         <DocumentModeTabs document={document} placement="desktop" onModeChange={onModeChange} />
+        {document.mode === 'view' && isStructuredFormat(document.format) && <><button className="secondary-button" onClick={() => window.dispatchEvent(new Event('structured:import'))}>가져오기</button><button className="secondary-button" onClick={() => window.dispatchEvent(new Event('structured:copy'))}>출력 복사</button></>}
         <button className="icon-button theme-toggle" aria-label={`현재 ${theme === 'dark' ? '다크' : '라이트'} 테마; 테마 변경`} title="테마 전환" onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}</button>
         <button className="primary-button export-button" onClick={onSave}><Upload size={14} /><span>내보내기</span><ChevronDown size={12} /></button>
         {canShare && <button className="icon-button desktop-only" aria-label="시스템 공유" title="시스템 공유" onClick={onShare}><Share2 size={15} /></button>}

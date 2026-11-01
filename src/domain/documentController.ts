@@ -1,5 +1,6 @@
 import type { DocumentModel, EditorMode, ViewerDocument } from './types'
-import { applySourceEdit, applyViewCommand, documentIsDirty, historyEntry, redoDocument, undoDocument, type ExportSnapshot, type HistoryEntry } from './session'
+import { applySourceEdit, applyStructuredViewCommand, applyViewCommand, documentIsDirty, historyEntry, redoDocument, undoDocument, type ExportSnapshot, type HistoryEntry } from './session'
+import { isStructuredFormat, type StructuredModel } from './structured/model'
 
 type ChangeGroup = 'typing' | 'command'
 type HistoryStack = { undo: HistoryEntry[]; redo: HistoryEntry[] }
@@ -22,6 +23,7 @@ export interface PreparedViewCommand {
 export class DocumentController {
   private readonly history = new Map<string, HistoryStack>()
   private readonly lastGroup = new Map<string, { group: ChangeGroup; at: number }>()
+  private readonly continuousGroups = new Set<string>()
 
   constructor(
     private readonly maxHistoryEntries = DEFAULT_MAX_HISTORY_ENTRIES,
@@ -31,13 +33,16 @@ export class DocumentController {
   recordHistory(document: ViewerDocument, group: ChangeGroup = 'command', now = Date.now()): void {
     const stack = this.history.get(document.id) ?? { undo: [], redo: [] }
     const previousGroup = this.lastGroup.get(document.id)
-    const coalesce = group === 'typing' && previousGroup?.group === 'typing' && now - previousGroup.at < 800
+    const coalesce = group === 'typing' && previousGroup?.group === 'typing' && (this.continuousGroups.has(document.id) || now - previousGroup.at < 800)
     if (!coalesce) stack.undo.push(historyEntry(document))
     stack.redo = []
     this.trimHistory(stack)
     this.history.set(document.id, stack)
     this.lastGroup.set(document.id, { group, at: now })
   }
+
+  beginContinuousGroup(documentId: string): void { this.lastGroup.delete(documentId); this.continuousGroups.add(documentId) }
+  endContinuousGroup(documentId: string): void { this.continuousGroups.delete(documentId); this.lastGroup.delete(documentId) }
 
   applySourceText(document: ViewerDocument, nextText: string, group: ChangeGroup = 'typing'): ViewerDocument {
     if (document.text === nextText) return document
@@ -50,11 +55,15 @@ export class DocumentController {
     if (document.parseState !== 'ready' || document.modelRevision !== document.revision) throw new Error('원본을 먼저 수정해 구조 편집을 사용할 수 없습니다.')
     if (model === document.model) return null
     this.recordHistory(document, group, now)
+    if (isStructuredFormat(document.format)) {
+      const result = applyStructuredViewCommand(baseRevision, model as StructuredModel, document)
+      return { optimisticDocument: result, serializedDocument: Promise.resolve(result) }
+    }
     const revision = document.revision + 1
     return {
       optimisticDocument: {
         ...document, model, revision, modelRevision: revision, parseState: 'ready', diagnostics: [],
-        sourceError: undefined, isDirty: true, lastEditedAt: now
+        sourceError: undefined, structuredDraft: isStructuredFormat(document.format) ? true : document.structuredDraft, isDirty: true, lastEditedAt: now
       },
       serializedDocument: applyViewCommand(document.id, baseRevision, model, document)
     }
@@ -93,10 +102,12 @@ export class DocumentController {
     if (documentId === undefined) {
       this.history.clear()
       this.lastGroup.clear()
+      this.continuousGroups.clear()
       return
     }
     this.history.delete(documentId)
     this.lastGroup.delete(documentId)
+    this.continuousGroups.delete(documentId)
   }
 
   private trimHistory(stack: HistoryStack): void {

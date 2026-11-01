@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ko"><head>
+<meta charset="utf-8">
+<title>블록 데이터 에디터</title>
+
+</head>
+<body>
+<x-dc>
+<helmet>
+
+
+
+</helmet>
+<div style="min-height: 980px; box-sizing: border-box; background: #FFFFFF; color: #111111; font-family: 'Geist', 'Noto Sans KR', system-ui, sans-serif; font-size: 14px; line-height: 1.5; display: flex; flex-direction: column">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #EBEBEB">
+<span style="flex: 1 1 200px; font-size: 14px; font-weight: 500">order</span>
+<button type="button" sc-camel-on-click="{{openImport}}" style="min-height: 36px; padding: 0 14px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font-size: 13px; font-weight: 500">가져오기</button>
+<button type="button" sc-camel-on-click="{{exportCopy}}" title="지금 보고 있는 형식을 클립보드에 복사" style="min-height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: #111111; color: #FFFFFF; font-size: 13px; font-weight: 500">내보내기</button>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; align-items: stretch; flex: 1 1 auto">
+
+<aside aria-label="블록" style="flex: 0 0 auto; width: {{leftW}}px; max-width: 100%; min-width: 0; box-sizing: border-box; border-right: 1px solid #EBEBEB; padding: 20px; display: flex; flex-direction: column; gap: 28px">
+
+<div>
+<div style="font-size: 12px; color: #737373; margin-bottom: 10px">컨테이너</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div data-src="obj" sc-camel-on-pointer-down="{{srcDown}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04); cursor: grab; touch-action: none; user-select: none"><svg width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4H8a2 2 0 0 0-2 2v3.5a2.5 2.5 0 0 1-2 2.5 2.5 2.5 0 0 1 2 2.5V18a2 2 0 0 0 2 2h1M15 4h1a2 2 0 0 1 2 2v3.5a2.5 2.5 0 0 0 2 2.5 2.5 2.5 0 0 0-2 2.5V18a2 2 0 0 1-2 2h-1"></path></svg><span style="font-size: 13px">객체</span></div>
+<div data-src="arr" sc-camel-on-pointer-down="{{srcDown}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04); cursor: grab; touch-action: none; user-select: none"><svg width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4H5v16h4M15 4h4v16h-4"></path></svg><span style="font-size: 13px">배열</span></div>
+</div>
+</div>
+
+<div>
+<div style="font-size: 12px; color: #737373; margin-bottom: 10px">프로퍼티</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div data-src="prop" sc-camel-on-pointer-down="{{srcDown}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 8px; background: #F5F5F5; cursor: grab; touch-action: none; user-select: none"><span style="font-size: 12px; font-weight: 500; color: #404040">이름</span><span style="width: 40px; height: 20px; border: 1px dashed #A3A3A3; border-radius: 5px"></span></div>
+<div data-src="idx" sc-camel-on-pointer-down="{{srcDown}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" style="display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 8px; background: #F5F5F5; cursor: grab; touch-action: none; user-select: none"><span style="font-size: 12px; font-weight: 500; color: #737373">0</span><span style="width: 40px; height: 20px; border: 1px dashed #A3A3A3; border-radius: 5px"></span></div>
+</div>
+</div>
+
+<div>
+<div style="font-size: 12px; color: #737373; margin-bottom: 10px">값</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{palVals}}" as="pv" hint-placeholder-count="6">
+<div data-src="{{pv.src}}" sc-camel-on-pointer-down="{{srcDown}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: grab; touch-action: none; user-select: none"><span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 7px; background: #FFFFFF; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.08)"><sc-if value="{{pv.isColor}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 3px; background: {{pv.text}}; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12)"></span></sc-if><sc-if value="{{pv.notColor}}" hint-placeholder-val="{{ true }}"><svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#737373" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="{{pv.icon}}"></path></svg></sc-if><span style="font-size: 13px; color: {{pv.fg}}; font-style: {{pv.fs}}; font-variant-numeric: tabular-nums">{{pv.label}}</span></span><span style="font-size: 12px; color: #737373">{{pv.name}}</span></div>
+</sc-for>
+</div>
+</div>
+
+<div style="padding-top: 20px; border-top: 1px solid #EBEBEB">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px"><span style="font-size: 12px; color: #737373">스키마</span><span style="font-size: 11px; color: #A3A3A3">{{schemaCount}}</span></div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{schemas}}" as="sc" hint-placeholder-count="1">
+<div data-src="{{sc.src}}" sc-camel-on-pointer-down="{{srcDown}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" style="padding: 8px 10px 10px; background: #FFFFFF; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04); cursor: grab; touch-action: none; user-select: none">
+<div style="display: flex; align-items: center; gap: 6px; height: 24px"><svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H8a2 2 0 0 0-2 2v3.5a2.5 2.5 0 0 1-2 2.5 2.5 2.5 0 0 1 2 2.5V18a2 2 0 0 0 2 2h1M15 4h1a2 2 0 0 1 2 2v3.5a2.5 2.5 0 0 0 2 2.5 2.5 2.5 0 0 0-2 2.5V18a2 2 0 0 1-2 2h-1"></path></svg><span style="font-size: 13px; font-weight: 500">{{sc.name}}</span><span style="margin-left: auto; font-size: 11px; color: #737373">{{sc.count}}</span></div>
+<div style="display: flex; flex-direction: column; gap: 3px; margin-top: 6px; padding: 6px 8px; background: #F5F5F5; border-radius: 6px">
+<sc-for list="{{sc.fields}}" as="f" hint-placeholder-count="2">
+<div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #525252"><svg aria-hidden="true" width="11" height="11" sc-camel-view-box="0 0 24 24" fill="none" stroke="#737373" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="{{f.icon}}"></path></svg><span>{{f.key}}<sc-if value="{{f.opt}}" hint-placeholder-val="{{ false }}"><span aria-label="선택" style="font-weight: 600; color: #737373">?</span></sc-if></span></div>
+</sc-for>
+</div>
+</div>
+</sc-for>
+</div>
+</div>
+</aside>
+
+<button type="button" class="rz" aria-label="왼쪽 패널 너비 조절" title="드래그하거나 ← → 키로 조절 · 더블클릭하면 원래대로" data-active="{{lActive}}" sc-camel-on-pointer-down="{{leftDown}}" sc-camel-on-pointer-move="{{leftMove}}" sc-camel-on-pointer-up="{{rzEnd}}" sc-camel-on-pointer-cancel="{{rzEnd}}" sc-camel-on-key-down="{{leftKey}}" sc-camel-on-double-click="{{leftReset}}" style="flex: 0 0 9px; width: 9px; margin: 0 -5px 0 -4px; padding: 0; border: 0; align-self: stretch; position: relative; z-index: 5; cursor: col-resize; touch-action: none"></button>
+
+<main ref="{{mainRef}}" aria-label="작업 캔버스" sc-camel-tab-index="0" sc-camel-on-pointer-enter="{{mainEnter}}" sc-camel-on-key-down="{{mainKeyDown}}" sc-camel-on-key-up="{{mainKeyUp}}" sc-camel-on-blur="{{mainBlur}}" sc-camel-on-pointer-down="{{panDown}}" sc-camel-on-pointer-move="{{panMove}}" sc-camel-on-pointer-up="{{panEnd}}" sc-camel-on-pointer-cancel="{{panEnd}}" style="flex: 1 1 400px; min-width: 0; min-height: 860px; position: relative; overflow: hidden; touch-action: none; user-select: none; cursor: {{cursor}}; background-color: #FFFFFF; background-image: radial-gradient(#E0E0E0 1px, transparent 1px); background-size: {{dotSize}}; background-position: {{dotPos}}">
+<div ref="{{worldRef}}" style="position: absolute; left: 0; top: 0; width: 1040px; height: 860px; transform: {{worldTf}}; transform-origin: 0 0">
+
+<sc-for list="{{roots}}" as="rt" hint-placeholder-count="1">
+<div style="position: absolute; left: {{rt.x}}px; top: {{rt.y}}px; z-index: {{rt.z}}; opacity: {{rt.op}}">
+
+<sc-if value="{{rt.isCont}}" hint-placeholder-val="{{ true }}">
+<div data-cont="{{rt.c.id}}" data-collapsed="{{rt.c.collapsedStr}}" data-len="{{rt.c.count}}" style="width: fit-content; min-width: 260px; background: #FFFFFF; border-radius: 14px; box-shadow: {{rt.c.shadow}}; padding: 10px; opacity: {{rt.c.op}}">
+<div data-nid="{{rt.c.id}}" sc-camel-on-pointer-down="{{rt.c.headDown}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" style="display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 4px; cursor: {{rt.c.headCursor}}; touch-action: none">
+<sc-if value="{{rt.c.isFocus}}" hint-placeholder-val="{{ false }}"><button type="button" aria-label="전체 보기로 돌아가기" sc-camel-on-pointer-down="{{stop}}" sc-camel-on-click="{{rt.c.back}}" style="height: 24px; padding: 0 8px 0 6px; margin-left: -4px; border: 0; border-radius: 6px; background: #F5F5F5; font-size: 12px; color: #404040">← 전체</button></sc-if>
+<sc-if value="{{rt.c.canCollapse}}" hint-placeholder-val="{{ false }}"><button type="button" aria-label="{{rt.c.toggleLabel}}" aria-expanded="{{rt.c.open}}" sc-camel-on-pointer-down="{{stop}}" sc-camel-on-click="{{rt.c.toggle}}" style="width: 22px; height: 22px; margin-left: -4px; padding: 0; border: 0; border-radius: 5px; background: transparent; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="13" height="13" sc-camel-view-box="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: {{rt.c.chevRot}}"><path d="m9 6 6 6-6 6"></path></svg></button></sc-if>
+<svg role="img" aria-label="{{rt.c.typeName}}" width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{rt.c.icon}}"></path></svg>
+<span style="font-size: 12px; color: #737373; white-space: nowrap">{{rt.c.label}}</span>
+<sc-if value="{{rt.c.collapsed}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #A3A3A3; white-space: nowrap">{{rt.c.preview}}</span></sc-if>
+<span style="margin-left: auto; padding-left: 12px; font-size: 12px; color: #737373">{{rt.c.count}}</span>
+</div>
+<sc-if value="{{rt.c.open}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 6px; padding-top: 8px">
+<sc-for list="{{rt.c.items}}" as="r1" hint-placeholder-count="6">
+<div data-row="{{r1.id}}" data-parent="{{r1.pid}}" sc-camel-on-pointer-down="{{r1.down}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" sc-camel-on-double-click="{{r1.keyDbl}}" style="position: relative; display: flex; align-items: {{r1.align}}; gap: 12px; padding: 6px 8px 6px 12px; background: #F5F5F5; border-radius: 8px; width: fit-content; min-height: 40px; box-sizing: border-box; box-shadow: {{r1.ring}}; opacity: {{r1.op}}; cursor: grab; touch-action: none">
+<span aria-hidden="true" style="position: absolute; left: 4px; right: 4px; top: -4px; height: 2px; border-radius: 1px; background: {{r1.line}}"></span>
+<span data-key="1" style="min-width: 72px; font-size: 13px; font-weight: 500; color: {{r1.keyFg}}; font-style: {{r1.keyFs}}; white-space: nowrap; margin-top: {{r1.keyMt}}">{{r1.key}}</span>
+<sc-if value="{{r1.empty}}" hint-placeholder-val="{{ false }}"><span data-sock="{{r1.id}}" style="display: inline-block; width: 96px; height: 26px; box-sizing: border-box; border: {{r1.sock.border}}; border-radius: 6px; background: {{r1.sock.bg}}; box-shadow: {{r1.sock.ring}}"></span></sc-if>
+<sc-if value="{{r1.scalar}}" hint-placeholder-val="{{ true }}"><span data-nid="{{r1.v.id}}" sc-camel-on-pointer-down="{{r1.v.down}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" sc-camel-on-double-click="{{r1.v.dbl}}" style="display: inline-flex; align-items: center; gap: 6px; max-width: 320px; padding: 3px 9px 3px 7px; background: #FFFFFF; border-radius: 6px; box-shadow: {{r1.v.ring}}; opacity: {{r1.v.op}}; cursor: grab; touch-action: none; white-space: nowrap"><sc-if value="{{r1.v.isColor}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="flex: 0 0 12px; width: 12px; height: 12px; border-radius: 3px; background: {{r1.v.text}}; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12)"></span></sc-if><sc-if value="{{r1.v.notColor}}" hint-placeholder-val="{{ true }}"><svg role="img" aria-label="{{r1.v.typeName}}" style="flex: 0 0 12px" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#737373" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="{{r1.v.icon}}"></path></svg></sc-if><span style="overflow: hidden; text-overflow: ellipsis; font-size: 13px; color: {{r1.v.fg}}; font-style: {{r1.v.fs}}; font-variant-numeric: tabular-nums">{{r1.v.label}}</span></span></sc-if>
+<sc-if value="{{r1.contShown}}" hint-placeholder-val="{{ false }}">
+<div data-cont="{{r1.c.id}}" data-collapsed="{{r1.c.collapsedStr}}" data-len="{{r1.c.count}}" style="width: fit-content; min-width: 160px; background: #FFFFFF; border-radius: 10px; box-shadow: {{r1.c.shadow}}; padding: 6px 8px 8px; opacity: {{r1.c.op}}">
+<div data-nid="{{r1.c.id}}" sc-camel-on-pointer-down="{{r1.c.headDown}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" style="display: flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 4px; cursor: grab; touch-action: none">
+<button type="button" aria-label="{{r1.c.toggleLabel}}" aria-expanded="{{r1.c.open}}" sc-camel-on-pointer-down="{{stop}}" sc-camel-on-click="{{r1.c.toggle}}" style="width: 22px; height: 22px; margin-left: -6px; padding: 0; border: 0; border-radius: 5px; background: transparent; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="13" height="13" sc-camel-view-box="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: {{r1.c.chevRot}}"><path d="m9 6 6 6-6 6"></path></svg></button>
+<svg role="img" aria-label="{{r1.c.typeName}}" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{r1.c.icon}}"></path></svg>
+<sc-if value="{{r1.c.collapsed}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #A3A3A3; white-space: nowrap">{{r1.c.preview}}</span></sc-if>
+<span style="margin-left: auto; padding-left: 12px; font-size: 11px; color: #737373">{{r1.c.count}}</span>
+</div>
+<sc-if value="{{r1.c.open}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 5px; padding-top: 6px">
+<sc-for list="{{r1.c.items}}" as="r2" hint-placeholder-count="2">
+<div data-row="{{r2.id}}" data-parent="{{r2.pid}}" sc-camel-on-pointer-down="{{r2.down}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" sc-camel-on-double-click="{{r2.keyDbl}}" style="position: relative; display: flex; align-items: {{r2.align}}; gap: 10px; padding: 4px 6px 4px 10px; background: #F5F5F5; border-radius: 7px; width: fit-content; min-height: 34px; box-sizing: border-box; box-shadow: {{r2.ring}}; opacity: {{r2.op}}; cursor: grab; touch-action: none">
+<span aria-hidden="true" style="position: absolute; left: 4px; right: 4px; top: -4px; height: 2px; border-radius: 1px; background: {{r2.line}}"></span>
+<span data-key="1" style="min-width: 44px; font-size: 12.5px; font-weight: 500; color: {{r2.keyFg}}; font-style: {{r2.keyFs}}; white-space: nowrap; margin-top: {{r2.keyMt}}">{{r2.key}}</span>
+<sc-if value="{{r2.empty}}" hint-placeholder-val="{{ false }}"><span data-sock="{{r2.id}}" style="display: inline-block; width: 84px; height: 24px; box-sizing: border-box; border: {{r2.sock.border}}; border-radius: 6px; background: {{r2.sock.bg}}; box-shadow: {{r2.sock.ring}}"></span></sc-if>
+<sc-if value="{{r2.scalar}}" hint-placeholder-val="{{ true }}"><span data-nid="{{r2.v.id}}" sc-camel-on-pointer-down="{{r2.v.down}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" sc-camel-on-double-click="{{r2.v.dbl}}" style="display: inline-flex; align-items: center; gap: 6px; max-width: 280px; padding: 2px 8px 2px 6px; background: #FFFFFF; border-radius: 6px; box-shadow: {{r2.v.ring}}; opacity: {{r2.v.op}}; cursor: grab; touch-action: none; white-space: nowrap"><sc-if value="{{r2.v.isColor}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="flex: 0 0 11px; width: 11px; height: 11px; border-radius: 3px; background: {{r2.v.text}}; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12)"></span></sc-if><sc-if value="{{r2.v.notColor}}" hint-placeholder-val="{{ true }}"><svg role="img" aria-label="{{r2.v.typeName}}" style="flex: 0 0 11px" width="11" height="11" sc-camel-view-box="0 0 24 24" fill="none" stroke="#737373" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="{{r2.v.icon}}"></path></svg></sc-if><span style="overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; color: {{r2.v.fg}}; font-style: {{r2.v.fs}}; font-variant-numeric: tabular-nums">{{r2.v.label}}</span></span></sc-if>
+<sc-if value="{{r2.contShown}}" hint-placeholder-val="{{ false }}">
+<div data-cont="{{r2.c.id}}" data-collapsed="{{r2.c.collapsedStr}}" data-len="{{r2.c.count}}" style="width: fit-content; min-width: 140px; background: #FFFFFF; border-radius: 9px; box-shadow: {{r2.c.shadow}}; padding: 5px 7px 7px; opacity: {{r2.c.op}}">
+<div data-nid="{{r2.c.id}}" sc-camel-on-pointer-down="{{r2.c.headDown}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" style="display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 4px; cursor: grab; touch-action: none">
+<button type="button" aria-label="{{r2.c.toggleLabel}}" aria-expanded="{{r2.c.open}}" sc-camel-on-pointer-down="{{stop}}" sc-camel-on-click="{{r2.c.toggle}}" style="width: 22px; height: 22px; margin-left: -6px; padding: 0; border: 0; border-radius: 5px; background: transparent; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: {{r2.c.chevRot}}"><path d="m9 6 6 6-6 6"></path></svg></button>
+<svg role="img" aria-label="{{r2.c.typeName}}" width="13" height="13" sc-camel-view-box="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{r2.c.icon}}"></path></svg>
+<sc-if value="{{r2.c.collapsed}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #A3A3A3; white-space: nowrap">{{r2.c.preview}}</span></sc-if>
+<span style="margin-left: auto; padding-left: 10px; font-size: 11px; color: #737373">{{r2.c.count}}</span>
+</div>
+<sc-if value="{{r2.c.open}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 5px; padding-top: 5px">
+<sc-for list="{{r2.c.items}}" as="r3" hint-placeholder-count="2">
+<div data-row="{{r3.id}}" data-parent="{{r3.pid}}" sc-camel-on-pointer-down="{{r3.down}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" sc-camel-on-double-click="{{r3.keyDbl}}" style="position: relative; display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 10px; background: #F5F5F5; border-radius: 7px; width: fit-content; min-height: 32px; box-sizing: border-box; box-shadow: {{r3.ring}}; opacity: {{r3.op}}; cursor: grab; touch-action: none">
+<span aria-hidden="true" style="position: absolute; left: 4px; right: 4px; top: -4px; height: 2px; border-radius: 1px; background: {{r3.line}}"></span>
+<span data-key="1" style="min-width: 36px; font-size: 12px; font-weight: 500; color: {{r3.keyFg}}; font-style: {{r3.keyFs}}; white-space: nowrap">{{r3.key}}</span>
+<sc-if value="{{r3.empty}}" hint-placeholder-val="{{ false }}"><span data-sock="{{r3.id}}" style="display: inline-block; width: 76px; height: 22px; box-sizing: border-box; border: {{r3.sock.border}}; border-radius: 6px; background: {{r3.sock.bg}}; box-shadow: {{r3.sock.ring}}"></span></sc-if>
+<sc-if value="{{r3.scalar}}" hint-placeholder-val="{{ true }}"><span data-nid="{{r3.v.id}}" sc-camel-on-pointer-down="{{r3.v.down}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" sc-camel-on-double-click="{{r3.v.dbl}}" style="display: inline-flex; align-items: center; gap: 6px; max-width: 240px; padding: 2px 8px 2px 6px; background: #FFFFFF; border-radius: 6px; box-shadow: {{r3.v.ring}}; opacity: {{r3.v.op}}; cursor: grab; touch-action: none; white-space: nowrap"><sc-if value="{{r3.v.isColor}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="flex: 0 0 11px; width: 11px; height: 11px; border-radius: 3px; background: {{r3.v.text}}; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12)"></span></sc-if><sc-if value="{{r3.v.notColor}}" hint-placeholder-val="{{ true }}"><svg role="img" aria-label="{{r3.v.typeName}}" style="flex: 0 0 11px" width="11" height="11" sc-camel-view-box="0 0 24 24" fill="none" stroke="#737373" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="{{r3.v.icon}}"></path></svg></sc-if><span style="overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: {{r3.v.fg}}; font-style: {{r3.v.fs}}; font-variant-numeric: tabular-nums">{{r3.v.label}}</span></span></sc-if>
+<sc-if value="{{r3.cap}}" hint-placeholder-val="{{ false }}"><button type="button" sc-camel-on-pointer-down="{{stop}}" sc-camel-on-click="{{r3.focus}}" style="display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 8px; border: 0; border-radius: 7px; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04); font-size: 12px; color: #404040"><svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{r3.capIcon}}"></path></svg>{{r3.capCount}} · 열기</button></sc-if>
+</div>
+</sc-for>
+<div style="position: relative"><span aria-hidden="true" style="position: absolute; left: 4px; right: 4px; top: -4px; height: 2px; border-radius: 1px; background: {{r2.c.endLine}}"></span><button type="button" sc-camel-on-pointer-down="{{stop}}" sc-camel-on-click="{{r2.c.addSlot}}" style="height: 26px; padding: 0 8px; border: 1px dashed #D4D4D4; border-radius: 7px; background: transparent; font-size: 11.5px; color: #737373">+ 자리</button></div>
+</div>
+</sc-if>
+</div>
+</sc-if>
+</div>
+</sc-for>
+<div style="position: relative"><span aria-hidden="true" style="position: absolute; left: 4px; right: 4px; top: -4px; height: 2px; border-radius: 1px; background: {{r1.c.endLine}}"></span><button type="button" sc-camel-on-pointer-down="{{stop}}" sc-camel-on-click="{{r1.c.addSlot}}" style="height: 26px; padding: 0 8px; border: 1px dashed #D4D4D4; border-radius: 7px; background: transparent; font-size: 11.5px; color: #737373">+ 자리</button></div>
+</div>
+</sc-if>
+</div>
+</sc-if>
+</div>
+</sc-for>
+<div style="position: relative"><span aria-hidden="true" style="position: absolute; left: 4px; right: 4px; top: -4px; height: 2px; border-radius: 1px; background: {{rt.c.endLine}}"></span><button type="button" sc-camel-on-pointer-down="{{stop}}" sc-camel-on-click="{{rt.c.addSlot}}" style="height: 30px; padding: 0 12px; border: 1px dashed #D4D4D4; border-radius: 8px; background: transparent; font-size: 12px; color: #737373">+ 자리</button></div>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{rt.isSlot}}" hint-placeholder-val="{{ false }}">
+<div data-row="{{rt.s.id}}" sc-camel-on-pointer-down="{{rt.s.down}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" sc-camel-on-double-click="{{rt.s.keyDbl}}" style="display: flex; align-items: center; gap: 12px; padding: 6px 8px 6px 12px; background: #F5F5F5; border-radius: 8px; min-height: 40px; box-sizing: border-box; box-shadow: {{rt.s.ring}}; cursor: grab; touch-action: none; white-space: nowrap">
+<span data-key="1" style="font-size: 13px; font-weight: 500; color: {{rt.s.keyFg}}">{{rt.s.key}}</span>
+<sc-if value="{{rt.s.empty}}" hint-placeholder-val="{{ false }}"><span data-sock="{{rt.s.id}}" style="display: inline-block; width: 96px; height: 26px; box-sizing: border-box; border: {{rt.s.sock.border}}; border-radius: 6px; background: {{rt.s.sock.bg}}; box-shadow: {{rt.s.sock.ring}}"></span></sc-if>
+<sc-if value="{{rt.s.scalar}}" hint-placeholder-val="{{ true }}"><span data-nid="{{rt.s.v.id}}" sc-camel-on-pointer-down="{{rt.s.v.down}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" sc-camel-on-double-click="{{rt.s.v.dbl}}" style="display: inline-flex; align-items: center; gap: 6px; max-width: 320px; padding: 3px 9px 3px 7px; background: #FFFFFF; border-radius: 6px; box-shadow: {{rt.s.v.ring}}; opacity: {{rt.s.v.op}}; cursor: grab; touch-action: none"><sc-if value="{{rt.s.v.isColor}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="flex: 0 0 12px; width: 12px; height: 12px; border-radius: 3px; background: {{rt.s.v.text}}; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12)"></span></sc-if><sc-if value="{{rt.s.v.notColor}}" hint-placeholder-val="{{ true }}"><svg role="img" aria-label="{{rt.s.v.typeName}}" style="flex: 0 0 12px" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#737373" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="{{rt.s.v.icon}}"></path></svg></sc-if><span style="overflow: hidden; text-overflow: ellipsis; font-size: 13px; color: {{rt.s.v.fg}}; font-style: {{rt.s.v.fs}}; font-variant-numeric: tabular-nums">{{rt.s.v.label}}</span></span></sc-if>
+<sc-if value="{{rt.s.isCont}}" hint-placeholder-val="{{ false }}"><span sc-camel-on-pointer-down="{{rt.s.contDown}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" style="display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 8px; background: #FFFFFF; border-radius: 7px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04); font-size: 12px; color: #404040; cursor: grab; touch-action: none"><svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{rt.s.contIcon}}"></path></svg>{{rt.s.contCount}}</span></sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{rt.isVal}}" hint-placeholder-val="{{ false }}"><span data-nid="{{rt.v.id}}" sc-camel-on-pointer-down="{{rt.v.down}}" sc-camel-on-pointer-move="{{dragMove}}" sc-camel-on-pointer-up="{{dragEnd}}" sc-camel-on-pointer-cancel="{{dragCancel}}" sc-camel-on-double-click="{{rt.v.dbl}}" style="display: inline-flex; align-items: center; gap: 6px; max-width: 320px; padding: 3px 9px 3px 7px; background: #FFFFFF; border-radius: 6px; box-shadow: {{rt.v.ring}}; cursor: grab; touch-action: none; white-space: nowrap"><sc-if value="{{rt.v.isColor}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="flex: 0 0 12px; width: 12px; height: 12px; border-radius: 3px; background: {{rt.v.text}}; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12)"></span></sc-if><sc-if value="{{rt.v.notColor}}" hint-placeholder-val="{{ true }}"><svg role="img" aria-label="{{rt.v.typeName}}" style="flex: 0 0 12px" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#737373" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="{{rt.v.icon}}"></path></svg></sc-if><span style="overflow: hidden; text-overflow: ellipsis; font-size: 13px; color: {{rt.v.fg}}; font-style: {{rt.v.fs}}; font-variant-numeric: tabular-nums">{{rt.v.label}}</span></span></sc-if>
+
+</div>
+</sc-for>
+
+<sc-if value="{{editing}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: {{ed.x}}px; top: {{ed.y}}px; z-index: 30; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; align-items: center; gap: 6px">
+<input ref="{{edRef}}" aria-label="{{ed.label}}" value="{{ed.value}}" sc-camel-on-change="{{edChange}}" sc-camel-on-key-down="{{edKey}}" sc-camel-on-blur="{{edBlur}}" style="width: {{ed.w}}px; height: {{ed.h}}px; box-sizing: border-box; padding: 0 8px; border: 0; border-radius: 6px; background: #FFFFFF; box-shadow: {{ed.ring}}; font-size: 13px; color: #111111; outline: none; font-variant-numeric: tabular-nums">
+<sc-if value="{{ed.isColor}}" hint-placeholder-val="{{ false }}"><input type="color" aria-label="색 고르기" value="{{ed.hex}}" sc-camel-on-change="{{edColor}}" sc-camel-on-pointer-down="{{stop}}" style="width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent"></sc-if>
+</div>
+<sc-if value="{{ed.hasErr}}" hint-placeholder-val="{{ false }}"><span style="font-size: 11.5px; color: #DC2626; white-space: nowrap">{{ed.err}}</span></sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{dpOpen}}" hint-placeholder-val="{{ false }}">
+<div role="dialog" aria-label="날짜 입력" sc-camel-on-pointer-down="{{stop}}" style="position: absolute; left: {{dp.x}}px; top: {{dp.y}}px; z-index: 30; width: 272px; box-sizing: border-box; padding: 14px; background: #FFFFFF; border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08); display: flex; flex-direction: column; gap: 12px; cursor: default">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: center; gap: 8px">
+<label style="display: flex; align-items: center; gap: 8px; width: 72px; min-height: 32px; font-size: 12px; color: #404040"><input type="checkbox" checked="{{dp.d}}" sc-camel-on-change="{{dpToggleD}}" style="width: 16px; height: 16px; margin: 0; accent-color: #111111">날짜</label>
+<input aria-label="날짜 값" value="{{dp.dv}}" disabled="{{dp.dOff}}" sc-camel-on-change="{{dpDv}}" style="flex: 1; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 8px; border: 0; border-radius: 6px; background: #F5F5F5; font-size: 13px; font-variant-numeric: tabular-nums; color: {{dp.dFg}}">
+</div>
+<div style="display: flex; align-items: center; gap: 8px">
+<label style="display: flex; align-items: center; gap: 8px; width: 72px; min-height: 32px; font-size: 12px; color: #404040"><input type="checkbox" checked="{{dp.t}}" sc-camel-on-change="{{dpToggleT}}" style="width: 16px; height: 16px; margin: 0; accent-color: #111111">시간</label>
+<input aria-label="시간 값" value="{{dp.tv}}" disabled="{{dp.tOff}}" sc-camel-on-change="{{dpTv}}" style="flex: 1; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 8px; border: 0; border-radius: 6px; background: #F5F5F5; font-size: 13px; font-variant-numeric: tabular-nums; color: {{dp.tFg}}">
+</div>
+<div style="display: flex; align-items: center; gap: 8px">
+<label style="display: flex; align-items: center; gap: 8px; width: 72px; min-height: 32px; font-size: 12px; color: {{dp.zLabelFg}}"><input type="checkbox" checked="{{dp.zOn}}" disabled="{{dp.zLocked}}" sc-camel-on-change="{{dpToggleZ}}" style="width: 16px; height: 16px; margin: 0; accent-color: #111111">시간대</label>
+<input aria-label="시간대 값" value="{{dp.zv}}" disabled="{{dp.zOff}}" sc-camel-on-change="{{dpZv}}" style="flex: 1; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 8px; border: 0; border-radius: 6px; background: #F5F5F5; font-size: 13px; font-variant-numeric: tabular-nums; color: {{dp.zFg}}">
+</div>
+</div>
+<div style="padding-top: 10px; border-top: 1px solid #F0F0F0">
+<div style="font-size: 11px; color: #737373">저장되는 값 · ISO 8601</div>
+<div style="margin-top: 2px; font-family: 'Geist Mono', monospace; font-size: 12.5px; color: #0E7490">{{dp.iso}}</div>
+</div>
+</div>
+</sc-if>
+
+</div>
+
+<sc-if value="{{hasToast}}" hint-placeholder-val="{{ false }}"><div role="status" style="position: absolute; left: 50%; bottom: 76px; transform: translateX(-50%); z-index: 6; padding: 8px 14px; background: #111111; color: #FFFFFF; border-radius: 8px; font-size: 13px; white-space: nowrap">{{toast}}</div></sc-if>
+
+<div style="position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; padding: 2px; background: #FFFFFF; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)">
+<button type="button" aria-label="실행 취소" title="실행 취소 (⌘Z)" sc-camel-on-click="{{undo}}" style="width: 36px; height: 36px; border: 0; border-radius: 8px; background: transparent; display: flex; align-items: center; justify-content: center; opacity: {{undoOp}}"><svg width="15" height="15" sc-camel-view-box="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h11a5 5 0 0 1 0 10h-3"></path></svg></button>
+<button type="button" aria-label="다시 실행" title="다시 실행 (⇧⌘Z)" sc-camel-on-click="{{redo}}" style="width: 36px; height: 36px; border: 0; border-radius: 8px; background: transparent; display: flex; align-items: center; justify-content: center; opacity: {{redoOp}}"><svg width="15" height="15" sc-camel-view-box="0 0 24 24" fill="none" stroke="#525252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"></path><path d="M20 9H9a5 5 0 0 0 0 10h3"></path></svg></button>
+<span aria-hidden="true" style="width: 1px; height: 18px; background: #E5E5E5; margin: 0 4px"></span>
+<button type="button" aria-label="축소" sc-camel-on-click="{{zoomOut}}" style="width: 36px; height: 36px; border: 0; border-radius: 8px; background: transparent; font-size: 16px; color: #525252">−</button>
+<button type="button" aria-label="100%로 되돌리기" title="100%로 되돌리기" sc-camel-on-click="{{zoomReset}}" style="height: 36px; min-width: 52px; border: 0; border-radius: 8px; background: transparent; font-size: 12px; color: #525252; font-variant-numeric: tabular-nums">{{zoomPct}}</button>
+<button type="button" aria-label="확대" sc-camel-on-click="{{zoomIn}}" style="width: 36px; height: 36px; border: 0; border-radius: 8px; background: transparent; font-size: 16px; color: #525252">+</button>
+<span aria-hidden="true" style="width: 1px; height: 18px; background: #E5E5E5; margin: 0 4px"></span>
+<button type="button" sc-camel-on-click="{{fit}}" style="height: 36px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; font-size: 12px; color: #525252">화면에 맞추기</button>
+</div>
+</main>
+
+<sc-if value="{{dragging}}" hint-placeholder-val="{{ false }}"><div aria-hidden="true" style="position: fixed; left: {{gx}}px; top: {{gy}}px; z-index: 50; pointer-events: none; transform: rotate(-2deg); filter: drop-shadow(0 10px 20px rgba(0,0,0,0.18))">
+<sc-if value="{{ghostIsValue}}" hint-placeholder-val="{{ true }}"><span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 7px; background: #FFFFFF; border-radius: 6px; white-space: nowrap"><sc-if value="{{ghostV.isColor}}" hint-placeholder-val="{{ false }}"><span style="width: 12px; height: 12px; border-radius: 3px; background: {{ghostV.text}}; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12)"></span></sc-if><sc-if value="{{ghostV.notColor}}" hint-placeholder-val="{{ true }}"><svg width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#737373" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="{{ghostV.icon}}"></path></svg></sc-if><span style="font-size: 13px; color: {{ghostV.fg}}; font-style: {{ghostV.fs}}">{{ghostV.label}}</span></span></sc-if>
+<sc-if value="{{ghostIsBlock}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; background: {{ghostBg}}; border-radius: 8px; font-size: 13px; font-weight: 500; color: #404040; white-space: nowrap">{{ghostLabel}}</div></sc-if>
+</div></sc-if>
+
+<button type="button" class="rz" aria-label="오른쪽 패널 너비 조절" title="드래그하거나 ← → 키로 조절 · 더블클릭하면 원래대로" data-active="{{rActive}}" sc-camel-on-pointer-down="{{rightDown}}" sc-camel-on-pointer-move="{{rightMove}}" sc-camel-on-pointer-up="{{rzEnd}}" sc-camel-on-pointer-cancel="{{rzEnd}}" sc-camel-on-key-down="{{rightKey}}" sc-camel-on-double-click="{{rightReset}}" style="flex: 0 0 9px; width: 9px; margin: 0 -4px 0 -5px; padding: 0; border: 0; align-self: stretch; position: relative; z-index: 5; cursor: col-resize; touch-action: none"></button>
+
+<aside aria-label="출력" style="flex: 0 0 auto; width: {{rightW}}px; max-width: 100%; min-width: 0; box-sizing: border-box; border-left: 1px solid #EBEBEB; display: flex; flex-direction: column">
+<div role="tablist" aria-label="출력 형식" style="display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid #EBEBEB">
+<button type="button" role="tab" aria-selected="{{isJson}}" sc-camel-on-click="{{showJson}}" style="min-height: 44px; padding: 0 10px; border: 0; background: transparent; font-size: 13px; font-weight: 500; color: {{jsonFg}}; box-shadow: {{jsonLine}}">JSON</button>
+<button type="button" role="tab" aria-selected="{{isYaml}}" sc-camel-on-click="{{showYaml}}" style="min-height: 44px; padding: 0 10px; border: 0; background: transparent; font-size: 13px; font-weight: 500; color: {{yamlFg}}; box-shadow: {{yamlLine}}">YAML</button>
+<button type="button" role="tab" aria-selected="{{isToml}}" sc-camel-on-click="{{showToml}}" style="min-height: 44px; padding: 0 10px; border: 0; background: transparent; font-size: 13px; font-weight: 500; color: {{tomlFg}}; box-shadow: {{tomlLine}}">TOML</button>
+</div>
+
+<div style="padding: 16px; overflow: auto">
+<pre style="margin: 0; font-family: 'Geist Mono', 'Noto Sans KR', monospace; font-size: 12px; line-height: 1.8; white-space: pre; overflow-x: auto; color: #111111"><sc-for list="{{outLines}}" as="ln" hint-placeholder-count="12"><span style="display: block; background: {{ln.bg}}"><sc-for list="{{ln.toks}}" as="tk" hint-placeholder-count="3"><span style="color: {{tk.c}}; font-style: {{tk.i}}">{{tk.t}}</span></sc-for></span></sc-for></pre>
+<sc-if value="{{tomlNoteShow}}" hint-placeholder-val="{{ false }}"><div style="margin-top: 14px; padding: 10px 12px; background: #F5F5F5; border-radius: 8px; font-size: 12px; color: #525252">{{tomlNote}}</div></sc-if>
+</div>
+
+<div style="margin-top: auto; border-top: 1px solid #EBEBEB; padding-bottom: 8px">
+<div style="padding: 12px 16px 4px; font-size: 12px; color: #737373">점검</div>
+<sc-for list="{{checks}}" as="ck" hint-placeholder-count="2">
+<div style="display: flex; gap: 10px; padding: 6px 16px"><span aria-hidden="true" style="flex: 0 0 6px; width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: {{ck.dot}}"></span><div style="font-size: 13px">{{ck.label}} <span style="color: #737373">{{ck.detail}}</span></div></div>
+</sc-for>
+</div>
+</aside>
+
+</div>
+
+<sc-if value="{{importOpen}}" hint-placeholder-val="{{ false }}">
+<div style="position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; padding: 16px">
+<div role="dialog" aria-label="JSON 가져오기" style="width: 100%; max-width: 480px; box-sizing: border-box; padding: 20px; background: #FFFFFF; border-radius: 14px; box-shadow: 0 20px 48px rgba(0,0,0,0.18); display: flex; flex-direction: column; gap: 12px">
+<div style="font-size: 15px; font-weight: 600">JSON 가져오기</div>
+<textarea aria-label="JSON 붙여넣기" value="{{importText}}" sc-camel-on-change="{{importChange}}" placeholder="{&quot;key&quot;: &quot;value&quot;}" style="height: 220px; box-sizing: border-box; padding: 10px 12px; border: 0; border-radius: 8px; background: #F5F5F5; font-family: 'Geist Mono', monospace; font-size: 12.5px; color: #111111; resize: vertical"></textarea>
+<sc-if value="{{importHasErr}}" hint-placeholder-val="{{ false }}"><div style="font-size: 12px; color: #DC2626">{{importErr}}</div></sc-if>
+<div style="display: flex; justify-content: flex-end; gap: 8px">
+<button type="button" sc-camel-on-click="{{closeImport}}" style="min-height: 36px; padding: 0 14px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font-size: 13px; font-weight: 500">취소</button>
+<button type="button" sc-camel-on-click="{{doImport}}" style="min-height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: #111111; color: #FFFFFF; font-size: 13px; font-weight: 500">불러오기</button>
+</div>
+</div>
+</div>
+</sc-if>
+
+</div>
+</x-dc>
+
+
+
+</body></html>

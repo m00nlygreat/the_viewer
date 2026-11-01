@@ -23,7 +23,7 @@ function normalizeNewline(text: string): '\n' | '\r\n' { return text.includes('\
 
 export async function parseFileContent(name: string, mimeType: string, bytes: Uint8Array, explicitFormat?: Format, options?: { csvHasHeader?: boolean }): Promise<ParsedFile> {
   const format = explicitFormat ?? getFormat(name, mimeType)
-  if (!format) throw new Error('지원하지 않는 파일입니다. .eml, .csv, .md, .ics, .vcf 파일을 선택하세요.')
+  if (!format) throw new Error('지원하지 않는 파일입니다. 지원하는 파일 형식을 선택하세요.')
   if (format === 'eml') {
     const [{ parseEmail }, decoded] = await Promise.all([
       import('./formats/email'),
@@ -38,6 +38,11 @@ export async function parseFileContent(name: string, mimeType: string, bytes: Ui
   }
   const decoded = decodeBytes(bytes)
   const text = decoded.text
+  if (format === 'json' || format === 'yaml' || format === 'toml') {
+    const { parseStructured } = await import('./structured/parse')
+    try { return { format, model: parseStructured(text, format), text, encoding: decoded.encoding, diagnostics: [] } }
+    catch (error) { return { format, model: { root: null, loose: [] }, text, encoding: decoded.encoding, diagnostics: [error instanceof Error ? error.message : '구조 데이터를 해석하지 못했습니다.'] } }
+  }
   if (format === 'csv') {
     const { parseCsv } = await import('./formats/csv')
     const model = parseCsv(text, decoded.encoding, decoded.bom, normalizeNewline(text), options?.csvHasHeader)

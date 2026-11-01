@@ -16,7 +16,7 @@ export async function fetchAutoOpenedFile(source: string): Promise<PickedFile> {
   const url = new URL(source)
   if (url.protocol !== 'file:') return fetchRemoteLinkFile(source, { requestPermission: false })
   const format = getFormat(url.pathname)
-  if (!format) throw new Error('지원 형식(.eml, .csv, .md, .ics, .vcf)이 아닙니다.')
+  if (!format) throw new Error('지원하지 않는 파일 형식입니다.')
   if (!await isLocalFileAccessAllowed()) throw new Error('Chrome 확장 세부정보에서 “파일 URL에 대한 액세스 허용”을 켜세요.')
   const response = await fetch(url.href)
   if (!response.ok) throw new Error('로컬 파일을 읽지 못했습니다. 파일 위치와 접근 권한을 확인하세요.')
@@ -39,7 +39,7 @@ export async function fetchRemoteLinkFile(source: string, options: { requestPerm
   const nameFormat = getFormat(responseName) ?? getFormat(decodeUrlName(url))
   const genericMime = !mime || GENERIC_FILE_MIME_TYPES.includes(mime)
   const format = mimeFormat ?? (genericMime ? nameFormat : null)
-  if (!format) throw new Error('지원 형식(.eml, .csv, .md, .ics, .vcf)이 아닙니다.')
+  if (!format) throw new Error('지원하지 않는 파일 형식입니다.')
   const name = ensureFormatExtension(responseName, format)
   return { name, type: mimeType || FORMAT_MIME[format as Format], bytes: await readFileBytes(response) }
 }
