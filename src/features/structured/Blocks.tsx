@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, Ellipsis } from 'lucide-react'
 import { findNode, findSlot, type DragSource } from '../../domain/structured/operations'
-import { slot, type StructuredContainer, type StructuredNode, type StructuredScalar, type StructuredSlot } from '../../domain/structured/model'
-import { isoDateKind, uniqueKey } from '../../domain/structured/output'
+import { type StructuredContainer, type StructuredNode, type StructuredScalar, type StructuredSlot } from '../../domain/structured/model'
+import { isoDateKind } from '../../domain/structured/output'
 import { useBlocks, type Selection } from './BlockContext'
 import { BlockIcon } from './BlockIcon'
 import { valueType } from './valueType'
@@ -145,19 +146,23 @@ function ValueChip({ node, source = { type: 'node', id: node.id } }: { node: Str
   const dateCandidate = nonIso ? `${nonIso[3]}-${nonIso[1].padStart(2, '0')}-${nonIso[2].padStart(2, '0')}` : ''
   const rgb = node.raw.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i)
   const rgbHex = rgb && rgb.slice(1).every((part) => Number(part) <= 255) ? `#${rgb.slice(1).map((part) => Number(part).toString(16).padStart(2, '0')).join('').toUpperCase()}` : ''
+  const valueExtras: string[] = []
+  if (type === 'number' && Number.isFinite(number) && Math.abs(number) >= 1000000) valueExtras.push(`${/^-?\d+$/.test(node.raw) ? BigInt(node.raw).toLocaleString('ko-KR') : number.toLocaleString('ko-KR')}${Math.abs(number) >= 100000000 ? ` · 약 ${(number / 100000000).toFixed(1)}억` : ''}`)
+  if (type === 'date') valueExtras.push(dateDescription(node.raw))
+  if (type === 'text' && node.raw.includes('\n')) valueExtras.push(`${node.raw.split('\n').length}줄`)
+  if (type === 'text' && /^\d{4}-\d\d-\d\d$/.test(node.raw) && !isoDateKind(node.raw)) valueExtras.push('날짜처럼 보이지만 없는 날짜라 텍스트')
+  if (type === 'color' && /^#[\da-f]{8}$/i.test(node.raw)) valueExtras.push(`투명도 ${Math.round(parseInt(node.raw.slice(7, 9), 16) / 255 * 100)}%`)
+  if (long) valueExtras.push(`${node.raw.length}자`)
   return <span className="sd-value-wrap" ref={popRef}>
-    <span className={`sd-value sd-${type}${long ? ' long' : ''}${selected ? ' selected' : ''}${expanded ? ' expanded' : ''}${context.draggingIds.has(node.id) ? ' dragging' : ''}`} data-node={node.id} tabIndex={0} role="button" aria-label={`${type} ${node.dataType === 'null' ? '없음' : node.raw || '빈 텍스트'}`} onFocus={(event) => { if (event.target === event.currentTarget) context.select(select) }} onPointerDown={(event) => context.startDrag(event, source, select)} onDoubleClick={(event) => { event.stopPropagation(); begin() }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (!context.readonly) { context.select(select); setPopover('type') } }} onKeyDown={(event) => { if (event.shiftKey && event.key === 'F10') { event.preventDefault(); setPopover('type') } }}>
-      {type === 'color' ? <span className="sd-swatch" style={{ background: /^#[\da-f]{8}$/i.test(node.raw) ? `linear-gradient(${node.raw}, ${node.raw}), repeating-conic-gradient(#d4d4d4 0% 25%, #fff 0% 50%) 0 0 / 6px 6px` : node.raw }} /> : <BlockIcon name={isLink ? 'link' : type} />}
-      {editing && type !== 'date' && type !== 'color' ? <InlineInput value={node.raw} label="값" valid={type === 'number' ? (value) => /^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$/.test(value) : undefined} onCommit={(value, refocus) => { if (value !== node.raw) update(value); closeEditor(refocus) }} onCancel={closeEditor} /> : <span className="sd-value-text">{type === 'null' ? '없음' : expanded ? node.raw : displayText(node.raw)}</span>}
+    <span className="sd-value-line">
+      <span className={`sd-value sd-${type}${long ? ' long' : ''}${selected ? ' selected' : ''}${expanded ? ' expanded' : ''}${context.draggingIds.has(node.id) ? ' dragging' : ''}`} data-node={node.id} title={valueExtras.length ? valueExtras.join('\n') : undefined} tabIndex={0} role="button" aria-label={`${type} ${node.dataType === 'null' ? '없음' : node.raw || '빈 텍스트'}`} onFocus={(event) => { if (event.target === event.currentTarget) context.select(select) }} onPointerDown={(event) => context.startDrag(event, source, select)} onDoubleClick={(event) => { event.stopPropagation(); begin() }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (!context.readonly) { context.select(select); setPopover('type') } }} onKeyDown={(event) => { if (event.shiftKey && event.key === 'F10') { event.preventDefault(); setPopover('type') } }}>
+        {type === 'color' ? <span className="sd-swatch" style={{ background: /^#[\da-f]{8}$/i.test(node.raw) ? `linear-gradient(${node.raw}, ${node.raw}), repeating-conic-gradient(#d4d4d4 0% 25%, #fff 0% 50%) 0 0 / 6px 6px` : node.raw }} /> : <BlockIcon name={type === 'boolean' && node.raw === 'false' ? 'booleanFalse' : isLink ? 'link' : type} />}
+        {editing && type !== 'date' && type !== 'color' ? <InlineInput value={node.raw} label="값" valid={type === 'number' ? (value) => /^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$/.test(value) : undefined} onCommit={(value, refocus) => { if (value !== node.raw) update(value); closeEditor(refocus) }} onCancel={closeEditor} /> : <span className="sd-value-text">{type === 'null' ? '없음' : expanded ? node.raw : displayText(node.raw)}</span>}
+      </span>
+      {long && <button type="button" className="sd-value-expand" aria-label={expanded ? '긴 값 접기' : '긴 값 펼치기'} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); context.toggleExpanded(node.id) }}>{expanded ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}</button>}
     </span>
-    {long && <button type="button" className="sd-value-extra" onPointerDown={(event) => event.stopPropagation()} onClick={() => context.toggleExpanded(node.id)}>{expanded ? '접기' : `${node.raw.length}자 · 펼치기`}</button>}
     {unsafe && <span className="sd-value-warning">정확히 저장할 수 없는 크기 · 텍스트로 바꿀까요?</span>}
     {unsafe && <button type="button" className="sd-suggestion" onPointerDown={(event) => event.stopPropagation()} onClick={() => context.mutate((model) => { const value = findNode(model, node.id); if (value?.kind === 'scalar') { value.dataType = 'string'; value.sourceFormat = undefined } })}>텍스트로 바꾸기</button>}
-    {type === 'number' && Number.isFinite(number) && Math.abs(number) >= 1000000 && <span className="sd-value-extra">{/^-?\d+$/.test(node.raw) ? BigInt(node.raw).toLocaleString('ko-KR') : number.toLocaleString('ko-KR')}{Math.abs(number) >= 100000000 ? ` · 약 ${(number / 100000000).toFixed(1)}억` : ''}</span>}
-    {type === 'date' && <span className="sd-value-extra">{dateDescription(node.raw)}</span>}
-    {type === 'text' && node.raw.includes('\n') && <span className="sd-value-extra">{node.raw.split('\n').length}줄</span>}
-    {type === 'text' && /^\d{4}-\d\d-\d\d$/.test(node.raw) && !isoDateKind(node.raw) && <span className="sd-value-extra">날짜처럼 보이지만 없는 날짜라 텍스트</span>}
-    {type === 'color' && /^#[\da-f]{8}$/i.test(node.raw) && <span className="sd-value-extra">투명도 {Math.round(parseInt(node.raw.slice(7, 9), 16) / 255 * 100)}%</span>}
     {nonIso && isoDateKind(dateCandidate) && <button type="button" className="sd-suggestion" onPointerDown={(event) => event.stopPropagation()} onClick={() => update(dateCandidate)}>날짜 {dateCandidate}로 바꾸기</button>}
     {rgbHex && <button type="button" className="sd-suggestion" onPointerDown={(event) => event.stopPropagation()} onClick={() => update(rgbHex)}>{rgbHex}로 바꾸기</button>}
     {!showShortColor && /^#[0-9a-f]{3}$/i.test(node.raw) && <button type="button" className="sd-suggestion" onPointerDown={(event) => event.stopPropagation()} onClick={() => setShowShortColor(true)}>색으로 보기</button>}
@@ -208,17 +213,19 @@ export function NodeBlock({ node, depth = 1, root = false, looseId, path = ['$']
       {!root && <button type="button" className="sd-fold" aria-label={collapsed ? '펼치기' : '접기'} aria-expanded={!collapsed} onPointerDown={(event) => event.stopPropagation()} onClick={() => context.toggleCollapsed(node.id)}><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: collapsed ? undefined : 'rotate(90deg)' }}><path d="m9 6 6 6-6 6" /></svg></button>}
       <BlockIcon name={node.kind} size={depth === 1 ? 16 : depth === 2 ? 14 : 13} />{root && <strong>최상위</strong>}
       {collapsed && <span className="sd-collapse-preview">{containerPreview(node)}</span>}
+      {collapsed && node.items.length === 0 && <span className="sd-empty-chip">비어 있음</span>}
       <span className="sd-count">{node.items.length}</span>
-      {depth > 3 && <button type="button" className="sd-focus-node" onPointerDown={(event) => event.stopPropagation()} onClick={() => context.focusNode(node.id, path, depth)}>이 그릇만 보기</button>}
+      {depth > 3 && <button type="button" className="sd-focus-node" aria-label="이 그릇만 보기" title="이 그릇만 보기" onPointerDown={(event) => event.stopPropagation()} onClick={() => context.focusNode(node.id, path, depth)}><ChevronRight size={14} aria-hidden="true" /></button>}
     </div>
     {!collapsed && <div className="sd-items">{visible.map((item, visibleIndex) => {
       const index = longArray && visibleIndex === 3 ? node.items.length - 1 : visibleIndex
-      return <div className="sd-row-holder" key={item.id}>{manyArray && visibleIndex === 3 && <button type="button" className="sd-more" onClick={() => context.toggleExpanded(node.id)}>3 – {node.items.length - 2} · {node.items.length - 4}개 {longArray ? '더 보기' : '접기'}</button>}<PropertyRow item={item} index={index} parent={node} depth={depth} path={path} /></div>
+      const showArrayToggle = manyArray && visibleIndex === 3
+      return <div className={`sd-row-holder${showArrayToggle ? ' sd-row-holder-more' : ''}`} key={item.id}>{showArrayToggle && <button type="button" className="sd-more" aria-label={longArray ? `${node.items.length - 4}개 더 보기` : '배열 접기'} aria-expanded={!longArray} title={longArray ? `${node.items.length - 4}개 더 보기` : '배열 접기'} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.preventDefault(); event.stopPropagation(); context.toggleExpanded(node.id) }}><Ellipsis size={16} aria-hidden="true" /></button>}<PropertyRow item={item} index={index} parent={node} depth={depth} path={path} /></div>
     })}
     {context.hover?.type === 'insert' && context.hover.id === node.id && context.hover.index === node.items.length && <span className="sd-insertion sd-insertion-end" />}
-    <button type="button" className="sd-add" aria-label={node.kind === 'object' ? '프로퍼티 추가' : '배열 항목 추가'} onPointerDown={(event) => event.stopPropagation()} onClick={() => context.mutate((model) => { const parent = findNode(model, node.id); if (parent && parent.kind !== 'scalar') parent.items.push(slot(parent.kind === 'object' ? uniqueKey(parent) : null, null)) })}>+ 자리</button></div>}
+    {node.items.length === 0 && <span className="sd-empty-chip">비어 있음</span>}</div>}
   </div>
-  if (depth <= 3) return block
-  return <div className="sd-deep"><div className="sd-breadcrumb">{path.map((part, index) => <span key={`${part}-${index}`}>{index > 0 && <i>›</i>}{part}</span>)}<small>깊이 {depth}</small></div><div className="sd-deep-body"><div className="sd-deep-guides" aria-hidden="true"><span /><span /><span /></div>{block}</div></div>
+  if (depth <= 3 || context.focusedNodeId !== node.id) return block
+  return <div className="sd-deep"><div className="sd-breadcrumb">{path.map((part, index) => <span key={`${part}-${index}`}>{index > 0 && <i>›</i>}{part}</span>)}<small>깊이 {depth}</small></div>{block}</div>
 }
 export function LooseProperty({ item, looseId }: { item: StructuredSlot; looseId: string }) { return <PropertyRow item={item} index={0} depth={1} looseId={looseId} /> }

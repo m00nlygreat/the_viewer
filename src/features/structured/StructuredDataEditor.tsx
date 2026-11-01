@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { Redo2, Undo2 } from 'lucide-react'
+import { Copy, Redo2, Undo2 } from 'lucide-react'
 import type { ViewerDocument } from '../../domain/types'
 import { type StructuredFormat, type StructuredModel } from '../../domain/structured/model'
 import { applyDrop, findNode, findSlotParent, payloadIds, removeSelection, sourcePayload, type DragSource, type DropTarget, type Payload } from '../../domain/structured/operations'
 import { inspectStructured, isoDateKind, outputStructured } from '../../domain/structured/output'
-import { parseStructured } from '../../domain/structured/parse'
 import { BlockContext, type Selection } from './BlockContext'
 import { NodeBlock, LooseProperty } from './Blocks'
 import { BlockIcon } from './BlockIcon'
@@ -71,18 +70,14 @@ function OutputPanel({ model, format, setFormat }: { model: StructuredModel; for
   const [notice, setNotice] = useState('')
   const output = useMemo(() => outputStructured(model, format), [model, format])
   const checks = useMemo(() => inspectStructured(model), [model])
-  useEffect(() => {
-    const copy = () => {
-      if (output.text === null) { setNotice(output.issues[0] ?? '출력할 수 없습니다.'); return }
-      if (!navigator.clipboard?.writeText) { setNotice('클립보드에 복사하지 못했어요'); return }
-      void navigator.clipboard.writeText(output.text).then(() => setNotice('출력을 복사했어요'), () => setNotice('클립보드에 복사하지 못했어요'))
-    }
-    window.addEventListener('structured:copy', copy)
-    return () => window.removeEventListener('structured:copy', copy)
-  }, [output.text, output.issues])
+  const copyOutput = () => {
+    if (output.text === null) { setNotice(output.issues[0] ?? '출력할 수 없습니다.'); return }
+    if (!navigator.clipboard?.writeText) { setNotice('클립보드에 복사하지 못했어요'); return }
+    void navigator.clipboard.writeText(output.text).then(() => setNotice('출력을 복사했어요'), () => setNotice('클립보드에 복사하지 못했어요'))
+  }
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(''), 1800); return () => window.clearTimeout(timer) }, [notice])
   return <aside className="sd-output" aria-label="출력">
-    <div role="tablist" aria-label="출력 형식" className="sd-tabs">{(['json', 'yaml', 'toml'] as const).map((item) => <button key={item} role="tab" aria-selected={item === format} onClick={() => setFormat(item)}>{item.toUpperCase()}</button>)}</div>
+    <div className="sd-output-header"><div role="tablist" aria-label="출력 형식" className="sd-tabs">{(['json', 'yaml', 'toml'] as const).map((item) => <button key={item} role="tab" aria-selected={item === format} onClick={() => setFormat(item)}>{item.toUpperCase()}</button>)}</div><button type="button" className="sd-copy-button" aria-label="출력 복사" title="출력 복사" onClick={copyOutput}><Copy size={15} /></button></div>
     <div className="sd-output-code"><pre>{output.preview.split('\n').map((line, index) => <span className={line.includes('비어 있음') || line.includes('없음 불가') ? 'sd-output-error-line' : ''} key={index}>{outputTokens(line)}{'\n'}</span>)}</pre>{output.omissions.length > 0 && <div className="sd-output-note">TOML에는 없음 값을 포함할 수 없어 {output.omissions.join(', ')} 항목을 제외했어요.</div>}{output.issues.filter((issue) => !issue.startsWith('빈 자리')).map((issue) => <div className="sd-output-note" key={issue}>{issue}</div>)}</div>
     <div className="sd-checks"><div className="sd-section-label">점검</div>{checks.length ? checks.map((check, index) => <div className="sd-check" key={`${check.label}-${check.path}-${index}`}><i className={check.label === '연결 안 된 블록' ? 'neutral' : undefined} />{check.label} <span>{check.path}</span></div>) : <div className="sd-check"><i className="neutral" />문제 없음</div>}</div>
     {notice && <div className="sd-toast" role="status">{notice}</div>}
@@ -98,10 +93,8 @@ export function StructuredDataEditor({ document, model, onChange, onUndo, onRedo
   const [leftWidth, setLeftWidth] = useState(220)
   const [rightWidth, setRightWidth] = useState(340)
   const [ghost, setGhost] = useState<Ghost | null>(null)
+  const [paletteDragging, setPaletteDragging] = useState(false)
   const [hover, setHover] = useState<DropTarget | null>(null)
-  const [importOpen, setImportOpen] = useState(false)
-  const [importText, setImportText] = useState('')
-  const [importError, setImportError] = useState('')
   const [focus, setFocus] = useState<{ id: string; path: string[]; depth: number } | null>(null)
   const canvas = useRef<HTMLElement>(null)
   const world = useRef<HTMLDivElement>(null)
@@ -130,24 +123,30 @@ export function StructuredDataEditor({ document, model, onChange, onUndo, onRedo
     window.addEventListener('keydown', key); window.addEventListener('keyup', key); window.addEventListener('pointermove', move); window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end); window.addEventListener('blur', blur)
     return () => { window.removeEventListener('keydown', key); window.removeEventListener('keyup', key); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end); window.removeEventListener('blur', blur) }
   }, [])
-  useEffect(() => { const open = () => { setImportOpen(true); setImportError('') }; window.addEventListener('structured:import', open); return () => window.removeEventListener('structured:import', open) }, [])
   useEffect(() => {
     const element = canvas.current
-    if (!element) return
-    let gestureZoom = 1
+    const editor = element?.closest('.structured-editor')
+    if (!element || !editor) return
     const wheel = (event: WheelEvent) => {
-      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable], .sd-popover, .sd-type-menu, .sd-canvas-bar')) return
+      const target = event.target instanceof Element ? event.target : null
+      if (!target || !editor.contains(target)) return
+      const zoomGesture = event.ctrlKey || event.metaKey
+      const inCanvas = target.closest('.sd-canvas') === element
+      if (zoomGesture) {
+        event.preventDefault()
+        if (!inCanvas || target.closest('input, textarea, select, [contenteditable], .sd-popover, .sd-type-menu, .sd-canvas-bar') || touches.current.size > 1) return
+        const bounds = element.getBoundingClientRect()
+        const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaMode === 2 ? event.deltaY * bounds.height : event.deltaY
+        const boundedDelta = Math.max(-50, Math.min(50, delta))
+        zoomAt(live.current.view.zoom * Math.exp(-boundedDelta * .002), event.clientX - bounds.left, event.clientY - bounds.top)
+        return
+      }
+      if (!inCanvas || target.closest('input, textarea, select, [contenteditable], .sd-popover, .sd-type-menu, .sd-canvas-bar')) return
       event.preventDefault()
-      const bounds = element.getBoundingClientRect()
-      if (event.ctrlKey || event.metaKey) zoomAt(live.current.view.zoom * Math.exp(-event.deltaY * .01), event.clientX - bounds.left, event.clientY - bounds.top)
-      else setView((current) => ({ ...current, x: current.x - event.deltaX, y: current.y - event.deltaY }))
+      setView((current) => ({ ...current, x: current.x - event.deltaX, y: current.y - event.deltaY }))
     }
-    const gestureStart = (event: Event) => { event.preventDefault(); gestureZoom = live.current.view.zoom }
-    const gestureChange = (event: Event) => { const gesture = event as Event & { scale: number; clientX: number; clientY: number }; event.preventDefault(); const bounds = element.getBoundingClientRect(); zoomAt(gestureZoom * gesture.scale, gesture.clientX - bounds.left, gesture.clientY - bounds.top) }
-    element.addEventListener('wheel', wheel, { passive: false })
-    element.addEventListener('gesturestart', gestureStart, { passive: false })
-    element.addEventListener('gesturechange', gestureChange, { passive: false })
-    return () => { element.removeEventListener('wheel', wheel); element.removeEventListener('gesturestart', gestureStart); element.removeEventListener('gesturechange', gestureChange) }
+    window.document.addEventListener('wheel', wheel, { passive: false, capture: true })
+    return () => window.document.removeEventListener('wheel', wheel, true)
   }, [])
   const mutate = (update: (next: StructuredModel) => void, group: 'typing' | 'command' = 'command') => {
     if (readonly) return
@@ -186,27 +185,58 @@ export function StructuredDataEditor({ document, model, onChange, onUndo, onRedo
     if ((spaceDown.current || event.button === 1) && canvas.current?.contains(event.currentTarget)) { event.stopPropagation(); pan(event, true); return }
     if (event.button !== 0 || readonly || event.altKey || touches.current.size > 1) return
     event.stopPropagation(); event.preventDefault()
-    const element = event.currentTarget, bounds = element.getBoundingClientRect(), sx = event.clientX, sy = event.clientY
+    const element = event.currentTarget, sx = event.clientX, sy = event.clientY
     const payload = sourcePayload(live.current.model, source)
     if (!payload) return
+    const hasContainerNode = payload.node?.kind === 'object' || payload.node?.kind === 'array'
+    const lifted = source.type !== 'palette' && hasContainerNode ? element.closest<HTMLElement>('.sd-container') ?? element : element
+    const bounds = lifted.getBoundingClientRect()
+    const originScale = lifted.closest('.sd-world') ? live.current.view.zoom : 1
+    const liftedStyleProperties = ['position', 'z-index', 'transform', 'transform-origin', 'filter', 'transition', 'cursor', 'pointer-events', 'will-change']
+    const originalLiftStyles = new Map<string, { value: string; priority: string }>(liftedStyleProperties.map((property) => [property, { value: lifted.style.getPropertyValue(property), priority: lifted.style.getPropertyPriority(property) }] as const))
     const ids = payloadIds(payload), kind = payload.slot ? 'slot' : 'node'
-    let moved = false, last: DropTarget | null = null
+    let moved = false, liftedActive = false, last: DropTarget | null = null
     element.setPointerCapture(event.pointerId)
+    const clearLifted = () => {
+      if (!liftedActive) return
+      lifted.classList.remove('sd-lifted')
+      originalLiftStyles.forEach(({ value, priority }, property) => {
+        if (value) lifted.style.setProperty(property, value, priority)
+        else lifted.style.removeProperty(property)
+      })
+      liftedActive = false
+      setPaletteDragging(false)
+    }
     const move = (next: PointerEvent) => {
       if (!moved && Math.hypot(next.clientX - sx, next.clientY - sy) < 4) return
+      if (!liftedActive) {
+        lifted.classList.add('sd-lifted')
+        lifted.style.setProperty('position', 'relative')
+        lifted.style.setProperty('z-index', '55')
+        lifted.style.setProperty('transform-origin', `${(sx - bounds.left) / originScale}px ${(sy - bounds.top) / originScale}px`)
+        lifted.style.setProperty('filter', 'drop-shadow(0 10px 14px rgb(0 0 0 / 24%))')
+        lifted.style.setProperty('transition', 'transform 70ms cubic-bezier(.2, .8, .2, 1)')
+        lifted.style.setProperty('cursor', 'grabbing')
+        lifted.style.setProperty('pointer-events', 'none')
+        lifted.style.setProperty('will-change', 'transform')
+        liftedActive = true
+        if (source.type === 'palette') setPaletteDragging(true)
+      }
       moved = true
+      const scale = lifted.closest('.sd-world') ? live.current.view.zoom : 1
+      lifted.style.setProperty('transform', `translate3d(${(next.clientX - sx) / scale}px, ${(next.clientY - sy) / scale}px, 0) rotate(-2deg) scale(1.02)`)
       last = targetAt(next.clientX, next.clientY, kind, ids)
-      setHover(last); setGhost({ x: next.clientX, y: next.clientY, offsetX: sx - bounds.left, offsetY: sy - bounds.top, payload, kind, ids })
+      setHover(last)
     }
     const end = (next: PointerEvent) => {
-      cleanup.current?.(); cleanup.current = null; setGhost(null); setHover(null)
+      cleanup.current?.(); cleanup.current = null; clearLifted(); setGhost(null); setHover(null)
       if (!moved) { if (selection) { setSelected(selection); setEditing(null); element.focus({ preventScroll: true }) }; return }
       if (next.type === 'pointercancel' || !last || !canvas.current) return
       if (last.type === 'canvas') { const box = canvas.current.getBoundingClientRect(), current = live.current.view; last = { type: 'canvas', x: Math.round((next.clientX - (sx - bounds.left) - box.left - current.x) / current.zoom), y: Math.round((next.clientY - (sy - bounds.top) - box.top - current.y) / current.zoom) } }
       const result = applyDrop(live.current.model, source, last)
       if (result) { live.current.onChange(result); if (last.type === 'insert') setCollapsed((old) => { const copy = new Set(old); copy.delete((last as { id: string }).id); return copy }); setSelected(selection) }
     }
-    const cancel = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end) }
+    const cancel = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end); clearLifted() }
     cleanup.current?.(); cleanup.current = cancel
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end)
   }
@@ -270,8 +300,8 @@ export function StructuredDataEditor({ document, model, onChange, onUndo, onRedo
     if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); const result = removeSelection(model, selected.type, selected.id); if (result) { onChange(result); setSelected(null) } }
   }
   const focusedNode = focus ? findNode(model, focus.id) : undefined
-  const context = { model, selected, editing, collapsed, expanded, hover, draggingIds: ghost?.ids ?? new Set<string>(), readonly, startDrag, startPaletteKey, select: setSelected, edit: setEditing, mutate, toggleCollapsed: (id: string) => toggle(setCollapsed, id), toggleExpanded: (id: string) => toggle(setExpanded, id), focusNode: (id: string, path: string[], depth: number) => { setFocus({ id, path, depth }); setSelected(null) } }
-  return <BlockContext.Provider value={context}><div className="structured-editor" onKeyDown={keyDown}>
+  const context = { model, selected, editing, collapsed, expanded, hover, draggingIds: ghost?.ids ?? new Set<string>(), readonly, focusedNodeId: focusedNode && focus ? focus.id : null, startDrag, startPaletteKey, select: setSelected, edit: setEditing, mutate, toggleCollapsed: (id: string) => toggle(setCollapsed, id), toggleExpanded: (id: string) => toggle(setExpanded, id), focusNode: (id: string, path: string[], depth: number) => { setFocus({ id, path, depth }); setSelected(null) } }
+  return <BlockContext.Provider value={context}><div className={`structured-editor${paletteDragging ? ' sd-palette-dragging' : ''}`} onKeyDown={keyDown}>
     <div className="sd-layout" style={{ '--sd-left': `${leftWidth}px`, '--sd-right': `${rightWidth}px` } as React.CSSProperties}>
       <StructuredPalette /><ResizeHandle side="left" width={leftWidth} onChange={setLeftWidth} />
       <main className="sd-canvas" ref={canvas} aria-label="작업 캔버스" tabIndex={0} onPointerDownCapture={(event) => {
@@ -293,6 +323,5 @@ export function StructuredDataEditor({ document, model, onChange, onUndo, onRedo
       <ResizeHandle side="right" width={rightWidth} onChange={setRightWidth} /><OutputPanel model={model} format={outputFormat} setFormat={onOutputFormat} />
     </div>
     {ghost && <DragGhost ghost={ghost} />}
-    {importOpen && <div className="sd-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setImportOpen(false) }}><div className="sd-dialog" role="dialog" aria-modal="true" aria-label="JSON 가져오기"><strong>JSON 가져오기</strong><textarea aria-label="JSON 붙여넣기" placeholder={'{"key": "value"}'} value={importText} onChange={(event) => { setImportText(event.target.value); setImportError('') }} />{importError && <div className="sd-import-error">{importError}</div>}<footer><button onClick={() => setImportOpen(false)}>취소</button><button onClick={() => { try { if (document.parseState !== 'ready') throw new Error('원본을 먼저 해석해야 합니다.'); const parsed = parseStructured(importText, 'json'); if (!parsed.root || parsed.root.kind === 'scalar') throw new Error('최상위는 객체나 배열이어야 해요'); const next = structuredClone(live.current.model); next.root = parsed.root; next.unsupported = undefined; live.current.model = next; live.current.onChange(next); setImportOpen(false); setSelected(null); setEditing(null); setFocus(null) } catch (error) { setImportError(error instanceof Error ? error.message : 'JSON을 읽을 수 없어요') } }}>불러오기</button></footer></div></div>}
   </div></BlockContext.Provider>
 }

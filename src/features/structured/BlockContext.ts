@@ -12,6 +12,7 @@ export interface BlockContextValue {
   hover: DropTarget | null
   draggingIds: Set<string>
   readonly: boolean
+  focusedNodeId: string | null
   startDrag: (event: ReactPointerEvent<HTMLElement>, source: DragSource, select: Selection | null) => void
   startPaletteKey: (event: ReactKeyboardEvent<HTMLElement>, payload: Payload) => void
   select: (selection: Selection | null) => void
