@@ -76,14 +76,17 @@ function OutputPanel({ model, format, setFormat, collapsed, onToggle }: { model:
     void navigator.clipboard.writeText(output.text).then(() => setNotice('출력을 복사했어요'), () => setNotice('클립보드에 복사하지 못했어요'))
   }
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(''), 1800); return () => window.clearTimeout(timer) }, [notice])
-  return <aside className={`sd-output${collapsed ? ' is-collapsed' : ''}`} aria-label="출력">
-    <div className="sd-output-header"><div role="tablist" aria-label="출력 형식" className="sd-tabs">{(['json', 'yaml', 'toml'] as const).map((item) => <button key={item} role="tab" aria-selected={item === format} onClick={() => setFormat(item)}>{item.toUpperCase()}</button>)}</div><button type="button" className="sd-copy-button" aria-label="출력 복사" title="출력 복사" onClick={copyOutput}><Copy size={15} /></button><button type="button" className="sd-panel-toggle" aria-label={collapsed ? '소스 보기 패널 펼치기' : '소스 보기 패널 접기'} title={collapsed ? '소스 보기 패널 펼치기' : '소스 보기 패널 접기'} aria-expanded={!collapsed} aria-controls="sd-output-content" onClick={onToggle}>{collapsed ? <ChevronRight size={15} aria-hidden="true" /> : <ChevronLeft size={15} aria-hidden="true" />}</button></div>
-    <div className="sd-output-body" id="sd-output-content" hidden={collapsed}>
+  return <>
+    <aside className="sd-output" id="sd-output-panel" aria-label="출력" hidden={collapsed}>
+      <div className="sd-output-header"><div role="tablist" aria-label="출력 형식" className="sd-tabs">{(['json', 'yaml', 'toml'] as const).map((item) => <button key={item} role="tab" aria-selected={item === format} onClick={() => setFormat(item)}>{item.toUpperCase()}</button>)}</div><button type="button" className="sd-copy-button" aria-label="출력 복사" title="출력 복사" onClick={copyOutput}><Copy size={15} /></button><button type="button" className="sd-panel-toggle" aria-label="소스 보기 패널 접기" title="소스 보기 패널 접기" aria-expanded="true" aria-controls="sd-output-panel" onClick={onToggle}><ChevronLeft size={15} aria-hidden="true" /></button></div>
+      <div className="sd-output-body" id="sd-output-content">
       <div className="sd-output-code"><pre>{output.preview.split('\n').map((line, index) => <span className={line.includes('비어 있음') || line.includes('없음 불가') ? 'sd-output-error-line' : ''} key={index}>{outputTokens(line)}{'\n'}</span>)}</pre>{output.omissions.length > 0 && <div className="sd-output-note">TOML에는 없음 값을 포함할 수 없어 {output.omissions.join(', ')} 항목을 제외했어요.</div>}{output.issues.filter((issue) => !issue.startsWith('빈 자리')).map((issue) => <div className="sd-output-note" key={issue}>{issue}</div>)}</div>
       <div className="sd-checks"><div className="sd-section-label">점검</div>{checks.length ? checks.map((check, index) => <div className="sd-check" key={`${check.label}-${check.path}-${index}`}><i className={check.label === '연결 안 된 블록' ? 'neutral' : undefined} />{check.label} <span>{check.path}</span></div>) : <div className="sd-check"><i className="neutral" />문제 없음</div>}</div>
-    </div>
+      </div>
+    </aside>
+    {collapsed && <div className="sd-output-fab" role="group" aria-label="출력 작업"><button type="button" className="sd-copy-button" aria-label="출력 복사" title="출력 복사" onClick={copyOutput}><Copy size={15} /></button><button type="button" className="sd-panel-toggle" aria-label="소스 보기 패널 펼치기" title="소스 보기 패널 펼치기" aria-expanded="false" aria-controls="sd-output-panel" onClick={onToggle}><ChevronRight size={15} aria-hidden="true" /></button></div>}
     {notice && <div className="sd-toast" role="status">{notice}</div>}
-  </aside>
+  </>
 }
 
 export function StructuredDataEditor({ document, model, onChange, onUndo, onRedo, outputFormat, onOutputFormat }: Props) {
