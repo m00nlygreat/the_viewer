@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { Copy, Redo2, Undo2 } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { ChevronLeft, ChevronRight, Copy, Redo2, Undo2 } from 'lucide-react'
 import type { ViewerDocument } from '../../domain/types'
 import { type StructuredFormat, type StructuredModel } from '../../domain/structured/model'
 import { applyDrop, findNode, findSlotParent, payloadIds, removeSelection, sourcePayload, type DragSource, type DropTarget, type Payload } from '../../domain/structured/operations'
@@ -66,7 +66,7 @@ function ResizeHandle({ side, width, onChange }: { side: 'left' | 'right'; width
   }} />
 }
 
-function OutputPanel({ model, format, setFormat }: { model: StructuredModel; format: StructuredFormat; setFormat: (format: StructuredFormat) => void }) {
+function OutputPanel({ model, format, setFormat, collapsed, onToggle }: { model: StructuredModel; format: StructuredFormat; setFormat: (format: StructuredFormat) => void; collapsed: boolean; onToggle: () => void }) {
   const [notice, setNotice] = useState('')
   const output = useMemo(() => outputStructured(model, format), [model, format])
   const checks = useMemo(() => inspectStructured(model), [model])
@@ -76,10 +76,12 @@ function OutputPanel({ model, format, setFormat }: { model: StructuredModel; for
     void navigator.clipboard.writeText(output.text).then(() => setNotice('출력을 복사했어요'), () => setNotice('클립보드에 복사하지 못했어요'))
   }
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(''), 1800); return () => window.clearTimeout(timer) }, [notice])
-  return <aside className="sd-output" aria-label="출력">
-    <div className="sd-output-header"><div role="tablist" aria-label="출력 형식" className="sd-tabs">{(['json', 'yaml', 'toml'] as const).map((item) => <button key={item} role="tab" aria-selected={item === format} onClick={() => setFormat(item)}>{item.toUpperCase()}</button>)}</div><button type="button" className="sd-copy-button" aria-label="출력 복사" title="출력 복사" onClick={copyOutput}><Copy size={15} /></button></div>
-    <div className="sd-output-code"><pre>{output.preview.split('\n').map((line, index) => <span className={line.includes('비어 있음') || line.includes('없음 불가') ? 'sd-output-error-line' : ''} key={index}>{outputTokens(line)}{'\n'}</span>)}</pre>{output.omissions.length > 0 && <div className="sd-output-note">TOML에는 없음 값을 포함할 수 없어 {output.omissions.join(', ')} 항목을 제외했어요.</div>}{output.issues.filter((issue) => !issue.startsWith('빈 자리')).map((issue) => <div className="sd-output-note" key={issue}>{issue}</div>)}</div>
-    <div className="sd-checks"><div className="sd-section-label">점검</div>{checks.length ? checks.map((check, index) => <div className="sd-check" key={`${check.label}-${check.path}-${index}`}><i className={check.label === '연결 안 된 블록' ? 'neutral' : undefined} />{check.label} <span>{check.path}</span></div>) : <div className="sd-check"><i className="neutral" />문제 없음</div>}</div>
+  return <aside className={`sd-output${collapsed ? ' is-collapsed' : ''}`} aria-label="출력">
+    <div className="sd-output-header"><div role="tablist" aria-label="출력 형식" className="sd-tabs">{(['json', 'yaml', 'toml'] as const).map((item) => <button key={item} role="tab" aria-selected={item === format} onClick={() => setFormat(item)}>{item.toUpperCase()}</button>)}</div><button type="button" className="sd-copy-button" aria-label="출력 복사" title="출력 복사" onClick={copyOutput}><Copy size={15} /></button><button type="button" className="sd-panel-toggle" aria-label={collapsed ? '소스 보기 패널 펼치기' : '소스 보기 패널 접기'} title={collapsed ? '소스 보기 패널 펼치기' : '소스 보기 패널 접기'} aria-expanded={!collapsed} aria-controls="sd-output-content" onClick={onToggle}>{collapsed ? <ChevronRight size={15} aria-hidden="true" /> : <ChevronLeft size={15} aria-hidden="true" />}</button></div>
+    <div className="sd-output-body" id="sd-output-content" hidden={collapsed}>
+      <div className="sd-output-code"><pre>{output.preview.split('\n').map((line, index) => <span className={line.includes('비어 있음') || line.includes('없음 불가') ? 'sd-output-error-line' : ''} key={index}>{outputTokens(line)}{'\n'}</span>)}</pre>{output.omissions.length > 0 && <div className="sd-output-note">TOML에는 없음 값을 포함할 수 없어 {output.omissions.join(', ')} 항목을 제외했어요.</div>}{output.issues.filter((issue) => !issue.startsWith('빈 자리')).map((issue) => <div className="sd-output-note" key={issue}>{issue}</div>)}</div>
+      <div className="sd-checks"><div className="sd-section-label">점검</div>{checks.length ? checks.map((check, index) => <div className="sd-check" key={`${check.label}-${check.path}-${index}`}><i className={check.label === '연결 안 된 블록' ? 'neutral' : undefined} />{check.label} <span>{check.path}</span></div>) : <div className="sd-check"><i className="neutral" />문제 없음</div>}</div>
+    </div>
     {notice && <div className="sd-toast" role="status">{notice}</div>}
   </aside>
 }
@@ -92,10 +94,12 @@ export function StructuredDataEditor({ document, model, onChange, onUndo, onRedo
   const [view, setView] = useState<View>({ zoom: 1, x: 0, y: 0 })
   const [leftWidth, setLeftWidth] = useState(220)
   const [rightWidth, setRightWidth] = useState(340)
+  const [outputCollapsed, setOutputCollapsed] = useState(true)
   const [ghost, setGhost] = useState<Ghost | null>(null)
   const [paletteDragging, setPaletteDragging] = useState(false)
   const [hover, setHover] = useState<DropTarget | null>(null)
   const [focus, setFocus] = useState<{ id: string; path: string[]; depth: number } | null>(null)
+  const viewBeforeFocus = useRef<View | null>(null)
   const canvas = useRef<HTMLElement>(null)
   const world = useRef<HTMLDivElement>(null)
   const live = useRef({ model, onChange, view })
@@ -300,7 +304,19 @@ export function StructuredDataEditor({ document, model, onChange, onUndo, onRedo
     if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); const result = removeSelection(model, selected.type, selected.id); if (result) { onChange(result); setSelected(null) } }
   }
   const focusedNode = focus ? findNode(model, focus.id) : undefined
-  const context = { model, selected, editing, collapsed, expanded, hover, draggingIds: ghost?.ids ?? new Set<string>(), readonly, focusedNodeId: focusedNode && focus ? focus.id : null, startDrag, startPaletteKey, select: setSelected, edit: setEditing, mutate, toggleCollapsed: (id: string) => toggle(setCollapsed, id), toggleExpanded: (id: string) => toggle(setExpanded, id), focusNode: (id: string, path: string[], depth: number) => { setFocus({ id, path, depth }); setSelected(null) } }
+  useLayoutEffect(() => {
+    if (!focus || !focusedNode || !canvas.current || !world.current) return
+    const focusedContainer = world.current.querySelector<HTMLElement>('.sd-focused-container')
+    if (!focusedContainer) return
+    const canvasBounds = canvas.current.getBoundingClientRect()
+    const containerBounds = focusedContainer.getBoundingClientRect()
+    setView((current) => ({
+      ...current,
+      x: current.x + canvasBounds.left + canvasBounds.width / 2 - (containerBounds.left + containerBounds.width / 2),
+      y: current.y + canvasBounds.top + canvasBounds.height / 2 - (containerBounds.top + containerBounds.height / 2),
+    }))
+  }, [focus?.id, focusedNode?.id])
+  const context = { model, selected, editing, collapsed, expanded, hover, draggingIds: ghost?.ids ?? new Set<string>(), readonly, focusedNodeId: focusedNode && focus ? focus.id : null, startDrag, startPaletteKey, select: setSelected, edit: setEditing, mutate, toggleCollapsed: (id: string) => toggle(setCollapsed, id), toggleExpanded: (id: string) => toggle(setExpanded, id), focusNode: (id: string, path: string[], depth: number) => { if (!focus) viewBeforeFocus.current = live.current.view; setFocus({ id, path, depth }); setSelected(null) } }
   return <BlockContext.Provider value={context}><div className={`structured-editor${paletteDragging ? ' sd-palette-dragging' : ''}`} onKeyDown={keyDown}>
     <div className="sd-layout" style={{ '--sd-left': `${leftWidth}px`, '--sd-right': `${rightWidth}px` } as React.CSSProperties}>
       <StructuredPalette /><ResizeHandle side="left" width={leftWidth} onChange={setLeftWidth} />
@@ -315,12 +331,12 @@ export function StructuredDataEditor({ document, model, onChange, onUndo, onRedo
         }
       }} onPointerDown={(event) => { if (touches.current.size < 2) pan(event) }} style={{ backgroundSize: `${20 * view.zoom}px ${20 * view.zoom}px`, backgroundPosition: `${view.x}px ${view.y}px` }}>
         <div className="sd-world" ref={world} style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
-          {focusedNode && focus ? <div className="sd-root" style={{ left: 48, top: 40 }}><button className="sd-focus-back" onClick={() => setFocus(null)}>← 전체</button><NodeBlock node={focusedNode} depth={focus.depth} path={focus.path} /></div> : <>{model.root && <div className="sd-root" style={{ left: 48, top: 40 }}><NodeBlock node={model.root} root /></div>}{model.loose.map((block) => <div className="sd-root sd-loose" key={block.id} style={{ left: block.x, top: block.y }}>{block.node ? <NodeBlock node={block.node} looseId={block.id} /> : block.slot ? <LooseProperty item={block.slot} looseId={block.id} /> : null}</div>)}</>}
+          {focusedNode && focus ? <div className="sd-root" style={{ left: 48, top: 40 }}><button type="button" className="sd-focus-back" aria-label="전체 보기로 돌아가기" title="전체 보기로 돌아가기" onClick={() => { setFocus(null); if (viewBeforeFocus.current) { setView(viewBeforeFocus.current); viewBeforeFocus.current = null } }}><ChevronLeft size={15} aria-hidden="true" /><span>전체</span></button><NodeBlock node={focusedNode} depth={focus.depth} path={focus.path} /></div> : <>{model.root && <div className="sd-root" style={{ left: 48, top: 40 }}><NodeBlock node={model.root} root /></div>}{model.loose.map((block) => <div className="sd-root sd-loose" key={block.id} style={{ left: block.x, top: block.y }}>{block.node ? <NodeBlock node={block.node} looseId={block.id} /> : block.slot ? <LooseProperty item={block.slot} looseId={block.id} /> : null}</div>)}</>}
         </div>
         {model.unsupported && <div className="sd-model-note" role="status">{model.unsupported}</div>}
         <div className="sd-canvas-bar"><button aria-label="실행 취소" title="실행 취소" onClick={onUndo}><Undo2 size={15} /></button><button aria-label="다시 실행" title="다시 실행" onClick={onRedo}><Redo2 size={15} /></button><span /><button aria-label="축소" onClick={() => zoomAt(view.zoom / 1.2)}>−</button><button aria-label="100%로 되돌리기" className="sd-percent" onClick={() => setView({ zoom: 1, x: 0, y: 0 })}>{Math.round(view.zoom * 100)}%</button><button aria-label="확대" onClick={() => zoomAt(view.zoom * 1.2)}>+</button><span /><button className="sd-fit" onClick={fit}>화면에 맞추기</button></div>
       </main>
-      <ResizeHandle side="right" width={rightWidth} onChange={setRightWidth} /><OutputPanel model={model} format={outputFormat} setFormat={onOutputFormat} />
+      {!outputCollapsed && <ResizeHandle side="right" width={rightWidth} onChange={setRightWidth} />}<OutputPanel model={model} format={outputFormat} setFormat={onOutputFormat} collapsed={outputCollapsed} onToggle={() => setOutputCollapsed((current) => !current)} />
     </div>
     {ghost && <DragGhost ghost={ghost} />}
   </div></BlockContext.Provider>

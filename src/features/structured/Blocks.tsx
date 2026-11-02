@@ -208,7 +208,7 @@ export function NodeBlock({ node, depth = 1, root = false, looseId, path = ['$']
   const manyArray = node.kind === 'array' && node.items.length > 100
   const longArray = manyArray && !context.expanded.has(node.id)
   const visible = longArray ? [...node.items.slice(0, 3), ...node.items.slice(-1)] : node.items
-  const block = <div className={`sd-container depth-${Math.min(depth, 3)}${context.selected?.id === node.id ? ' selected' : ''}${context.draggingIds.has(node.id) ? ' dragging' : ''}`} data-container={node.id} data-collapsed={collapsed}>
+  const block = <div className={`sd-container depth-${Math.min(depth, 3)}${context.selected?.id === node.id ? ' selected' : ''}${context.draggingIds.has(node.id) ? ' dragging' : ''}${context.focusedNodeId === node.id ? ' sd-focused-container' : ''}`} data-container={node.id} data-collapsed={collapsed}>
     <div className="sd-container-head" data-node={node.id} tabIndex={root ? undefined : 0} onFocus={(event) => { if (!root && event.target === event.currentTarget) context.select(selection) }} onPointerDown={(event) => { if (!root) context.startDrag(event, source, selection); else event.stopPropagation() }}>
       {!root && <button type="button" className="sd-fold" aria-label={collapsed ? '펼치기' : '접기'} aria-expanded={!collapsed} onPointerDown={(event) => event.stopPropagation()} onClick={() => context.toggleCollapsed(node.id)}><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: collapsed ? undefined : 'rotate(90deg)' }}><path d="m9 6 6 6-6 6" /></svg></button>}
       <BlockIcon name={node.kind} size={depth === 1 ? 16 : depth === 2 ? 14 : 13} />{root && <strong>최상위</strong>}
