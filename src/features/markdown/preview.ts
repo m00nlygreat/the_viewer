@@ -459,6 +459,13 @@ export function markdownLivePreview(theme: 'light' | 'dark', undo: () => void = 
     markdownCodeBlockDecorations(theme, undo, redo),
     ViewPlugin.fromClass(MarkdownPreviewPlugin, { decorations: (plugin) => plugin.decorations }),
     EditorView.domEventHandlers({
+      keydown(event, view) {
+        if (event.key !== 'Escape' || event.isComposing || !view.hasFocus) return false
+        if (event.target instanceof Element && event.target.closest('.cm-md-code-widget, .cm-md-table-widget, .cm-md-frontmatter-widget')) return false
+        event.preventDefault()
+        view.contentDOM.blur()
+        return true
+      },
       compositionstart(_event, view) {
         view.dispatch({ effects: setCompositionPosition.of(view.state.selection.main.head) })
         return false
