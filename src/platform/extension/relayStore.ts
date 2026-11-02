@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase, type IDBPObjectStore } from 'idb'
-import { PROTOCOL_VERSION, WORKSPACE_SNAPSHOT_LIMIT, type RelayKind } from '../relay/protocol'
+import { PROTOCOL_VERSION, WORKSPACE_SNAPSHOT_LIMIT, type RelayKind, type RelaySource } from '../relay/protocol'
 
 const DATABASE_NAME = 'the-viewer-extension-relay'
 const MAX_RELAY_STORAGE_BYTES = 300 * 1024 * 1024
@@ -10,6 +10,7 @@ export interface RelayTicket {
   id: string
   version: number
   kind: RelayKind
+  source?: RelaySource
   tabId: number
   createdAt: number
   expiresAt: number
@@ -66,6 +67,7 @@ export class RelayStoreError extends Error {
 export async function createTicket(input: {
   id?: string
   kind: RelayKind
+  source?: RelaySource
   tabId: number
   name: string
   mimeType: string
@@ -79,6 +81,7 @@ export async function createTicket(input: {
 async function createTicketNow(input: {
   id?: string
   kind: RelayKind
+  source?: RelaySource
   tabId: number
   name: string
   mimeType: string
@@ -92,7 +95,7 @@ async function createTicketNow(input: {
   const id = input.id ?? crypto.randomUUID()
   const bytes = source.slice().buffer as ArrayBuffer
   const ticket: RelayTicket = {
-    id, version: PROTOCOL_VERSION, kind: input.kind, tabId: input.tabId,
+    id, version: PROTOCOL_VERSION, kind: input.kind, source: input.source, tabId: input.tabId,
     createdAt: now, expiresAt: now + TICKET_LIFETIME_MS,
     name: input.name.slice(0, 255), mimeType: input.mimeType.slice(0, 128), byteLength: bytes.byteLength, bytes
   }

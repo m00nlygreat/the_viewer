@@ -126,6 +126,10 @@ export interface ViewerDocument {
   openedAt: number
   lastEditedAt: number
   parentId?: string
+  /** Handle for writing back to the selected, dropped, or OS-launched local file. */
+  sourceFileHandle?: FileSystemFileHandle
+  /** The extension can read file:// bytes but cannot provide a writable file handle. */
+  fileSource?: 'file-url'
   relayTicketId?: string
   shareTicketId?: string
   shareFileIndex?: number

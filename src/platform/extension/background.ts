@@ -124,6 +124,7 @@ function handleRelayPort(port: chrome.runtime.Port): void {
           lockedTicketId = next.id
           port.postMessage({
             type: 'META', version: PROTOCOL_VERSION, ticketId: next.id, kind: next.kind,
+            ...(next.source ? { source: next.source } : {}),
             name: next.name, mimeType: next.mimeType, byteLength: next.byteLength,
             chunkCount: Math.ceil(next.byteLength / CHUNK_BYTES)
           })

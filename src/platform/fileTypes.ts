@@ -3,4 +3,4 @@ export {
 } from '../domain/fileFormats'
 export type { Format } from '../domain/fileFormats'
 
-export interface PickedFile { name: string; type: string; bytes: Uint8Array }
+export interface PickedFile { name: string; type: string; bytes: Uint8Array; fileHandle?: FileSystemFileHandle }

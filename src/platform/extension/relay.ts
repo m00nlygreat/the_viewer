@@ -2,7 +2,7 @@ import './relay.css'
 import { fetchAutoOpenedFile, fetchRemoteLinkFile, readRemoteLinkTicket, deleteRemoteLinkTicket } from './links'
 import { createLegacySnapshot, readLegacyDocuments } from './legacyMigration'
 import { createTicket, readTicket, RelayStoreError } from './relayStore'
-import { isTicketId, SNAPSHOT_MIME, type RelayKind } from '../relay/protocol'
+import { isTicketId, SNAPSHOT_MIME, type RelayKind, type RelaySource } from '../relay/protocol'
 import { getFormat } from '../fileTypes'
 import { isAutoOpenTokenValid, isLocalFileAccessAllowed, openExtensionDetails } from './autoOpen'
 
@@ -64,7 +64,7 @@ async function goToPwa(ticketId?: string): Promise<void> {
   await chrome.tabs.update(tabId, { url })
 }
 
-async function createAndOpenTicket(input: { kind: RelayKind; name: string; mimeType: string; bytes: Uint8Array }): Promise<void> {
+async function createAndOpenTicket(input: { kind: RelayKind; source?: RelaySource; name: string; mimeType: string; bytes: Uint8Array }): Promise<void> {
   const ticket = await createTicket({ ...input, tabId: await getCurrentTabId() })
   history.replaceState(null, '', `#ready/${ticket.id}`)
   await goToPwa(ticket.id)
@@ -74,7 +74,7 @@ async function readAutoFile(token: string, source: string): Promise<void> {
   try {
     if (!await isAutoOpenTokenValid(token)) throw new Error('자동 열기 요청이 유효하지 않습니다. 다시 파일을 여세요.')
     const file = await fetchAutoOpenedFile(source)
-    await createAndOpenTicket({ kind: formatKind(file.name, file.type), name: file.name, mimeType: file.type, bytes: file.bytes })
+    await createAndOpenTicket({ kind: formatKind(file.name, file.type), source: new URL(source).protocol === 'file:' ? 'file-url' : undefined, name: file.name, mimeType: file.type, bytes: file.bytes })
   } catch (error) {
     const message = error instanceof Error ? error.message : '파일을 읽지 못했습니다.'
     const actions: Action[] = [{ label: '다시 시도', primary: true, run: () => readAutoFile(token, source) }]

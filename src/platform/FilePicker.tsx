@@ -1,6 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef } from 'react'
 import { FORMAT_EXTENSIONS } from '../domain/fileFormats'
-import { readDroppedFiles } from './browserFiles'
+import { pickLocalFiles, readDroppedFiles, supportsFileHandlePicker } from './browserFiles'
 import type { Format, PickedFile } from './fileTypes'
 
 export type { PickedFile } from './fileTypes'
@@ -15,9 +15,18 @@ export const FilePicker = forwardRef<FilePickerHandle, Props>(function FilePicke
     open(format, accept) {
       pendingFormat.current = format
       pendingAccept.current = accept ?? Object.values(FORMAT_EXTENSIONS).flat().map((extension) => `.${extension}`).join(',')
-      if (input.current) { input.current.accept = pendingAccept.current; input.current.click() }
+      if (supportsFileHandlePicker()) {
+        void pickLocalFiles(format, multiple).then((files) => {
+          if (files) onFiles(files, format)
+        }).catch((error: unknown) => {
+          if (!(error instanceof DOMException && error.name === 'AbortError')) onError?.(error instanceof Error ? error.message : '선택한 파일을 읽지 못했습니다.')
+        }).finally(() => { pendingFormat.current = undefined })
+      } else if (input.current) {
+        input.current.accept = pendingAccept.current
+        input.current.click()
+      }
     }
-  }), [])
+  }), [multiple, onError, onFiles])
   const receive = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.currentTarget.files ?? [])
     event.currentTarget.value = ''

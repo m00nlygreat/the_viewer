@@ -23,7 +23,7 @@ import { clearAllData, clearDocuments, completeShareTicketFile, loadDocuments, l
 import { DocumentWriteQueue } from '../platform/documentWriteQueue'
 import { FilePicker, type FilePickerHandle } from '../platform/FilePicker'
 import type { PickedFile } from '../platform/fileTypes'
-import { downloadLocalFile, readClipboardText, readDroppedFiles, receiveLaunchedFiles, saveLocalFile, shareLocalFile } from '../platform/browserFiles'
+import { downloadLocalFile, pickMatchingLocalSourceFile, readClipboardText, readDroppedItems, receiveLaunchedFiles, requestLocalFileWritePermission, saveLocalFile, shareLocalFile, writeLocalFileHandle } from '../platform/browserFiles'
 import { commitExtensionFile, parseRelayRoute, receiveExtensionFile, RelayTransferError, restoreLegacySnapshot, type ReceivedExtensionFile, type RelayRoute } from '../platform/pwa/extensionRelay'
 
 const CsvEditor = lazy(() => import('../features/CsvEditor').then((module) => ({ default: module.CsvEditor })))
@@ -253,7 +253,11 @@ export function App() {
         }
         const document = await makeDocumentFromBytes(file.name, file.type, file.bytes, undefined)
         if (forcedFormat && document.format !== forcedFormat) throw new Error(`선택한 형식 ${forcedFormat.toUpperCase()}과 파일 내용이 다릅니다.`)
-        const openedDocument = origin ? { ...document, ...origin } : document
+        const openedDocument = {
+          ...document,
+          ...(file.fileHandle ? { sourceFileHandle: file.fileHandle } : {}),
+          ...(origin ? { ...origin } : {})
+        }
         documentsRef.current = [openedDocument, ...documentsRef.current.filter((item) => item.id !== openedDocument.id)]
         setDocuments((items) => [openedDocument, ...items.filter((item) => item.id !== openedDocument.id)])
         opened.push(openedDocument)
@@ -310,7 +314,7 @@ export function App() {
         } else {
           const document = await makeDocumentFromBytes(received.file.name, received.file.type, received.file.bytes)
           if (document.format !== received.kind) throw new Error('전달된 파일 형식 정보와 실제 파일 내용이 다릅니다.')
-          imported = { ...document, id: route.ticketId, relayTicketId: route.ticketId }
+          imported = { ...document, id: route.ticketId, relayTicketId: route.ticketId, ...(received.source === 'file-url' ? { fileSource: 'file-url' as const } : {}) }
         }
         if (recoveryEnabled) await saveDocument(imported)
         documentsRef.current = [imported, ...documentsRef.current.filter((item) => item.id !== imported!.id)]
@@ -467,11 +471,49 @@ export function App() {
       } catch (error) { if (!(error instanceof DOMException && error.name === 'AbortError')) notify(error instanceof Error ? `내보내기 실패: ${error.message}` : '내보내기 실패', 'error') }
       return
     }
+    let sourceFileHandle = activeDocument.sourceFileHandle
+    if (!sourceFileHandle && activeDocument.fileSource === 'file-url') {
+      try {
+        sourceFileHandle = await pickMatchingLocalSourceFile(
+          activeDocument.name,
+          activeDocument.format,
+          new Uint8Array(activeDocument.initialBytes ?? activeDocument.savedBytes)
+        ) ?? undefined
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) notify(error instanceof Error ? error.message : '원본 파일을 연결하지 못했습니다.', 'error')
+        return
+      }
+      if (!sourceFileHandle) {
+        notify('이 브라우저에서는 원본 파일을 연결할 수 없어 새 파일로 내보냅니다.', 'info')
+      } else {
+        const current = documentsRef.current.find((document) => document.id === id)
+        if (!current) return
+        publishDocument({ ...current, sourceFileHandle })
+        notify('원본 파일을 연결했습니다. 저장을 한 번 더 누르면 해당 파일에 기록합니다.', 'info')
+        return
+      }
+    }
+    const writePermission = sourceFileHandle ? requestLocalFileWritePermission(sourceFileHandle) : null
     let snapshot: ReturnType<typeof buildExportSnapshot>
+    let savedBaseline: Uint8Array | undefined
     try {
       const item = await flushDocument(id, () => documentsRef.current.find((document) => document.id === id) ?? null, () => pendingSerializations.current.get(id))
       snapshot = buildExportSnapshot(id, item)
+      savedBaseline = new Uint8Array(item.savedBytes)
     } catch (error) { notify(error instanceof Error ? `파일을 구성하지 못했습니다: ${error.message}` : '파일을 구성하지 못했습니다.', 'error'); return }
+    if (sourceFileHandle) {
+      try {
+        if (!writePermission || !await writePermission) throw new Error('원본 파일 쓰기 권한을 허용해야 저장할 수 있습니다.')
+        await writeLocalFileHandle(sourceFileHandle, snapshot.bytes, true, savedBaseline)
+      } catch (error) {
+        notify(error instanceof Error ? `원본 파일 저장 실패: ${error.message}` : '원본 파일 저장 실패', 'error')
+        return
+      }
+      const current = documentsRef.current.find((document) => document.id === id)
+      if (current) publishDocument(documentController.current.markSaved(current, snapshot))
+      notify('원본 파일에 저장했습니다.', 'success')
+      return
+    }
     let status: 'saved' | 'started' | 'cancelled' = 'started'
     try {
       status = await saveLocalFile(activeDocument.name, activeDocument.format, snapshot.bytes)
@@ -706,7 +748,7 @@ export function App() {
 
   const onDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault()
-    void readDroppedFiles(event.dataTransfer.files).then((files) => openFiles(files)).catch((error: unknown) => notify(error instanceof Error ? error.message : '놓은 파일을 읽지 못했습니다.', 'error'))
+    void readDroppedItems(event.dataTransfer.items).then((files) => openFiles(files)).catch((error: unknown) => notify(error instanceof Error ? error.message : '놓은 파일을 읽지 못했습니다.', 'error'))
   }, [openFiles, notify])
   const switchTab = (id: string) => { setActiveId(id); location.hash = `/file/${id}` }
   const renderActiveDocument = (document: ViewerDocument) => renderDocument(
