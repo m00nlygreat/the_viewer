@@ -22,7 +22,7 @@ export function WorkspaceSidebar({ documents, activeId, collapsed, onToggleColla
     <div className="sidebar-section-divider" role="separator" />
     <nav className="document-nav" aria-label="열린 파일">
       {documents.map((item) => <div className={`document-nav-row${item.id === activeId ? ' active' : ''}`} key={item.id}>
-        <button className="document-nav-select" aria-label={item.name} title={item.name} onClick={() => onSelectDocument(item.id)}><span className={`file-badge format-${item.format}`}>{item.format.toUpperCase()}</span><span className="document-nav-name">{safeDisplayFileName(item.name)}</span>{item.isDirty && <i className="dirty-dot" aria-label="수정됨" />}</button>
+        <button className="document-nav-select" aria-label={`${item.name}${item.isDirty ? ' · 수정됨' : ''}`} title={`${item.name}${item.isDirty ? ' · 수정됨' : ''}`} onClick={() => onSelectDocument(item.id)}><span className="document-nav-badge"><span className={`file-badge format-${item.format}`}>{item.format.toUpperCase()}</span>{item.isDirty && <i className="document-nav-badge-dot" aria-hidden="true" />}</span><span className="document-nav-name">{safeDisplayFileName(item.name)}</span>{item.isDirty && <i className="dirty-dot" aria-hidden="true" />}</button>
         <button className="document-nav-close" aria-label={`${item.name} 닫기`} onClick={() => onCloseDocument(item.id)}><X size={13} /></button>
       </div>)}
       {!documents.length && <div className="sidebar-empty">열린 파일이 없습니다.</div>}

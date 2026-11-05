@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { ChevronLeft, ChevronRight, Copy } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy, Maximize2 } from 'lucide-react'
 import type { ViewerDocument } from '../../domain/types'
 import { type StructuredFormat, type StructuredModel } from '../../domain/structured/model'
 import { applyDrop, findNode, findSlotParent, payloadIds, removeSelection, sourcePayload, type DragSource, type DropTarget, type Payload } from '../../domain/structured/operations'
@@ -337,7 +337,7 @@ export function StructuredDataEditor({ document, model, onChange, outputFormat, 
           {focusedNode && focus ? <div className="sd-root" style={{ left: 48, top: 40 }}><button type="button" className="sd-focus-back" aria-label="전체 보기로 돌아가기" title="전체 보기로 돌아가기" onClick={() => { setFocus(null); if (viewBeforeFocus.current) { setView(viewBeforeFocus.current); viewBeforeFocus.current = null } }}><ChevronLeft size={15} aria-hidden="true" /><span>전체</span></button><NodeBlock node={focusedNode} depth={focus.depth} path={focus.path} /></div> : <>{model.root && <div className="sd-root" style={{ left: 48, top: 40 }}><NodeBlock node={model.root} root /></div>}{model.loose.map((block) => <div className="sd-root sd-loose" key={block.id} style={{ left: block.x, top: block.y }}>{block.node ? <NodeBlock node={block.node} looseId={block.id} /> : block.slot ? <LooseProperty item={block.slot} looseId={block.id} /> : null}</div>)}</>}
         </div>
         {model.unsupported && <div className="sd-model-note" role="status">{model.unsupported}</div>}
-        <div className="sd-canvas-bar"><button aria-label="축소" title="축소" onClick={() => zoomAt(view.zoom / 1.2)}>−</button><button aria-label="100%로 되돌리기" title="100%로 되돌리기" className="sd-percent" onClick={() => setView({ zoom: 1, x: 0, y: 0 })}>{Math.round(view.zoom * 100)}%</button><button aria-label="확대" title="확대" onClick={() => zoomAt(view.zoom * 1.2)}>+</button><button className="sd-fit" aria-label="화면에 맞추기" title="화면에 맞추기" onClick={fit}>화면에 맞추기</button></div>
+        <div className="sd-canvas-bar"><button aria-label="축소" title="축소" onClick={() => zoomAt(view.zoom / 1.2)}>−</button><button aria-label="100%로 되돌리기" title="100%로 되돌리기" className="sd-percent" onClick={() => setView({ zoom: 1, x: 0, y: 0 })}>{Math.round(view.zoom * 100)}%</button><button aria-label="확대" title="확대" onClick={() => zoomAt(view.zoom * 1.2)}>+</button><button className="sd-fit" aria-label="화면에 맞추기" title="화면에 맞추기" onClick={fit}><Maximize2 size={15} aria-hidden="true" /></button></div>
       </main>
       {!outputCollapsed && <ResizeHandle side="right" width={rightWidth} onChange={setRightWidth} />}<OutputPanel model={model} format={outputFormat} setFormat={onOutputFormat} collapsed={outputCollapsed} onToggle={() => setOutputCollapsed((current) => !current)} />
     </div>

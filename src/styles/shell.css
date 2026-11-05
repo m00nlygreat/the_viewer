@@ -17,6 +17,8 @@
 .document-nav-close { width: 24px; height: 24px; margin-right: 3px; display: grid; place-items: center; color: var(--text-weak); background: transparent; border-radius: 5px; opacity: 0; }
 .document-nav-row:hover .document-nav-close, .document-nav-row.active .document-nav-close, .document-nav-close:focus-visible { opacity: 1; }
 .document-nav-close:hover { color: var(--text); background: var(--control-active); }
+.document-nav-badge { position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; }
+.document-nav-badge-dot { position: absolute; right: -4px; bottom: -3px; display: none; width: 8px; height: 8px; border: 1.5px solid var(--sidebar); border-radius: 50%; background: var(--warning); }
 .file-badge { flex: 0 0 auto; width: auto; min-width: 26px; height: 17px; padding: 0 4px; display: inline-grid; place-items: center; border: 1px solid var(--button-line); border-radius: 4px; color: var(--text-muted); font: 11px/1 var(--font-mono); letter-spacing: -.04em; }
 .file-badge.format-md { color: #B8A2FA; border-color: color-mix(in srgb, #8C70DC 36%, var(--button-line)); }
 .file-badge.format-csv { color: #79CFA0; border-color: color-mix(in srgb, #42A773 36%, var(--button-line)); }
@@ -38,6 +40,8 @@
 .sidebar.collapsed .sidebar-section-divider { display: none; }
 .sidebar.collapsed .document-nav-row { justify-content: center; }
 .sidebar.collapsed .document-nav-select { justify-content: center; padding: 0; }
+.sidebar.collapsed .document-nav-badge-dot { display: block; }
+.sidebar.collapsed .document-nav-select > .dirty-dot { display: none; }
 .sidebar.collapsed .document-nav-name, .sidebar.collapsed .document-nav-close, .sidebar.collapsed .sidebar-empty { display: none; }
 .sidebar.collapsed .sidebar-settings { justify-content: center; padding: 0; }
 .sidebar.collapsed .sidebar-settings-label, .sidebar.collapsed .sidebar-version { display: none; }
