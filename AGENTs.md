@@ -4,6 +4,12 @@
 
 - React 컴포넌트를 작성하거나 수정할 때는 [컴포넌트 작성 규칙](docs/COMPONENTS.md)을 읽고 따른다.
 
+## 버전 관리
+
+- 제품 코드나 배포 설정을 커밋하기 전에 변경 영향에 따라 SemVer 버전을 올린다: 호환성을 깨는 변경은 MAJOR, 하위 호환 기능 추가는 MINOR, 버그 수정과 호환되는 개선은 PATCH다.
+- PWA와 Chrome 확장은 같은 버전을 사용한다. [package.json](package.json)을 기준으로 [package-lock.json](package-lock.json)의 루트 버전과 [public/version.json](public/version.json)의 `version`도 맞춘다.
+- Vite가 생성하는 앱 버전 표시와 확장 manifest/version 파일은 [package.json](package.json)에서 읽으므로 생성 산출물을 직접 수정하지 않는다.
+
 ## 위키 관리
 
 - 이 저장소의 간단한 위키는 [wiki](wiki/)에 둔다.

@@ -1,4 +1,4 @@
-import { ChevronDown, Command, FileText, FolderOpen, LogOut, Moon, Redo2, Settings2, Share2, Sun, Undo2, Upload } from 'lucide-react'
+import { ChevronDown, Command, Download, FileText, FolderOpen, LogOut, Moon, Redo2, Save, Settings2, Share2, Sun, Undo2 } from 'lucide-react'
 import type { ViewerDocument } from '../domain/types'
 import { safeDisplayFileName } from './displayName'
 
@@ -6,6 +6,7 @@ interface HeaderProps {
   document: ViewerDocument | null
   theme: 'light' | 'dark'
   canShare: boolean
+  saveLabel: '저장' | '다운로드'
   onModeChange: (mode: ViewerDocument['mode']) => void
   onThemeChange: (theme: 'light' | 'dark') => void
   onUndo: () => void
@@ -19,7 +20,7 @@ interface HeaderProps {
 }
 
 export function DocumentHeader(props: HeaderProps) {
-  const { document, theme, canShare, onModeChange, onThemeChange, onUndo, onRedo, onSave, onShare, onClose, onPickFiles, onOpenCommands, onOpenSettings } = props
+  const { document, theme, canShare, saveLabel, onModeChange, onThemeChange, onUndo, onRedo, onSave, onShare, onClose, onPickFiles, onOpenCommands, onOpenSettings } = props
   return <header className="topbar">
     <button className="mobile-menu icon-button" aria-label="열린 파일" onClick={onOpenCommands}><span className="visually-hidden">열린 파일</span><Command size={17} /></button>
     <div className="topbar-document"><span className="topbar-file-icon">{document ? <span className={`file-badge format-${document.format}`}>{document.format.toUpperCase()}</span> : <FileText size={16} />}</span><span className="topbar-name">{document ? safeDisplayFileName(document.name) : '작업 공간'}</span>{document?.isDirty && <span className="modified-pill">수정됨</span>}{document?.parentId && <span className="parent-tag">첨부에서 열림</span>}</div>
@@ -30,7 +31,7 @@ export function DocumentHeader(props: HeaderProps) {
         <div className="topbar-divider desktop-only" />
         <DocumentModeTabs document={document} placement="desktop" onModeChange={onModeChange} />
         <button className="icon-button theme-toggle" aria-label={`현재 ${theme === 'dark' ? '다크' : '라이트'} 테마; 테마 변경`} title="테마 전환" onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}</button>
-        <button className="primary-button export-button" onClick={onSave}><Upload size={14} /><span>내보내기</span><ChevronDown size={12} /></button>
+        <button className="primary-button export-button" onClick={onSave}>{saveLabel === '저장' ? <Save size={14} /> : <Download size={14} />}<span>{saveLabel}</span><ChevronDown size={12} /></button>
         {canShare && <button className="icon-button desktop-only" aria-label="시스템 공유" title="시스템 공유" onClick={onShare}><Share2 size={15} /></button>}
         <button className="icon-button close-current" aria-label="현재 파일 닫기" onClick={onClose}><LogOut size={15} /></button>
       </> : <>
@@ -42,13 +43,13 @@ export function DocumentHeader(props: HeaderProps) {
   </header>
 }
 
-export function DocumentActionBar({ document, onModeChange, onUndo, onRedo, onSave }: Pick<HeaderProps, 'document' | 'onModeChange' | 'onUndo' | 'onRedo' | 'onSave'>) {
+export function DocumentActionBar({ document, saveLabel, onModeChange, onUndo, onRedo, onSave }: Pick<HeaderProps, 'document' | 'saveLabel' | 'onModeChange' | 'onUndo' | 'onRedo' | 'onSave'>) {
   if (!document) return null
   return <nav className="mobile-action-bar" aria-label="문서 동작">
     <DocumentModeTabs document={document} placement="mobile" onModeChange={onModeChange} />
     <button className="secondary-button mobile-history" aria-label="실행 취소" onClick={onUndo}><Undo2 size={17} /></button>
     <button className="secondary-button mobile-history" aria-label="다시 실행" onClick={onRedo}><Redo2 size={17} /></button>
-    <button className="primary-button mobile-export" onClick={onSave}><Upload size={15} /> 내보내기</button>
+    <button className="primary-button mobile-export" onClick={onSave}>{saveLabel === '저장' ? <Save size={15} /> : <Download size={15} />} {saveLabel}</button>
   </nav>
 }
 

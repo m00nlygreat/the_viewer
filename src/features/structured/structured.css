@@ -21,7 +21,7 @@
 .sd-schema-fields { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; padding: 6px 8px; border-radius: 6px; background: var(--sd-row); }
 .sd-schema-fields div { min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sd-key); }.sd-schema-fields div > span:not(.sd-schema-icon-placeholder) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.sd-schema-fields svg { color: var(--sd-muted); }
 .sd-resizer { flex: 0 0 9px; width: 9px; margin: 0 -5px; padding: 0; border: 0; background: transparent; position: relative; z-index: 5; cursor: col-resize !important; touch-action: none; }
-.sd-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: transparent; }.sd-resizer:hover::after, .sd-resizer:focus-visible::after, .sd-resizer:active::after { background: var(--sd-faint); }
+.sd-resizer:focus-visible { outline: none; }.sd-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: transparent; }.sd-resizer:hover::after, .sd-resizer:active::after { background: var(--sd-faint); }
 .sd-canvas { flex: 1 1 400px; min-width: 0; min-height: 0; position: relative; overflow: hidden; touch-action: none; user-select: none; background-color: var(--sd-canvas-bg); background-image: radial-gradient(var(--sd-dot) 1px, transparent 1px); }
 .sd-world { position: absolute; left: 0; top: 0; width: 1040px; height: 860px; transform-origin: 0 0; pointer-events: none; }
 .sd-root { position: absolute; width: max-content; pointer-events: auto; }.sd-loose { opacity: .85; }

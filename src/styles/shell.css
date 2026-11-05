@@ -4,6 +4,7 @@
 .sidebar-brand img { width: 18px; height: 18px; border-radius: 5px; }
 .sidebar-toggle { margin-left: auto; width: 26px; height: 26px; display: grid; place-items: center; color: var(--text-weak); background: transparent; border-radius: 6px; }
 .sidebar-toggle:hover, .icon-button:hover, .sidebar-section-title button:hover { background: var(--control-active); color: var(--text); }
+.sidebar button:focus-visible { outline: none; }
 .sidebar-open, .sidebar-command { width: 100%; min-height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: 6px; background: transparent; color: var(--text-secondary); text-align: left; font-size: 14px; }
 .sidebar-open:hover, .sidebar-command:hover { background: var(--selected); color: var(--text-strong); }
 .sidebar-open kbd, .sidebar-command kbd { margin-left: auto; color: var(--text-weak); }

@@ -23,7 +23,7 @@ import { clearAllData, clearDocuments, completeShareTicketFile, loadDocuments, l
 import { DocumentWriteQueue } from '../platform/documentWriteQueue'
 import { FilePicker, type FilePickerHandle } from '../platform/FilePicker'
 import type { PickedFile } from '../platform/fileTypes'
-import { downloadLocalFile, pickMatchingLocalSourceFile, readClipboardText, readDroppedItems, receiveLaunchedFiles, requestLocalFileWritePermission, saveLocalFile, shareLocalFile, writeLocalFileHandle } from '../platform/browserFiles'
+import { downloadLocalFile, pickMatchingLocalSourceFile, readClipboardText, readDroppedItems, receiveLaunchedFiles, requestLocalFileWritePermission, saveLocalFile, shareLocalFile, supportsFileHandlePicker, writeLocalFileHandle } from '../platform/browserFiles'
 import { commitExtensionFile, parseRelayRoute, receiveExtensionFile, RelayTransferError, restoreLegacySnapshot, type ReceivedExtensionFile, type RelayRoute } from '../platform/pwa/extensionRelay'
 
 const CsvEditor = lazy(() => import('../features/CsvEditor').then((module) => ({ default: module.CsvEditor })))
@@ -79,6 +79,9 @@ export function App() {
   const receivedRelayFiles = useRef(new Map<string, ReceivedExtensionFile>())
   const activeDocument = documents.find((document) => document.id === activeId) ?? null
   const resolvedTheme = theme === 'system' ? (systemLight ? 'light' : 'dark') : theme
+  const exportsAnotherFormat = Boolean(activeDocument && activeDocument.mode === 'view' && isStructuredFormat(activeDocument.format) && (structuredFormats[activeDocument.id] ?? 'json') !== activeDocument.format)
+  const canSaveSource = Boolean(activeDocument?.sourceFileHandle || (activeDocument?.fileSource === 'file-url' && supportsFileHandlePicker()))
+  const saveLabel: '저장' | '다운로드' = canSaveSource && !exportsAnotherFormat ? '저장' : '다운로드'
 
   const notify = useCallback((message: string, tone: Notice['tone'] = 'info') => {
     const id = Date.now() + Math.random()
@@ -765,7 +768,7 @@ export function App() {
     <WorkspaceSidebar documents={documents} activeId={activeId} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)} onPickFiles={() => pickFiles()} onOpenCommands={() => setShowCommand(true)} onSelectDocument={switchTab} onCloseDocument={(id) => { void closeDocument(id) }} onOpenSettings={() => setShowSettings(true)} />
 
     <main className="main-column">
-      <DocumentHeader document={activeDocument} theme={resolvedTheme} canShare={'share' in navigator} onModeChange={setMode} onThemeChange={changeTheme} onUndo={() => undo()} onRedo={() => undo(true)} onSave={() => { void saveCurrent() }} onShare={() => { void shareCurrent() }} onClose={() => { if (activeDocument) void closeDocument(activeDocument.id) }} onPickFiles={() => pickFiles()} onOpenCommands={() => setShowCommand(true)} onOpenSettings={() => setShowSettings(true)} />
+      <DocumentHeader document={activeDocument} theme={resolvedTheme} canShare={'share' in navigator} saveLabel={saveLabel} onModeChange={setMode} onThemeChange={changeTheme} onUndo={() => undo()} onRedo={() => undo(true)} onSave={() => { void saveCurrent() }} onShare={() => { void shareCurrent() }} onClose={() => { if (activeDocument) void closeDocument(activeDocument.id) }} onPickFiles={() => pickFiles()} onOpenCommands={() => setShowCommand(true)} onOpenSettings={() => setShowSettings(true)} />
 
       {activeDocument ? <>
         <div id={`document-panel-${activeDocument.id}`} className="document-workspace" key={activeDocument.id} role="tabpanel" aria-label={`${activeDocument.mode === 'view' ? '보기' : '원본'} · ${activeDocument.name}`} tabIndex={0}>
@@ -781,7 +784,7 @@ export function App() {
         {activeDocument.mode === 'source' && <div className="source-statusbar"><span>원본 텍스트 · UTF-8 출력</span><span>{activeDocument.text.split(/\r\n|\r|\n/).length}줄 · {activeDocument.text.length.toLocaleString()}자</span><div className="toolbar-spacer" />{activeDocument.parseState === 'pending' ? <span>해석 중</span> : activeDocument.parseState === 'error' ? <span className="error-label">문법 오류</span> : <span className="ready-label">유효한 문서</span>}</div>}
       </> : <WelcomeScreen onOpen={() => pickFiles()} onPaste={() => { void handlePaste() }} onCommand={() => setShowCommand(true)} />}
 
-      <DocumentActionBar document={activeDocument} onModeChange={setMode} onUndo={() => undo()} onRedo={() => undo(true)} onSave={() => { void saveCurrent() }} />
+      <DocumentActionBar document={activeDocument} saveLabel={saveLabel} onModeChange={setMode} onUndo={() => undo()} onRedo={() => undo(true)} onSave={() => { void saveCurrent() }} />
       {offlineReady && <div className="status-banner"><Check size={15} />오프라인에서 사용할 파일을 준비했습니다.<button className="icon-button" aria-label="알림 닫기" onClick={() => setOfflineReady(false)}><X size={14} /></button></div>}
       {updateReady && !relayRoute && <div className="status-banner update-banner"><span>새 버전을 사용할 수 있습니다. 업데이트는 사용자가 선택할 때 적용됩니다.</span><button className="subtle-button" onClick={() => window.dispatchEvent(new Event('viewer:apply-update'))}>업데이트</button><button className="icon-button" aria-label="업데이트 알림 닫기" onClick={() => setUpdateReady(false)}><X size={14} /></button></div>}
     </main>
