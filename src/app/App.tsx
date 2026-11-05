@@ -38,6 +38,7 @@ interface Notice { id: number; tone: 'success' | 'error' | 'info'; message: stri
 interface BeforeInstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
 const fileAccept = Object.values(FORMAT_EXTENSIONS).flat().map((extension) => `.${extension}`).join(',')
 const labels = FORMAT_LABEL
+const defaultStructuredOutputFormat = (document: ViewerDocument): StructuredFormat => isStructuredFormat(document.format) ? document.format : 'json'
 
 export function App() {
   const [documents, setDocuments] = useState<ViewerDocument[]>([])
@@ -79,7 +80,7 @@ export function App() {
   const receivedRelayFiles = useRef(new Map<string, ReceivedExtensionFile>())
   const activeDocument = documents.find((document) => document.id === activeId) ?? null
   const resolvedTheme = theme === 'system' ? (systemLight ? 'light' : 'dark') : theme
-  const exportsAnotherFormat = Boolean(activeDocument && activeDocument.mode === 'view' && isStructuredFormat(activeDocument.format) && (structuredFormats[activeDocument.id] ?? 'json') !== activeDocument.format)
+  const exportsAnotherFormat = Boolean(activeDocument && activeDocument.mode === 'view' && isStructuredFormat(activeDocument.format) && (structuredFormats[activeDocument.id] ?? defaultStructuredOutputFormat(activeDocument)) !== activeDocument.format)
   const canSaveSource = Boolean(activeDocument?.sourceFileHandle || (activeDocument?.fileSource === 'file-url' && supportsFileHandlePicker()))
   const saveLabel: '저장' | '다운로드' = canSaveSource && !exportsAnotherFormat ? '저장' : '다운로드'
 
@@ -461,7 +462,7 @@ export function App() {
   const saveCurrent = useCallback(async () => {
     if (!activeDocument) return
     const id = activeDocument.id
-    const selectedFormat = structuredFormats[id] ?? 'json'
+    const selectedFormat = structuredFormats[id] ?? defaultStructuredOutputFormat(activeDocument)
     if (activeDocument.mode === 'view' && isStructuredFormat(activeDocument.format) && selectedFormat !== activeDocument.format) {
       const current = documentsRef.current.find((item) => item.id === id)
       if (!current || current.parseState !== 'ready' || current.modelRevision !== current.revision) { notify('원본을 해석한 뒤 내보낼 수 있습니다.', 'error'); return }
@@ -759,7 +760,7 @@ export function App() {
     (model, group) => changeModel(document.id, isStructuredFormat(document.format) ? documentsRef.current.find((item) => item.id === document.id)?.revision ?? document.revision : document.revision, model, group),
     (text, group) => applySourceText(document.id, text, group),
     openAttachment, downloadAttachment, resolvedTheme,
-    () => undo(), () => undo(true), structuredFormats[document.id] ?? 'json',
+    () => undo(), () => undo(true), structuredFormats[document.id] ?? defaultStructuredOutputFormat(document),
     (format) => setStructuredFormats((current) => ({ ...current, [document.id]: format }))
   )
 
@@ -805,7 +806,7 @@ function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel
     case 'eml': return <EmailEditor document={document} model={document.model as EmailModel} onOpenAttachment={onOpenAttachment} onDownloadAttachment={onDownloadAttachment} />
     case 'ics': return <CalendarEditor document={document} model={document.model as CalendarModel} onChange={(model, group) => onModel(model, group)} />
     case 'vcf': return <ContactsEditor document={document} model={document.model as ContactModel} onChange={(model, group) => onModel(model, group)} />
-    case 'json': case 'yaml': case 'toml': return <StructuredDataEditor document={document} model={document.model as StructuredModel} onChange={onModel} onUndo={onUndo} onRedo={onRedo} outputFormat={structuredFormat} onOutputFormat={onStructuredFormat} />
+    case 'json': case 'yaml': case 'toml': return <StructuredDataEditor document={document} model={document.model as StructuredModel} onChange={onModel} outputFormat={structuredFormat} onOutputFormat={onStructuredFormat} />
   }
 }
 

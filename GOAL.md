@@ -199,7 +199,7 @@ JSON·YAML·TOML 파일을 기존 The Viewer에서 열고, 목업의 블록 언�
 | F01 | `.json`, `.yaml`, `.yml`, `.toml`을 열고 세 형식이 공통 블록 편집기를 사용한다. | 사용자 요청 + 목업 출력 3종. YAML/TOML을 JSON.parse로 처리하거나 문자열 뷰만 제공하면 미완료다. |
 | F02 | 기존 파일 선택·드롭·새 파일·붙여넣기·원본 탭·저장·작업 복구에 새 형식을 연결한다. | 기존 앱 통합. 별도 문서 앱이나 추가 상위 편집 탭을 만들지 않는다. |
 | F03 | 가져오기는 현재 구조를 바꾸는 목업의 **JSON 가져오기**다. | textarea·JSON 오류·취소·불러오기·최상위 객체/배열 제한. 기존의 새 문서 열기와 구분한다. YAML/TOML 선택기를 이 창에 추가하지 않는다. |
-| F04 | 오른쪽 JSON/YAML/TOML 탭은 출력 형식만 전환한다. 초기 탭은 목업처럼 JSON이다. | `showJson/showYaml/showToml`은 fmt만 변경한다. 탭 전환으로 문서 형식·원문·저장 기준본을 바꾸지 않는다. |
+| F04 | 오른쪽 JSON/YAML/TOML 탭은 출력 형식만 전환한다. 초기 탭은 열린 문서와 같은 형식이다. | JSON은 JSON, YAML(`.yaml`/`.yml`)은 YAML, TOML은 TOML로 시작한다. `showJson/showYaml/showToml`은 fmt만 변경하며 탭 전환으로 문서 형식·원문·저장 기준본을 바꾸지 않는다. |
 
 형식 문법은 [JSON RFC 8259](https://www.rfc-editor.org/rfc/rfc8259), [YAML 1.2](https://yaml.org/spec/1.2.2/), [TOML 1.0.0](https://toml.io/en/v1.0.0)을 초기 구현의 명시 기준으로 삼는다. 이는 외부 규격에 따른 파서 계약이며 목업에 없던 새 화면 요구사항이 아니다. 선택한 TOML 버전은 “최신 버전”이라는 의미가 아니다. 실제 파서의 지원 범위와 버전은 구현 착수 시 공식 자료로 검증하고 고정한다.
 
