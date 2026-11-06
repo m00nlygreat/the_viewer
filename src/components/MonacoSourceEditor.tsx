@@ -13,6 +13,7 @@ import { applyLineBasedTextChanges, EditorTextSyncSession, findTextChangesWithMa
 interface Props {
   documentId: string
   format: Format
+  plainText?: boolean
   csvDelimiter?: string
   value: string
   diagnostics: ParseDiagnostic[]
@@ -88,7 +89,7 @@ function syncModelText(model: monaco.editor.ITextModel, value: string, editor: m
   if (saved) editorStates.set(documentId, { ...editorStates.get(documentId) ?? saved, scrollTop: scrollTop ?? saved.scrollTop, scrollLeft: scrollLeft ?? saved.scrollLeft })
 }
 
-export default function MonacoSourceEditor({ documentId, format, csvDelimiter = ',', value, diagnostics, theme, onChange, onUndo, onRedo, label }: Props) {
+export default function MonacoSourceEditor({ documentId, format, plainText = false, csvDelimiter = ',', value, diagnostics, theme, onChange, onUndo, onRedo, label }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const changeRef = useRef(onChange)
@@ -109,7 +110,7 @@ export default function MonacoSourceEditor({ documentId, format, csvDelimiter = 
     const textSession = textSync.current
     configureMonacoWorker()
     if (format === 'json') registerMonacoJsonLanguage()
-    const language = format === 'md' ? 'markdown' : format === 'csv' ? registerCsvMonacoLanguage(csvDelimiter) : format === 'json' || format === 'yaml' ? format : 'plaintext'
+    const language = plainText ? 'plaintext' : format === 'md' ? 'markdown' : format === 'csv' ? registerCsvMonacoLanguage(csvDelimiter) : format === 'json' || format === 'yaml' ? format : 'plaintext'
     const uri = monaco.Uri.parse(`inmemory://the-viewer/${encodeURIComponent(documentId)}.${format}`)
     let model = models.get(documentId)
     if (!model || model.isDisposed()) {

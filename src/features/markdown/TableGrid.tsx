@@ -13,13 +13,16 @@ import {
   type Item,
 } from '@glideapps/glide-data-grid'
 import '@glideapps/glide-data-grid/dist/index.css'
-import { renderMarkdown } from '../../domain/markdown'
+import { markdownLinkAttributes, renderMarkdown } from '../../domain/markdown'
 import { useOutsideClick } from '../../components/useOutsideClick'
 import type { MarkdownTableState } from './tableState'
 import type { MarkdownTableModel } from '../../domain/formats/markdownTable'
 import { createGridTheme, GRID_BASE_FONT_STYLE, GRID_FONT_FAMILY, GRID_HEADER_FONT_STYLE } from '../gridTheme'
 import { applyGridCellUpdates } from '../gridModel'
 import { GridStructureToolbar } from '../GridStructureToolbar'
+import { collectMarkdownReferences, prepareObsidianReferences, type MarkdownReference } from '../../domain/markdownReferences'
+import { LocalReferenceWidgetView } from './LocalReferenceWidget'
+import { createRoot, type Root } from 'react-dom/client'
 
 interface Props { table: MarkdownTableState }
 
@@ -32,10 +35,11 @@ function createMarkdownColumnId(): string {
   return `markdown-column-${nextMarkdownColumnId}`
 }
 
-function renderMarkdownTable(source: string): string {
+function renderMarkdownTable(source: string): { html: string; byToken: ReadonlyMap<string, MarkdownReference> } {
+  const prepared = prepareObsidianReferences(source)
   let marker = 'MARKDOWN_TABLE_BREAK_TOKEN'
-  while (source.includes(marker)) marker += '_'
-  const markedSource = source.replace(/<br\s*\/?\s*>/giu, marker)
+  while (prepared.source.includes(marker)) marker += '_'
+  const markedSource = prepared.source.replace(/<br\s*\/?\s*>/giu, marker)
   const template = document.createElement('template')
   template.innerHTML = renderMarkdown(markedSource)
 
@@ -61,7 +65,12 @@ function renderMarkdownTable(source: string): string {
     node.replaceWith(fragment)
   }
 
-  return template.innerHTML
+  return { html: template.innerHTML, byToken: prepared.byToken }
+}
+
+function sameReferenceTarget(reference: string, target: string): boolean {
+  if (reference === target) return true
+  try { return decodeURIComponent(target) === reference } catch { return false }
 }
 
 // Glide 6.0.4 alpha exposes fillHandle at runtime before including it in its public prop types.
@@ -78,6 +87,7 @@ export function MarkdownTableBlock({ table }: Props) {
 function RenderedMarkdownTable({ table }: Props) {
   const snapshot = useSyncExternalStore(table.subscribe, table.getSnapshot, table.getSnapshot)
   const content = useRef<HTMLDivElement>(null)
+  const rendered = useMemo(() => renderMarkdownTable(snapshot.source), [snapshot.source])
   useEffect(() => {
     const rows = content.current?.querySelectorAll('tr')
     rows?.forEach((row) => {
@@ -87,12 +97,50 @@ function RenderedMarkdownTable({ table }: Props) {
     })
   }, [snapshot.model.alignments, snapshot.source])
 
+  useEffect(() => {
+    const host = content.current
+    const context = snapshot.context
+    if (!host || !context?.folderId || !context.services) return
+    const sourceReferences = collectMarkdownReferences(snapshot.source)
+    const references = sourceReferences.map((reference) => ({ ...reference, from: reference.from + snapshot.from, to: reference.to + snapshot.from }))
+    const mounted: Root[] = []
+    const used = new Set<number>()
+    for (const link of Array.from(host.querySelectorAll('a[href]'))) {
+      const href = link.getAttribute('href') ?? ''
+      if (/^https?:/iu.test(markdownLinkAttributes(href)?.href ?? '')) continue
+      const tokenReference = rendered.byToken.get(href)
+      const index = tokenReference ? sourceReferences.indexOf(tokenReference) : references.findIndex((reference, candidate) => !used.has(candidate) && sameReferenceTarget(reference.target, href) && (reference.kind === 'link' || reference.kind === 'obsidian-link'))
+      if (index < 0) { link.replaceWith(document.createTextNode(link.textContent ?? href)); continue }
+      used.add(index)
+      const placeholder = document.createElement('span')
+      placeholder.className = 'markdown-preview-reference'
+      link.replaceWith(placeholder)
+      const root = createRoot(placeholder)
+      root.render(<LocalReferenceWidgetView reference={references[index]!} context={context} />)
+      mounted.push(root)
+    }
+    for (const image of Array.from(host.querySelectorAll('.blocked-image[data-image-target]'))) {
+      const target = image.getAttribute('data-image-target') ?? ''
+      const tokenReference = rendered.byToken.get(target)
+      const index = tokenReference ? sourceReferences.indexOf(tokenReference) : references.findIndex((reference, candidate) => !used.has(candidate) && sameReferenceTarget(reference.target, target) && (reference.kind === 'image' || reference.kind === 'obsidian-embed'))
+      if (index < 0) continue
+      used.add(index)
+      const placeholder = document.createElement('span')
+      placeholder.className = 'markdown-preview-reference'
+      image.replaceWith(placeholder)
+      const root = createRoot(placeholder)
+      root.render(<LocalReferenceWidgetView reference={references[index]!} context={context} />)
+      mounted.push(root)
+    }
+    return () => { for (const root of mounted) root.unmount() }
+  }, [rendered.byToken, snapshot.context, snapshot.from, snapshot.source])
+
   return <section className="cm-md-table-preview" onDoubleClick={() => table.setEditing(true)}>
     <div className="cm-md-table-frame">
       <div className="cm-md-table-actions">
         <button type="button" className="toolbar-button" aria-label="표 편집" title="표 편집" onMouseDown={(event) => event.preventDefault()} onClick={() => table.setEditing(true)}>표 편집</button>
       </div>
-      <div ref={content} className="cm-md-table-content" dangerouslySetInnerHTML={{ __html: renderMarkdownTable(snapshot.source) }} />
+      <div ref={content} className="cm-md-table-content" dangerouslySetInnerHTML={{ __html: rendered.html }} />
     </div>
   </section>
 }
@@ -239,7 +287,6 @@ function MarkdownTableEditor({ table, model, theme }: { table: MarkdownTableStat
       leadingContent={<span>표 편집</span>}
       headerEditor={editingHeader === null ? undefined : { value: headerDraft, label: '열 이름 변경', onChange: setHeaderDraft, onCommit: commitHeader, onCancel: () => setEditingHeader(null) }}
       trailingContent={<span className="toolbar-spacer" />}
-      iconSize={13}
       preserveFocus
       removeRowDisabled={!model.rows.length}
       removeColumnDisabled={columnCount <= 1}

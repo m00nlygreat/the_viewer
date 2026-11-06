@@ -2,6 +2,7 @@ declare const __APP_BASE__: string
 declare const __APP_VERSION__: string
 
 interface Window {
+  showDirectoryPicker?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>
   showOpenFilePicker?: (options?: {
     multiple?: boolean
     types?: Array<{ description: string; accept: Record<string, string[]> }>
@@ -11,6 +12,13 @@ interface Window {
     types?: Array<{ description: string; accept: Record<string, string[]> }>
   }) => Promise<FileSystemFileHandle>
   launchQueue?: { setConsumer: (consumer: (params: { files: FileSystemFileHandle[] }) => void) => void }
+}
+
+interface FileSystemDirectoryHandle {
+  entries: () => AsyncIterableIterator<[string, FileSystemHandle]>
+  resolve: (possibleDescendant: FileSystemHandle) => Promise<string[] | null>
+  getDirectoryHandle: (name: string, options?: { create?: boolean }) => Promise<FileSystemDirectoryHandle>
+  getFileHandle: (name: string, options?: { create?: boolean }) => Promise<FileSystemFileHandle>
 }
 
 interface DataTransferItem {

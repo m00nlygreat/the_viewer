@@ -16,10 +16,13 @@
     "src/platform/pwa/**/*.ts",
     "src/platform/relay/**/*.ts",
     "src/platform/storage.ts",
+    "src/platform/folderAccess.ts",
+    "src/platform/folderResources.ts",
     "src/platform/attachmentResources.ts",
     "src/platform/browserFiles.ts",
     "src/platform/fileTypes.ts",
-    "src/platform/FilePicker.tsx"
+    "src/platform/FilePicker.tsx",
+    "src/platform/FolderPicker.tsx"
   ],
   "exclude": ["src/platform/extension/**", "tests/**", "vite.config.ts"]
 }

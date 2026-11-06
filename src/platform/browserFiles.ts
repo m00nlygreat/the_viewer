@@ -1,6 +1,7 @@
-import { FORMAT_EXTENSIONS, FORMAT_LABEL, FORMAT_MIME, FORMATS, type Format } from '../domain/fileFormats'
+import { FORMAT_EXTENSIONS, FORMAT_LABEL, FORMAT_MIME, type Format } from '../domain/fileFormats'
 import { assertInputFileSize } from '../domain/inputPolicy'
 import type { PickedFile } from './fileTypes'
+import { folderFromHandle, type PickedFolder } from './folderAccess'
 
 export type FileSaveResult = 'saved' | 'started' | 'cancelled'
 
@@ -11,27 +12,20 @@ export function supportsFileHandlePicker(): boolean {
 export async function pickLocalFiles(format?: Format, multiple = true): Promise<PickedFile[] | null> {
   const picker = window.showOpenFilePicker
   if (!picker) return null
-  const formats = format ? [format] : FORMATS
-  const handles = await picker.call(window, {
-    multiple,
-    types: formats.map((item) => ({
-      description: `${FORMAT_LABEL[item]} (${FORMAT_EXTENSIONS[item].map((extension) => `.${extension}`).join(', ')})`,
-      accept: { [FORMAT_MIME[item]]: FORMAT_EXTENSIONS[item].map((extension) => `.${extension}`) }
-    }))
-  })
+  const options = format
+    ? { multiple, types: [{ description: `${FORMAT_LABEL[format]} (${FORMAT_EXTENSIONS[format].map((extension) => `.${extension}`).join(', ')})`, accept: { [FORMAT_MIME[format]]: FORMAT_EXTENSIONS[format].map((extension) => `.${extension}`) } }] }
+    : { multiple }
+  const handles = await picker.call(window, options)
   return readFileHandles(handles)
 }
 
-export async function pickMatchingLocalSourceFile(name: string, format: Format, originalBytes: Uint8Array): Promise<FileSystemFileHandle | null> {
+export async function pickMatchingLocalSourceFile(name: string, format: Format | undefined, originalBytes: Uint8Array): Promise<FileSystemFileHandle | null> {
   const picker = window.showOpenFilePicker
   if (!picker) return null
-  const handles = await picker.call(window, {
-    multiple: false,
-    types: [{
-      description: `${FORMAT_LABEL[format]} (${FORMAT_EXTENSIONS[format].map((extension) => `.${extension}`).join(', ')})`,
-      accept: { [FORMAT_MIME[format]]: FORMAT_EXTENSIONS[format].map((extension) => `.${extension}`) }
-    }]
-  })
+  const options = format
+    ? { multiple: false, types: [{ description: `${FORMAT_LABEL[format]} (${FORMAT_EXTENSIONS[format].map((extension) => `.${extension}`).join(', ')})`, accept: { [FORMAT_MIME[format]]: FORMAT_EXTENSIONS[format].map((extension) => `.${extension}`) } }] }
+    : { multiple: false }
+  const handles = await picker.call(window, options)
   const handle = handles[0]
   if (!handle) throw new Error('원본 파일을 선택하지 못했습니다.')
   const file = await handle.getFile()
@@ -65,7 +59,7 @@ export async function writeLocalFileHandle(handle: FileSystemFileHandle, bytes: 
   }
   const writable = await handle.createWritable()
   try {
-    await writable.write(bytes)
+    await writable.write(bytes.slice().buffer as ArrayBuffer)
     await writable.close()
   } catch (error) {
     await writable.abort(error).catch(() => undefined)
@@ -76,8 +70,8 @@ export async function writeLocalFileHandle(handle: FileSystemFileHandle, bytes: 
 export async function saveLocalFile(name: string, format: Format, bytes: Uint8Array): Promise<FileSaveResult> {
   const mime = FORMAT_MIME[format]
   try {
-    if (window.showSaveFilePicker) {
-      const handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: format.toUpperCase(), accept: { [mime]: FORMAT_EXTENSIONS[format].map((extension) => `.${extension}`) } }] })
+    const handle = await pickLocalSaveHandle(name, format)
+    if (handle) {
       const writable = await handle.createWritable()
       await writable.write(new Blob([bytes as unknown as BlobPart], { type: mime }))
       await writable.close()
@@ -94,10 +88,17 @@ export async function saveLocalFile(name: string, format: Format, bytes: Uint8Ar
   }
 }
 
-export async function shareLocalFile(name: string, format: Format, bytes: Uint8Array): Promise<void> {
+export function pickLocalSaveHandle(name: string, format?: Format): Promise<FileSystemFileHandle> | null {
+  const picker = window.showSaveFilePicker
+  if (!picker) return null
+  return picker.call(window, format
+    ? { suggestedName: name, types: [{ description: FORMAT_LABEL[format], accept: { [FORMAT_MIME[format]]: FORMAT_EXTENSIONS[format].map((extension) => `.${extension}`) } }] }
+    : { suggestedName: name })
+}
+
+export async function shareLocalFile(name: string, format: Format, bytes: Uint8Array, mimeType = FORMAT_MIME[format]): Promise<void> {
   if (!navigator.share) throw new Error('이 브라우저에서는 시스템 공유를 사용할 수 없습니다.')
-  const mime = FORMAT_MIME[format]
-  const file = new File([bytes as unknown as BlobPart], name, { type: mime })
+  const file = new File([bytes as unknown as BlobPart], name, { type: mimeType })
   await navigator.share({ files: [file], title: name })
 }
 
@@ -117,7 +118,9 @@ export async function readDroppedFiles(files: FileList | File[]): Promise<Picked
   return readFileInputs(files)
 }
 
-export async function readDroppedItems(items: DataTransferItemList): Promise<PickedFile[]> {
+export interface DroppedItems { files: PickedFile[]; folders: PickedFolder[] }
+
+export async function readDroppedItems(items: DataTransferItemList): Promise<DroppedItems> {
   const fileItems = Array.from(items).filter((item) => item.kind === 'file')
   // Call while the drop event's data store is still readable.
   const handlePromises = fileItems.map((item) => {
@@ -126,17 +129,21 @@ export async function readDroppedItems(items: DataTransferItemList): Promise<Pic
   })
   const handles = await Promise.all(handlePromises.map((promise) => promise.catch(() => null)))
   const picked: PickedFile[] = []
+  const folders: PickedFolder[] = []
   for (let index = 0; index < fileItems.length; index += 1) {
     const handle = handles[index]
     if (handle?.kind === 'file') {
       picked.push(await readFileHandle(handle))
       continue
     }
-    if (handle?.kind === 'directory') continue
+    if (handle?.kind === 'directory') {
+      folders.push(folderFromHandle(handle))
+      continue
+    }
     const file = fileItems[index]?.getAsFile()
     if (file) picked.push(await readFile(file))
   }
-  return picked
+  return { files: picked, folders }
 }
 
 export function receiveLaunchedFiles(onFiles: (files: PickedFile[]) => void, onError?: (message: string) => void): void {

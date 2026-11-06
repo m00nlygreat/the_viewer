@@ -1,7 +1,7 @@
 {
   "name": "the-viewer",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.2.0",
   "type": "module",
   "engines": {
     "node": "^22.13.0 || >=24.0.0"
@@ -14,7 +14,7 @@
     "build:app": "npm run verify:icons && npm run prepare:assets && vite build --mode app",
     "build:extension": "npm run verify:icons && npm run prepare:assets && vite build --mode extension",
     "build": "npm run build:app && npm run build:extension",
-    "lint:app": "eslint src/app src/components src/domain src/features src/platform/pwa src/platform/relay src/platform/storage.ts src/platform/documentWriteQueue.ts src/platform/attachmentResources.ts src/platform/browserFiles.ts src/platform/fileTypes.ts src/platform/FilePicker.tsx src/main.tsx",
+    "lint:app": "eslint src/app src/components src/domain src/features src/platform/pwa src/platform/relay src/platform/storage.ts src/platform/documentWriteQueue.ts src/platform/attachmentResources.ts src/platform/browserFiles.ts src/platform/folderAccess.ts src/platform/folderResources.ts src/platform/fileTypes.ts src/platform/FilePicker.tsx src/platform/FolderPicker.tsx src/main.tsx",
     "typecheck:app": "tsc -p tsconfig.app.json",
     "typecheck:sw": "tsc -p tsconfig.sw.json",
     "typecheck:extension": "tsc -p tsconfig.extension.json",

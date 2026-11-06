@@ -1,6 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { EmailModel, PersistedViewerDocument, ThemePreference, ViewerDocument } from '../domain/types'
 import { normalizeEmailAttachmentBytes } from '../domain/emailAttachmentBytes'
+import { isFolderPath, type FolderWorkspace } from '../domain/workspace'
 
 interface ViewerDatabase extends DBSchema {
   documents: { key: string; value: PersistedViewerDocument; indexes: { 'by-opened': number } }
@@ -28,6 +29,34 @@ export async function loadDocuments(): Promise<ViewerDocument[]> {
   const db = await getDatabase()
   return (await db.getAll('documents')).map(normalizeStoredDocument).sort((a, b) => b.openedAt - a.openedAt)
 }
+
+export interface PersistedFolderWorkspace {
+  schemaVersion: 1
+  folder: FolderWorkspace
+  rootHandle?: FileSystemDirectoryHandle
+}
+
+export async function loadWorkspace(): Promise<{ documents: ViewerDocument[]; folder: PersistedFolderWorkspace | null }> {
+  const db = await getDatabase()
+  const tx = db.transaction(['documents', 'settings'], 'readonly')
+  const documentsRequest = tx.objectStore('documents').getAll()
+  const folderRequest = tx.objectStore('settings').get('workspace')
+  const [storedDocuments, storedFolder] = await Promise.all([documentsRequest, folderRequest])
+  await tx.done
+  const documents = storedDocuments.map(normalizeStoredDocument).sort((a, b) => b.openedAt - a.openedAt)
+  return { documents, folder: normalizeStoredFolder(storedFolder?.value) }
+}
+
+export async function replaceWorkspace(next: PersistedFolderWorkspace | null, recoveryEnabled: boolean): Promise<void> {
+  const db = await getDatabase()
+  const tx = db.transaction(['documents', 'settings'], 'readwrite')
+  const documents = tx.objectStore('documents')
+  const settings = tx.objectStore('settings')
+  await documents.clear()
+  if (recoveryEnabled && next) await settings.put({ key: 'workspace', value: next })
+  else await settings.delete('workspace')
+  await tx.done
+}
 export async function saveDocument(document: ViewerDocument): Promise<void> { await (await getDatabase()).put('documents', serializeStoredDocument(document)) }
 export async function removeDocument(id: string): Promise<void> { await (await getDatabase()).delete('documents', id) }
 export async function clearDocuments(): Promise<void> {
@@ -49,6 +78,8 @@ export async function readSetting<T>(key: string, fallback: T): Promise<T> {
 export async function writeSetting<T>(key: string, value: T): Promise<void> {
   await (await getDatabase()).put('settings', { key, value })
 }
+
+export async function clearWorkspace(): Promise<void> { await (await getDatabase()).delete('settings', 'workspace') }
 export async function readShareTicket(id: string): Promise<{ files: Array<{ name: string; type: string; bytes: ArrayBuffer }>; completed: boolean[] } | null> {
   const db = await getDatabase()
   const ticket = await db.get('shares', id)
@@ -103,8 +134,29 @@ export function normalizeStoredDocument(value: unknown): ViewerDocument {
     sourceText: typeof stored.sourceText === 'string' ? stored.sourceText : stored.text,
     encoding: typeof stored.encoding === 'string' ? stored.encoding : 'UTF-8',
     bom: typeof stored.bom === 'boolean' ? stored.bom : Boolean(stored.format === 'csv' && stored.model && 'bom' in stored.model && stored.model.bom),
-    isDirty: typeof stored.isDirty === 'boolean' ? stored.isDirty : stored.text !== stored.savedText
+    isDirty: typeof stored.isDirty === 'boolean' ? stored.isDirty : stored.text !== stored.savedText,
+    ...(isValidFolderRef(stored.folderRef) ? { folderRef: stored.folderRef } : { folderRef: undefined })
   }
+}
+
+function normalizeStoredFolder(value: unknown): PersistedFolderWorkspace | null {
+  if (!isRecord(value) || value.schemaVersion !== 1 || !isRecord(value.folder)) return null
+  const folder = value.folder
+  if (typeof folder.id !== 'string' || !folder.id || typeof folder.name !== 'string' || !folder.name || (folder.access !== 'handle' && folder.access !== 'input')) return null
+  const expandedPaths = Array.isArray(folder.expandedPaths) ? folder.expandedPaths.filter((path): path is string => isFolderPath(path)) : ['']
+  const activePath = folder.activePath === null || isFolderPath(folder.activePath, false) ? folder.activePath as string | null : null
+  const normalized: PersistedFolderWorkspace = {
+    schemaVersion: 1,
+    folder: { id: folder.id, name: folder.name, access: folder.access, expandedPaths: expandedPaths.length ? [...new Set(['', ...expandedPaths])] : [''], activePath }
+  }
+  if (folder.access === 'handle' && isRecord(value.rootHandle) && value.rootHandle.kind === 'directory') {
+    normalized.rootHandle = value.rootHandle as unknown as FileSystemDirectoryHandle
+  }
+  return normalized
+}
+
+function isValidFolderRef(value: unknown): value is { folderId: string; path: string } {
+  return isRecord(value) && typeof value.folderId === 'string' && value.folderId.length > 0 && isFolderPath(value.path, false)
 }
 
 function normalizeEmailModel(model: unknown): EmailModel {

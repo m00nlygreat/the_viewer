@@ -17,6 +17,7 @@
   .main-column { width: 100%; }
   .topbar { min-height: 56px; height: 56px; padding: 4px 8px; gap: 5px; }
   .mobile-menu { display: inline-grid; width: 36px; height: 40px; }
+  .mobile-folder-browse { display: inline-grid; width: 32px; height: 36px; }
   .topbar-document { gap: 6px; }
   .topbar-file-icon { width: 24px; }
   .topbar-name { max-width: min(35vw, 190px); font-size: 13px; }

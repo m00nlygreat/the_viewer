@@ -45,4 +45,10 @@ describe('document storage schema', () => {
   it('rejects an unknown persisted schema version', () => {
     expect(() => normalizeStoredDocument({ ...document, schemaVersion: 99 })).toThrow('지원하지 않는 문서 저장 버전')
   })
+
+  it('preserves valid folder ownership and removes malformed folder paths without discarding the document', () => {
+    const owned = normalizeStoredDocument({ ...document, folderRef: { folderId: 'folder-1', path: 'notes/a.md' } })
+    expect(owned.folderRef).toEqual({ folderId: 'folder-1', path: 'notes/a.md' })
+    expect(normalizeStoredDocument({ ...document, folderRef: { folderId: 'folder-1', path: '../outside.md' } })).toMatchObject({ id: 'doc-1', text: 'note', folderRef: undefined })
+  })
 })

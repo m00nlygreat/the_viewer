@@ -2,6 +2,7 @@ import { useMemo, useRef } from 'react'
 import { Bold, CheckSquare, Code2, Heading2, Italic, Link2, List, ListOrdered, Quote, Strikethrough } from 'lucide-react'
 import type { ViewerDocument } from '../domain/types'
 import { CodeEditor, type CodeEditorHandle } from '../components/CodeEditor'
+import type { MarkdownReferenceContext } from './markdown/localReferenceState'
 
 interface Props {
   document: ViewerDocument
@@ -10,9 +11,10 @@ interface Props {
   onChange: (text: string, group?: 'typing' | 'command') => void
   onUndo: () => void
   onRedo: () => void
+  markdownContext?: Omit<MarkdownReferenceContext, 'ownerText'>
 }
 
-export function MarkdownEditor({ document, text, theme, onChange, onUndo, onRedo }: Props) {
+export function MarkdownEditor({ document, text, theme, onChange, onUndo, onRedo, markdownContext }: Props) {
   const editorRef = useRef<CodeEditorHandle>(null)
   const { lines, words } = useMemo(() => ({
     lines: text.split(/\r\n|\r|\n/u).length,
@@ -56,6 +58,7 @@ export function MarkdownEditor({ document, text, theme, onChange, onUndo, onRedo
         label={`${document.name} Markdown 편집기`}
         onUndo={onUndo}
         onRedo={onRedo}
+        markdownContext={markdownContext}
       />
     </div>
     <div className="document-stats">{lines}줄 · {text.length.toLocaleString()}자 · {words}단어</div>

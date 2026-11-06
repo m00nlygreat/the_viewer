@@ -1,5 +1,5 @@
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
-import { StateEffect, StateField, type ChangeDesc, type EditorState, type Range } from '@codemirror/state'
+import { ChangeSet, EditorState, StateEffect, StateField, Transaction, type ChangeDesc, type Range } from '@codemirror/state'
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view'
 import { markdownLinkAttributes, renderMarkdown } from '../../domain/markdown'
 import { detectMarkdownFrontmatter } from '../../domain/formats/markdownFrontmatter'
@@ -9,11 +9,18 @@ import { MarkdownCodeBlockState, type MarkdownCodeBlockContext } from './codeBlo
 import { MarkdownCodeBlockWidget } from './CodeBlockWidget'
 import { MarkdownTableState } from './tableState'
 import { MarkdownTableWidget } from './TableWidget'
+import { collectMarkdownReferences, type MarkdownReference } from '../../domain/markdownReferences'
+import { parseLocalReference } from '../../domain/folderPaths'
+import { LocalReferenceWidget } from './LocalReferenceWidget'
+import { markdownReferenceKey, type MarkdownReferenceContext } from './localReferenceState'
+import type { RefObject } from 'react'
 export { taskMarkerRangesForSelection } from './taskMarkers'
 
 type MarkdownNode = ReturnType<typeof syntaxTree>['topNode']
 
 const setCompositionPosition = StateEffect.define<number | null>()
+export const markdownContextChanged = StateEffect.define<void>()
+const setMarkdownFocus = StateEffect.define<boolean>()
 
 class MarkerWidget extends WidgetType {
   constructor(private readonly text: string, private readonly className: string) { super() }
@@ -121,7 +128,8 @@ export function buildMarkdownPreviewDecorations(
   state: EditorState,
   composingPosition: number | null = null,
   codeBlocksAreWidgets = false,
-  editorIsFocused = true
+  editorIsFocused = true,
+  contextRef?: RefObject<MarkdownReferenceContext | null>
 ): DecorationSet {
   const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
   const frontmatter = frontmatterRange(state)
@@ -131,6 +139,13 @@ export function buildMarkdownPreviewDecorations(
   const lineClasses = new Map<number, Set<string>>()
   const decorations: Range<Decoration>[] = []
   const hidden = new Set<string>()
+  const localReferenceRanges = new Set<string>()
+  const referenceContext = contextRef?.current
+  if (referenceContext?.folderId) {
+    for (const reference of collectMarkdownReferences(state.doc.toString())) {
+      if (isLocalReference(reference)) localReferenceRanges.add(`${reference.from}:${reference.to}`)
+    }
+  }
   const widgetRanges: Array<{ from: number; to: number }> = []
   if (codeBlocksAreWidgets) tree.iterate({ enter: (node) => {
     if (node.name === 'FencedCode' && !overlapsFrontmatter(node, frontmatter)) widgetRanges.push({ from: markdownCodeBlockFrom(state, node.from), to: node.to })
@@ -213,6 +228,7 @@ export function buildMarkdownPreviewDecorations(
     }
     if (node.name === 'Image') {
       if (!overlapsEditingLine(node.from, node.to)) {
+        if (localReferenceRanges.has(`${node.from}:${node.to}`)) return
         const rawImage = state.doc.sliceString(node.from, node.to)
         decorations.push(Decoration.replace({ widget: new ImagePreviewWidget(rawImage), inclusive: false }).range(node.from, node.to))
       }
@@ -230,6 +246,7 @@ export function buildMarkdownPreviewDecorations(
         mark(markerNodes[0]!.to, markerNodes[markerNodes.length - 1]!.from, className)
       }
     } else if (node.name === 'Link') {
+      if (localReferenceRanges.has(`${node.from}:${node.to}`)) return
       const children = descendants(node)
       const linkMarks = children.filter((child) => child.name === 'LinkMark')
       const urls = children.filter((child) => child.name === 'URL')
@@ -288,6 +305,75 @@ export function buildMarkdownPreviewDecorations(
   return Decoration.set(decorations, true)
 }
 
+function isLocalReference(reference: MarkdownReference): boolean {
+  const syntax = reference.kind.startsWith('obsidian') ? 'obsidian' : 'markdown'
+  return parseLocalReference(reference.target, syntax).kind !== 'external'
+}
+
+function buildLocalReferenceDecorations(
+  state: EditorState,
+  contextRef: RefObject<MarkdownReferenceContext | null>,
+  editorIsFocused: boolean
+): DecorationSet {
+  const context = contextRef.current
+  if (!context?.folderId || !context.services) return Decoration.set([], true)
+  const source = state.doc.toString()
+  const frontmatter = frontmatterRange(state)
+  const active = state.doc.lineAt(state.selection.main.head)
+  const tableRanges: Array<{ from: number; to: number }> = []
+  const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
+  tree.iterate({ enter: (node) => { if (node.name === 'Table') tableRanges.push({ from: node.from, to: node.to }) } })
+  const ranges: Range<Decoration>[] = []
+  const references = collectMarkdownReferences(source)
+  const localReferences = references.filter(isLocalReference)
+  context.referenceState.retain(context.instanceId, new Set(localReferences.map((reference) => markdownReferenceKey(context.instanceId, reference))))
+  for (const reference of localReferences) {
+    if (overlapsFrontmatter(reference, frontmatter)) continue
+    if (tableRanges.some((range) => reference.from >= range.from && reference.to <= range.to)) continue
+    if (editorIsFocused && reference.from < active.to && reference.to > active.from) continue
+    if (!isLocalReference(reference)) continue
+    const block = reference.kind === 'image' || reference.kind === 'obsidian-embed'
+    ranges.push(Decoration.replace({ widget: new LocalReferenceWidget(reference, contextRef), inclusive: false, ...(block ? { block: true } : {}) }).range(reference.from, reference.to))
+  }
+  return Decoration.set(ranges, true)
+}
+
+interface LocalReferenceDecorationValue { focused: boolean; decorations: DecorationSet }
+
+function markdownLocalReferenceDecorations(contextRef: RefObject<MarkdownReferenceContext | null>) {
+  return StateField.define<LocalReferenceDecorationValue>({
+    create: (state) => ({ focused: false, decorations: buildLocalReferenceDecorations(state, contextRef, false) }),
+    update(value, transaction) {
+      let focused = value.focused
+      let refresh = transaction.docChanged || Boolean(transaction.selection)
+      const context = contextRef.current
+      if (transaction.docChanged && context) context.referenceState.remap(transaction.changes, context.instanceId)
+      for (const effect of transaction.effects) {
+        if (effect.is(markdownContextChanged)) refresh = true
+        if (effect.is(setMarkdownFocus) && effect.value !== focused) { focused = effect.value; refresh = true }
+      }
+      return refresh ? { focused, decorations: buildLocalReferenceDecorations(transaction.state, contextRef, focused) } : value
+    },
+    provide: (field) => EditorView.decorations.from(field, (value) => value.decorations)
+  })
+}
+
+class MarkdownReferenceFocusPlugin {
+  private focused: boolean
+  private destroyed = false
+  constructor(private readonly view: EditorView) {
+    this.focused = view.hasFocus
+    if (this.focused) queueMicrotask(() => { if (!this.destroyed) this.view.dispatch({ effects: setMarkdownFocus.of(true) }) })
+  }
+  update(update: ViewUpdate): void {
+    if (!update.focusChanged || this.focused === update.view.hasFocus) return
+    this.focused = update.view.hasFocus
+    const focused = this.focused
+    queueMicrotask(() => { if (!this.destroyed) this.view.dispatch({ effects: setMarkdownFocus.of(focused) }) })
+  }
+  destroy(): void { this.destroyed = true }
+}
+
 export function buildMarkdownFrontmatterDecorations(
   state: EditorState,
   theme: 'light' | 'dark' = 'dark',
@@ -343,7 +429,8 @@ function buildMarkdownTableDecorationValue(
   state: EditorState,
   theme: 'light' | 'dark',
   previous = new Map<number, MarkdownTableState>(),
-  changes?: ChangeDesc
+  changes?: ChangeDesc,
+  contextRef?: RefObject<MarkdownReferenceContext | null>
 ): MarkdownTableDecorationValue {
   const mappedPrevious = new Map<number, MarkdownTableState>()
   for (const [from, table] of previous) mappedPrevious.set(changes ? changes.mapPos(from, -1) : from, table)
@@ -351,28 +438,81 @@ function buildMarkdownTableDecorationValue(
   const ranges: Range<Decoration>[] = []
   const frontmatter = frontmatterRange(state)
   const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
+  const context = contextRef?.current ?? null
 
   tree.iterate({ enter: (node) => {
     if (node.name !== 'Table' || overlapsFrontmatter(node, frontmatter)) return
     const source = state.doc.sliceString(node.from, node.to)
     if (!source.trim()) return
     const previousTable = mappedPrevious.get(node.from)
-    const table = previousTable ?? new MarkdownTableState(node.from, node.to, source, theme)
-    if (previousTable && !table.update(node.from, node.to, source, theme)) return
+    const table = previousTable ?? new MarkdownTableState(node.from, node.to, source, theme, context)
+    if (previousTable && !table.update(node.from, node.to, source, theme, context)) return
     tableStates.set(node.from, table)
-    if (node.to > node.from) ranges.push(Decoration.replace({ widget: new MarkdownTableWidget(table), inclusive: false, block: true }).range(node.from, node.to))
+    if (node.to > node.from) ranges.push(Decoration.replace({ widget: new MarkdownTableWidget(table), inclusive: true, block: true }).range(node.from, node.to))
   } })
 
   return { tableStates, decorations: Decoration.set(ranges, true) }
 }
 
-function markdownTableDecorations(theme: 'light' | 'dark') {
+function markdownTableDecorations(theme: 'light' | 'dark', contextRef: RefObject<MarkdownReferenceContext | null>) {
   return StateField.define<MarkdownTableDecorationValue>({
-    create: (state) => buildMarkdownTableDecorationValue(state, theme),
-    update: (value, transaction) => transaction.docChanged
-      ? buildMarkdownTableDecorationValue(transaction.state, theme, value.tableStates, transaction.changes)
+    create: (state) => buildMarkdownTableDecorationValue(state, theme, new Map(), undefined, contextRef),
+    update: (value, transaction) => transaction.docChanged || transaction.effects.some((effect) => effect.is(markdownContextChanged))
+      ? buildMarkdownTableDecorationValue(transaction.state, theme, value.tableStates, transaction.changes, contextRef)
       : value,
     provide: (field) => EditorView.decorations.from(field, (value) => value.decorations)
+  })
+}
+
+function markdownTableSeparatorPrefix(state: EditorState, from: number, to: number, inserted: string): string {
+  if (!inserted || inserted.startsWith('\n')) return ''
+  const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
+  let tableEnd: number | null = null
+  tree.iterate({ enter: (node) => {
+    if (node.name === 'Table' && (node.to === from || node.to + 1 === from)) tableEnd = node.to
+  } })
+  if (tableEnd === null) return ''
+  if (from === tableEnd) return '\n\n'
+
+  const line = state.doc.lineAt(from)
+  if (line.text.trim() !== '' || from < line.from || to > line.to + 1 || line.number <= 1) return ''
+  const previous = state.doc.line(line.number - 1)
+  return previous.to === tableEnd && line.from === previous.to + 1 ? '\n' : ''
+}
+
+function markdownTableSeparatorInput(transaction: Transaction): Transaction {
+  if (!transaction.docChanged || !transaction.isUserEvent('input')) return transaction
+
+  const changes: Array<{ from: number; to: number; insert: string }> = []
+  const insertedSeparators: Array<{ from: number; insert: string }> = []
+  transaction.changes.iterChanges((fromA, toA, fromB, _toB, inserted) => {
+    const text = inserted.toString()
+    const prefix = markdownTableSeparatorPrefix(transaction.startState, fromA, toA, text)
+    changes.push({ from: fromA, to: toA, insert: `${prefix}${text}` })
+    if (prefix) insertedSeparators.push({ from: fromB, insert: prefix })
+  })
+  if (!insertedSeparators.length) return transaction
+
+  const extraChanges = ChangeSet.of(insertedSeparators, transaction.newDoc.length)
+  const userEvent = transaction.annotation(Transaction.userEvent)
+  const time = transaction.annotation(Transaction.time)
+  const addToHistory = transaction.annotation(Transaction.addToHistory)
+  const annotations = [
+    ...(userEvent === undefined ? [] : [Transaction.userEvent.of(userEvent)]),
+    ...(time === undefined ? [] : [Transaction.time.of(time)]),
+    ...(addToHistory === undefined ? [] : [Transaction.addToHistory.of(addToHistory)])
+  ]
+  const effects = transaction.effects
+    .map((effect) => effect.map(extraChanges))
+    .filter((effect) => effect !== undefined)
+
+  return transaction.startState.update({
+    changes,
+    selection: transaction.newSelection.map(extraChanges),
+    effects,
+    annotations,
+    scrollIntoView: transaction.scrollIntoView,
+    filter: false
   })
 }
 
@@ -406,7 +546,7 @@ function buildMarkdownCodeBlockDecorationValue(
       const codeBlock = mappedPrevious.get(from) ?? new MarkdownCodeBlockState(from, node.to, source, theme, undo, redo, context)
       codeBlock.update(from, node.to, source, theme, context)
       codeBlocks.set(from, codeBlock)
-      if (node.to > from) ranges.push(Decoration.replace({ widget: new MarkdownCodeBlockWidget(codeBlock), inclusive: false, block: true }).range(from, node.to))
+      if (node.to > from) ranges.push(Decoration.replace({ widget: new MarkdownCodeBlockWidget(codeBlock), inclusive: true, block: true }).range(from, node.to))
       return
     }
     for (let child = node.firstChild; child; child = child.nextSibling) visit(child)
@@ -430,15 +570,17 @@ class MarkdownPreviewPlugin {
   decorations: DecorationSet
   private composingPosition: number | null = null
   private editorIsFocused: boolean
+  private readonly contextRef?: RefObject<MarkdownReferenceContext | null>
 
-  constructor(view: EditorView) {
+  constructor(view: EditorView, contextRef?: RefObject<MarkdownReferenceContext | null>) {
+    this.contextRef = contextRef
     this.editorIsFocused = view.hasFocus
-    this.decorations = buildMarkdownPreviewDecorations(view.state, null, true, this.editorIsFocused)
+    this.decorations = buildMarkdownPreviewDecorations(view.state, null, true, this.editorIsFocused, this.contextRef)
   }
 
   update(update: ViewUpdate): void {
     if (update.docChanged && this.composingPosition !== null) this.composingPosition = update.changes.mapPos(this.composingPosition, 1)
-    let needsRefresh = update.docChanged || update.selectionSet || update.focusChanged
+    let needsRefresh = update.docChanged || update.selectionSet || update.focusChanged || update.transactions.some((transaction) => transaction.effects.some((effect) => effect.is(markdownContextChanged)))
     if (update.focusChanged) this.editorIsFocused = update.view.hasFocus
     for (const transaction of update.transactions) {
       for (const effect of transaction.effects) {
@@ -448,16 +590,26 @@ class MarkdownPreviewPlugin {
         }
       }
     }
-    if (needsRefresh) this.decorations = buildMarkdownPreviewDecorations(update.state, this.composingPosition, true, this.editorIsFocused)
+    if (needsRefresh) this.decorations = buildMarkdownPreviewDecorations(update.state, this.composingPosition, true, this.editorIsFocused, this.contextRef)
   }
 }
 
-export function markdownLivePreview(theme: 'light' | 'dark', undo: () => void = () => {}, redo: () => void = () => {}) {
+const emptyMarkdownContextRef: RefObject<MarkdownReferenceContext | null> = { current: null }
+
+export function markdownLivePreview(
+  theme: 'light' | 'dark',
+  undo: () => void = () => {},
+  redo: () => void = () => {},
+  contextRef: RefObject<MarkdownReferenceContext | null> = emptyMarkdownContextRef
+) {
   return [
+    EditorState.transactionFilter.of(markdownTableSeparatorInput),
     markdownFrontmatterDecorations(theme, undo, redo),
-    markdownTableDecorations(theme),
+    markdownTableDecorations(theme, contextRef),
     markdownCodeBlockDecorations(theme, undo, redo),
-    ViewPlugin.fromClass(MarkdownPreviewPlugin, { decorations: (plugin) => plugin.decorations }),
+    markdownLocalReferenceDecorations(contextRef),
+    ViewPlugin.define((view) => new MarkdownReferenceFocusPlugin(view)),
+    ViewPlugin.define((view) => new MarkdownPreviewPlugin(view, contextRef), { decorations: (plugin) => plugin.decorations }),
     EditorView.domEventHandlers({
       keydown(event, view) {
         if (event.key !== 'Escape' || event.isComposing || !view.hasFocus) return false

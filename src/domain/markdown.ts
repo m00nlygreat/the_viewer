@@ -5,7 +5,11 @@ import { detectMarkdownFrontmatter } from './formats/markdownFrontmatter'
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: false, typographer: false })
 const safeLinkTarget = '_blank'
 const safeLinkRel = 'noopener noreferrer'
-markdown.renderer.rules.image = (tokens, index) => `<span class="blocked-image">이미지: ${markdown.utils.escapeHtml(tokens[index]!.content || '외부 이미지 차단')}</span>`
+markdown.renderer.rules.image = (tokens, index) => {
+  const token = tokens[index]!
+  const target = markdown.utils.escapeHtml(token.attrGet('src') ?? '')
+  return `<span class="blocked-image" data-image-target="${target}">이미지: ${markdown.utils.escapeHtml(token.content || '외부 이미지 차단')}</span>`
+}
 markdown.renderer.rules.table_open = () => '<div class="markdown-table-scroll"><table>'
 markdown.renderer.rules.table_close = () => '</table></div>'
 markdown.renderer.rules.link_open = (tokens, index, options, _env, self) => {

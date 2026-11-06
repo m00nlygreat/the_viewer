@@ -5,6 +5,7 @@ import type { Format } from '../domain/fileFormats'
 interface Props {
   documentId: string
   format: Format
+  plainText?: boolean
   csvDelimiter?: string
   value: string
   diagnostics: ParseDiagnostic[]

@@ -14,7 +14,7 @@ export const FilePicker = forwardRef<FilePickerHandle, Props>(function FilePicke
   useImperativeHandle(ref, () => ({
     open(format, accept) {
       pendingFormat.current = format
-      pendingAccept.current = accept ?? Object.values(FORMAT_EXTENSIONS).flat().map((extension) => `.${extension}`).join(',')
+      pendingAccept.current = accept ?? (format ? FORMAT_EXTENSIONS[format].map((extension) => `.${extension}`).join(',') : '')
       if (supportsFileHandlePicker()) {
         void pickLocalFiles(format, multiple).then((files) => {
           if (files) onFiles(files, format)
@@ -37,5 +37,5 @@ export const FilePicker = forwardRef<FilePickerHandle, Props>(function FilePicke
     } catch (error) { onError?.(error instanceof Error ? error.message : '선택한 파일을 읽지 못했습니다.') }
     finally { pendingFormat.current = undefined }
   }
-  return <input ref={input} className="visually-hidden" type="file" multiple={multiple} accept={Object.values(FORMAT_EXTENSIONS).flat().map((extension) => `.${extension}`).join(',')} onChange={(event) => { void receive(event) }} />
+  return <input ref={input} className="visually-hidden" type="file" multiple={multiple} onChange={(event) => { void receive(event) }} />
 })

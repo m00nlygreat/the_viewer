@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Command, FilePlus2, FileUp, Search, Settings2, ClipboardPaste, Palette } from 'lucide-react'
+import { Command, FilePlus2, FileUp, FolderOpen, Search, Settings2, ClipboardPaste, Palette, RefreshCw } from 'lucide-react'
 import { useFocusTrap } from './useFocusTrap'
 
-export interface CommandItem { id: string; title: string; detail?: string; section: string; icon: 'open' | 'new' | 'settings' | 'paste' | 'theme'; run: () => void }
+export interface CommandItem { id: string; title: string; detail?: string; section: string; icon: 'open' | 'folder' | 'new' | 'settings' | 'paste' | 'theme' | 'refresh'; run: () => void }
 interface Props { commands: CommandItem[]; onClose: () => void }
-const icons = { open: FileUp, new: FilePlus2, settings: Settings2, paste: ClipboardPaste, theme: Palette }
+const icons = { open: FileUp, folder: FolderOpen, new: FilePlus2, settings: Settings2, paste: ClipboardPaste, theme: Palette, refresh: RefreshCw }
 
 export function CommandMenu({ commands, onClose }: Props) {
   const [query, setQuery] = useState('')

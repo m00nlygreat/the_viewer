@@ -261,7 +261,7 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
         leadingContent={<label className="search-box"><Search size={14} /><input aria-label="표 검색" placeholder="검색" value={query} onChange={(event) => setQuery(event.target.value)} /></label>}
         headerEditor={editingHeader === null ? undefined : { value: headerDraft, className: 'csv-header-editor', label: '열 이름 변경', onChange: setHeaderDraft, onCommit: commitHeader, onCancel: () => setEditingHeader(null) }}
         beforeActions={<div className="toolbar-separator" />}
-        afterAddColumn={<button type="button" className="toolbar-button csv-autofit-button" aria-label="열 너비 자동 맞춤" title="열 너비 자동 맞춤" onClick={autoFitColumns}><Columns3 size={14} /><span>너비 맞춤</span></button>}
+        afterRemoveColumn={<button type="button" className="toolbar-button csv-autofit-button" aria-label="열 너비 자동 맞춤" title="열 너비 자동 맞춤" onClick={autoFitColumns}><Columns3 size={14} /><span>너비 맞춤</span></button>}
         trailingContent={<>
           <div className="toolbar-spacer" />
           <label className="csv-select-label">구분자
@@ -275,7 +275,6 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
         addColumnDisabled={!canEdit}
         removeRowDisabled={!canEdit}
         removeColumnDisabled={!canEdit}
-        addColumnLabel="열"
         onAddRow={addRow}
         onAddColumn={addColumn}
         onRemoveRow={removeActiveRow}

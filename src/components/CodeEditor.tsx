@@ -1,10 +1,12 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { EditorSelection, EditorState, Prec, type ChangeSpec, type Extension } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view'
-import { history, historyKeymap, defaultKeymap } from '@codemirror/commands'
+import { history, historyKeymap, defaultKeymap, insertTab } from '@codemirror/commands'
 import { csvEditorLanguage } from './csvLanguage'
 import { applyCodeMirrorChanges, EditorTextSyncSession, findTextChanges, normalizeLineEndings } from './editorText'
 import { readCodeEditorState, remapCodeEditorState, saveCodeEditorState } from './codeEditorState'
+import { registerEditorSettlementTarget } from './editorSettling'
+import type { MarkdownReferenceContext } from '../features/markdown/localReferenceState'
 
 type ChangeGroup = 'typing' | 'command'
 type TaskMarkerFinder = (state: EditorState) => Array<{ from: number; to: number; checked: boolean }>
@@ -27,6 +29,7 @@ interface CodeEditorProps {
   onUndo?: () => void
   onRedo?: () => void
   stateKey?: string
+  markdownContext?: Omit<MarkdownReferenceContext, 'ownerText'>
 }
 
 function clampPosition(position: number, length: number): number {
@@ -108,7 +111,7 @@ function applyChecklist(view: EditorView, findTaskMarkers: TaskMarkerFinder | nu
 }
 
 export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEditor({
-  value, onChange, markdownMode = false, csvMode = false, csvDelimiter = ',', livePreview = false, markdownTheme = 'dark', label, onUndo, onRedo, stateKey
+  value, onChange, markdownMode = false, csvMode = false, csvDelimiter = ',', livePreview = false, markdownTheme = 'dark', label, onUndo, onRedo, stateKey, markdownContext
 }, ref) {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
@@ -122,6 +125,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
   const [previewExtensions, setPreviewExtensions] = useState<Extension[] | null>(null)
   const [markdownExtension, setMarkdownExtension] = useState<Extension | null>(null)
   const findTaskMarkers = useRef<TaskMarkerFinder | null>(null)
+  const markdownContextRef = useRef<MarkdownReferenceContext | null>(null)
+  markdownContextRef.current = markdownContext ? { ...markdownContext, ownerText: value } : null
   change.current = onChange
   undo.current = onUndo
   redo.current = onRedo
@@ -132,10 +137,19 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     let cancelled = false
     void import('../features/markdown/preview').then(({ markdownLivePreview }) => {
       if (cancelled) return
-      setPreviewExtensions(markdownLivePreview(markdownTheme, () => undo.current?.(), () => redo.current?.()))
+      setPreviewExtensions(markdownLivePreview(markdownTheme, () => undo.current?.(), () => redo.current?.(), markdownContextRef))
     })
     return () => { cancelled = true }
   }, [livePreview, markdownTheme])
+
+  useEffect(() => {
+    if (!livePreview) return
+    let cancelled = false
+    void import('../features/markdown/preview').then(({ markdownContextChanged }) => {
+      if (!cancelled && view.current) view.current.dispatch({ effects: markdownContextChanged.of(undefined) })
+    })
+    return () => { cancelled = true }
+  }, [livePreview, markdownContext?.folderId, markdownContext?.generation, markdownContext?.ownerPath, markdownContext?.services])
 
   useEffect(() => {
     if (!markdownMode) return
@@ -194,6 +208,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
         EditorState.allowMultipleSelections.of(true),
         ...(!livePreview ? [lineNumbers()] : []),
         ...(!hasExternalHistory ? [history(), keymap.of(historyKeymap)] : []),
+        ...(markdownMode && livePreview ? [Prec.highest(keymap.of([{ key: 'Tab', run: insertTab }]))] : []),
         keymap.of(defaultKeymap),
         ...(hasExternalHistory ? [Prec.highest(keymap.of([
           { key: 'Mod-z', run: () => { undo.current?.(); return true } },
@@ -253,6 +268,10 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
       ]
     })
     view.current = new EditorView({ state, parent: host.current })
+    const unregisterSettlementTarget = registerEditorSettlementTarget({
+      isComposing: () => view.current?.composing ?? false,
+      blur: () => view.current?.contentDOM.blur()
+    })
     if (restored) {
       view.current.scrollDOM.scrollTop = restored.scrollTop
       view.current.scrollDOM.scrollLeft = restored.scrollLeft
@@ -268,6 +287,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
           scrollLeft: view.current.scrollDOM.scrollLeft
         })
       }
+      unregisterSettlementTarget()
       view.current?.destroy()
       view.current = null
       textSession.reset()

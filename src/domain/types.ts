@@ -1,5 +1,6 @@
 import type { Format } from './fileFormats'
 import type { StructuredModel } from './structured/model'
+import type { FolderDocumentRef } from './workspace'
 export { FORMATS, FORMAT_MIME, FORMAT_MIME_ALIASES, GENERIC_FILE_MIME_TYPES, FORMAT_LABEL, getFormat } from './fileFormats'
 export type { Format } from './fileFormats'
 export type EditorMode = 'view' | 'source'
@@ -99,6 +100,8 @@ export interface ViewerDocument {
   id: string
   name: string
   format: Format
+  /** The viewer's raw-text or unsupported-file path, instead of a supported document format. */
+  contentKind?: 'plain-text' | 'unsupported'
   mimeType: string
   size: number
   /** Bytes as first opened. Older recovered sessions may not have this value. */
@@ -126,6 +129,8 @@ export interface ViewerDocument {
   openedAt: number
   lastEditedAt: number
   parentId?: string
+  /** Membership in the currently selected folder, independent of email attachment ownership. */
+  folderRef?: FolderDocumentRef
   /** Handle for writing back to the selected, dropped, or OS-launched local file. */
   sourceFileHandle?: FileSystemFileHandle
   /** The extension can read file:// bytes but cannot provide a writable file handle. */

@@ -1,5 +1,6 @@
 import type { EditorView } from '@codemirror/view'
 import { parseMarkdownTable, serializeMarkdownTable, type MarkdownTableModel } from '../../domain/formats/markdownTable'
+import type { MarkdownReferenceContext } from './localReferenceState'
 
 export interface MarkdownTableSnapshot {
   from: number
@@ -8,6 +9,7 @@ export interface MarkdownTableSnapshot {
   model: MarkdownTableModel
   editing: boolean
   theme: 'light' | 'dark'
+  context: MarkdownReferenceContext | null
 }
 
 export class MarkdownTableState {
@@ -15,10 +17,10 @@ export class MarkdownTableState {
   private readonly listeners = new Set<() => void>()
   private view: EditorView | null = null
 
-  constructor(from: number, to: number, source: string, theme: 'light' | 'dark') {
+  constructor(from: number, to: number, source: string, theme: 'light' | 'dark', context: MarkdownReferenceContext | null = null) {
     const model = parseMarkdownTable(source)
     if (!model) throw new Error('Invalid Markdown table block')
-    this.snapshot = { from, to, source, model, editing: false, theme }
+    this.snapshot = { from, to, source, model, editing: false, theme, context }
   }
 
   readonly getSnapshot = (): MarkdownTableSnapshot => this.snapshot
@@ -30,16 +32,16 @@ export class MarkdownTableState {
 
   attachView(view: EditorView): void { this.view = view }
 
-  update(from: number, to: number, source: string, theme: 'light' | 'dark'): boolean {
-    if (this.snapshot.from === from && this.snapshot.to === to && this.snapshot.source === source && this.snapshot.theme === theme) return true
+  update(from: number, to: number, source: string, theme: 'light' | 'dark', context: MarkdownReferenceContext | null = this.snapshot.context): boolean {
+    if (this.snapshot.from === from && this.snapshot.to === to && this.snapshot.source === source && this.snapshot.theme === theme && this.snapshot.context === context) return true
     if (this.snapshot.source === source) {
-      this.snapshot = { ...this.snapshot, from, to, theme }
+      this.snapshot = { ...this.snapshot, from, to, theme, context }
       this.emit()
       return true
     }
     const model = parseMarkdownTable(source)
     if (!model) return false
-    this.snapshot = { ...this.snapshot, from, to, source, model, theme }
+    this.snapshot = { ...this.snapshot, from, to, source, model, theme, context }
     this.emit()
     return true
   }

@@ -91,7 +91,7 @@
 .cm-md-table-editor-toolbar { min-height: 38px; padding: 0 7px; display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--line); color: var(--text-weak); font-size: 11px; }
 .cm-md-table-editor-toolbar > span:first-child { margin: 0 5px; color: var(--text); font-weight: 550; }
 .cm-md-table-editor-toolbar .toolbar-button { height: 26px; padding: 0 7px; gap: 4px; font-size: 11px; }
-.cm-md-table-editor-toolbar .toolbar-button.icon-only { width: 26px; }
+.cm-md-table-editor-toolbar .toolbar-button.icon-only { width: 26px; flex: 0 0 26px; padding: 0; }
 .cm-md-table-editor-toolbar input { width: min(160px, 22vw); height: 25px; padding: 0 6px; color: var(--text); background: var(--control); font-size: 11px; }
 .cm-md-table-grid { position: relative; min-width: 0; overflow: hidden; overscroll-behavior: contain; }
 .cm-md-table-data-grid { width: 100%; height: 100%; min-height: 0; touch-action: pan-x pan-y; }
@@ -123,3 +123,38 @@
   .cm-md-table-content th, .cm-md-table-content td { padding: 6px 8px; }
 }
 
+
+.cm-md-local-reference { display: inline-block; vertical-align: baseline; min-width: 0; max-width: 100%; white-space: normal; }
+.cm-md-local-reference-block { display: block; width: 100%; min-width: 0; }
+.local-reference-link, .local-reference-collapse { max-width: 100%; padding: 0; border: 0; border-radius: 0; color: var(--accent); background: transparent; font: inherit; text-align: left; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.local-reference-link:focus-visible, .local-reference-collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.local-reference-external { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }
+.local-reference-expanded { min-width: 0; max-width: 100%; }
+.local-reference-expanded:has(.local-markdown-preview), .local-reference-image { display: block; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; }
+.markdown-preview-reference:has(.local-reference-markdown-embed) { display: block; }
+.local-reference-markdown-embed { display: block; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: 8px 12px 10px; border-radius: 5px; background-color: rgb(0 0 0 / 2%); }
+.local-reference-markdown-embed-collapsed { padding-block: 6px; }
+.local-reference-embed-toggle { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: center; gap: 10px; padding: 1px 0; border: 0; border-radius: 0; color: var(--text-weak); background: transparent; font: 11px/1.4 var(--font-sans); text-align: center; cursor: pointer; }
+.local-reference-embed-toggle::before, .local-reference-embed-toggle::after { content: ""; height: 1px; min-width: 12px; flex: 1 1 auto; background-color: rgb(127 127 127 / 42%); }
+.local-reference-embed-toggle:hover { color: var(--text-secondary); }
+.local-reference-embed-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.local-reference-embed-filename { max-width: min(64%, 560px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.local-reference-body { display: block; min-width: 0; max-width: 100%; margin-top: 7px; overflow-wrap: anywhere; }
+.local-markdown-preview { box-sizing: border-box; min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.local-markdown-preview > :first-child { margin-top: 0; }
+.local-markdown-preview > :last-child { margin-bottom: 0; }
+.local-markdown-preview img, .local-reference-image img { display: block; max-width: min(420px, 100%); max-height: 320px; object-fit: contain; }
+.local-reference-image { margin: 5px 0; }
+.local-reference-loading, .local-reference-message { display: block; max-width: 100%; color: var(--text-weak); overflow-wrap: anywhere; }
+.local-reference-message { margin: 6px 0; }
+.local-reference-message[role='alert'] { color: var(--warning); }
+.local-reference-message button { margin: 4px; }
+.local-reference-file { display: flex; min-width: 0; max-width: 100%; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); background: var(--panel-raised); overflow-wrap: anywhere; }
+.local-reference-file > span { min-width: 0; flex: 1; }
+.local-reference-file strong, .local-reference-file small { display: block; overflow-wrap: anywhere; }
+.local-reference-file small { margin-top: 3px; color: var(--text-weak); }
+.local-reference-preview figure { margin: 6px 0; }
+.cm-md-local-reference-block .local-reference-expanded { display: block; }
+.cm-md-local-reference-block .local-reference-body { display: block; }
+.cm-md-local-reference-block .local-reference-image img { max-width: min(420px, 100%); }
+.cm-md-local-reference .blocked-image { display: inline-block; }

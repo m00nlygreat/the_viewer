@@ -1,5 +1,22 @@
-import { Plus, Trash2 } from 'lucide-react'
 import type { MouseEvent, ReactNode } from 'react'
+
+function AxisActionIcon({ axis, action, size }: { axis: 'row' | 'column'; action: 'add' | 'remove'; size: number }) {
+  const isRow = axis === 'row'
+  const isRemove = action === 'remove'
+  return <svg width={size + 6} height={size + 6} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="2" y="2" width="15" height="15" rx="1.5" fill="var(--panel)" />
+    {isRow
+      ? <rect x="2.5" y="7.1" width="14" height="4.8" fill="currentColor" />
+      : <rect x="7.1" y="2.5" width="4.8" height="14" fill="currentColor" />}
+    <rect x="2" y="2" width="15" height="15" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+    {isRow
+      ? <path d="M2 7h15M2 12h15" stroke="currentColor" strokeWidth="1.5" />
+      : <path d="M7 2v15M12 2v15" stroke="currentColor" strokeWidth="1.5" />}
+    {isRemove
+      ? <path d="M14 18h8" stroke="#DC2626" strokeWidth="3.2" strokeLinecap="round" />
+      : <path d="M18 14v8M14 18h8" stroke="#16A34A" strokeWidth="3.2" strokeLinecap="round" />}
+  </svg>
+}
 
 interface HeaderEditor {
   value: string
@@ -14,7 +31,7 @@ interface Props {
   className: string
   leadingContent?: ReactNode
   beforeActions?: ReactNode
-  afterAddColumn?: ReactNode
+  afterRemoveColumn?: ReactNode
   trailingContent?: ReactNode
   headerEditor?: HeaderEditor
   iconSize?: number
@@ -23,7 +40,6 @@ interface Props {
   addColumnDisabled?: boolean
   removeRowDisabled?: boolean
   removeColumnDisabled?: boolean
-  addColumnLabel?: string
   onAddRow: () => void
   onAddColumn: () => void
   onRemoveRow: () => void
@@ -34,9 +50,9 @@ interface Props {
 }
 
 export function GridStructureToolbar({
-  className, leadingContent, beforeActions, afterAddColumn, trailingContent, headerEditor,
-  iconSize = 14, preserveFocus = false, addRowDisabled = false, addColumnDisabled = false,
-  removeRowDisabled = false, removeColumnDisabled = false, addColumnLabel = '열 추가',
+  className, leadingContent, beforeActions, afterRemoveColumn, trailingContent, headerEditor,
+  iconSize = 18, preserveFocus = false, addRowDisabled = false, addColumnDisabled = false,
+  removeRowDisabled = false, removeColumnDisabled = false,
   onAddRow, onAddColumn, onRemoveRow, onRemoveColumn, doneLabel, doneIcon, onDone
 }: Props) {
   const keepFocus = preserveFocus ? (event: MouseEvent<HTMLButtonElement>) => event.preventDefault() : undefined
@@ -55,11 +71,11 @@ export function GridStructureToolbar({
       }}
     />}
     {beforeActions}
-    <button type="button" className="toolbar-button" disabled={addRowDisabled} onMouseDown={keepFocus} onClick={onAddRow}><Plus size={iconSize} /> 행 추가</button>
-    <button type="button" className="toolbar-button" disabled={addColumnDisabled} onMouseDown={keepFocus} onClick={onAddColumn}><Plus size={iconSize} /> {addColumnLabel}</button>
-    {afterAddColumn}
-    <button type="button" className="toolbar-button icon-only" disabled={removeRowDisabled} aria-label="선택한 행 삭제" title="선택한 행 삭제" onMouseDown={keepFocus} onClick={onRemoveRow}><Trash2 size={iconSize} /></button>
-    <button type="button" className="toolbar-button icon-only" disabled={removeColumnDisabled} aria-label="선택한 열 삭제" title="선택한 열 삭제" onMouseDown={keepFocus} onClick={onRemoveColumn}><Trash2 size={iconSize} /></button>
+    <button type="button" className="toolbar-button icon-only" disabled={addRowDisabled} aria-label="행 추가" title="행 추가" onMouseDown={keepFocus} onClick={onAddRow}><AxisActionIcon axis="row" action="add" size={iconSize} /></button>
+    <button type="button" className="toolbar-button icon-only" disabled={addColumnDisabled} aria-label="열 추가" title="열 추가" onMouseDown={keepFocus} onClick={onAddColumn}><AxisActionIcon axis="column" action="add" size={iconSize} /></button>
+    <button type="button" className="toolbar-button icon-only" disabled={removeRowDisabled} aria-label="선택한 행 삭제" title="선택한 행 삭제" onMouseDown={keepFocus} onClick={onRemoveRow}><AxisActionIcon axis="row" action="remove" size={iconSize} /></button>
+    <button type="button" className="toolbar-button icon-only" disabled={removeColumnDisabled} aria-label="선택한 열 삭제" title="선택한 열 삭제" onMouseDown={keepFocus} onClick={onRemoveColumn}><AxisActionIcon axis="column" action="remove" size={iconSize} /></button>
+    {afterRemoveColumn}
     {trailingContent}
     {onDone && <button type="button" className="toolbar-button" onMouseDown={keepFocus} onClick={onDone}>{doneIcon}{doneLabel}</button>}
   </div>

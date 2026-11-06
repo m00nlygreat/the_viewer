@@ -1,4 +1,4 @@
-import { FORMAT_MIME, type DocumentModel, type ParseDiagnostic, type ViewerDocument } from './types'
+import { FORMAT_MIME, getFormat, type DocumentModel, type ParseDiagnostic, type ViewerDocument } from './types'
 import { parseWithWorker } from './workerClient'
 import { serializeDocument } from './serialize'
 import { hasFatalDiagnostics } from './parseDiagnostics'
@@ -6,6 +6,7 @@ import { assertInputFileSize } from './inputPolicy'
 import { isStructuredFormat, sameStructuredNode, type StructuredModel } from './structured/model'
 import { serializeStructured } from './structured/output'
 import { patchSingleScalarSource, withoutSourceRanges } from './structured/sourcePatch'
+import { decodeTextContent } from './textContent'
 
 export interface HistoryEntry {
   model: DocumentModel
@@ -148,5 +149,22 @@ export async function makeDocumentFromBytes(name: string, mimeType: string, byte
     mode: 'view', revision: 0, modelRevision: fatal ? -1 : 0, textRevision: 0, parseState: fatal ? 'error' : 'ready',
     diagnostics: diagnosticsFromMessages(parsed.diagnostics, fatal ? 'error' : 'warning'), sourceError: fatal ? parsed.diagnostics[0] : undefined,
     encoding: parsed.encoding, bom, savedText: parsed.text, isDirty: false, openedAt: Date.now(), lastEditedAt: Date.now(), parentId
+  }
+}
+
+export async function makeFileDocumentFromBytes(name: string, mimeType: string, bytes: Uint8Array, parentId?: string): Promise<ViewerDocument> {
+  if (getFormat(name, mimeType)) return makeDocumentFromBytes(name, mimeType, bytes, parentId)
+  assertInputFileSize(name, bytes.byteLength, globalThis.navigator?.userAgent ?? '')
+  const decoded = decodeTextContent(bytes)
+  const text = decoded?.text ?? ''
+  const inputBytes = bytes.slice().buffer as ArrayBuffer
+  const contentKind = decoded ? 'plain-text' as const : 'unsupported' as const
+  return {
+    id: crypto.randomUUID(), name, format: 'md', contentKind,
+    mimeType: mimeType || (decoded ? 'text/plain' : 'application/octet-stream'), size: bytes.byteLength,
+    initialBytes: inputBytes.slice(0), savedBytes: inputBytes, sourceText: text, text,
+    model: { text }, mode: decoded ? 'source' : 'view', revision: 0, modelRevision: 0, textRevision: 0,
+    parseState: 'ready', diagnostics: [], encoding: decoded?.encoding ?? 'binary', bom: decoded?.bom ?? false,
+    savedText: text, isDirty: false, openedAt: Date.now(), lastEditedAt: Date.now(), parentId
   }
 }

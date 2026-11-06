@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { EditorSelection, EditorState } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
+import { syntaxTree } from '@codemirror/language'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { buildMarkdownFrontmatterDecorations, buildMarkdownPreviewDecorations, taskMarkerRangesForSelection } from '../src/features/markdown/preview'
+import { buildMarkdownFrontmatterDecorations, buildMarkdownPreviewDecorations, markdownLivePreview, taskMarkerRangesForSelection } from '../src/features/markdown/preview'
 import { MarkdownFrontmatterState } from '../src/features/markdown/frontmatterState'
 import { detectMarkdownFrontmatter } from '../src/domain/formats/markdownFrontmatter'
 import { markdownLinkAttributes } from '../src/domain/markdown'
@@ -32,6 +33,50 @@ describe('Markdown live preview decorations', () => {
     const table = parseMarkdownTable(source)
     expect(table?.rows).toHaveLength(20_000)
     expect(parseMarkdownTable(serializeMarkdownTable(table!))?.rows).toEqual(table?.rows)
+  })
+
+  it('keeps text typed after a rendered table outside the table rows', () => {
+    const table = '| A | B |\n| --- | --- |\n| x | y |'
+    const text = `${table}\n\n## Next`
+    const separatorPosition = table.length + 1
+    const state = EditorState.create({
+      doc: text,
+      selection: { anchor: separatorPosition },
+      extensions: [markdown({ base: markdownLanguage }), ...markdownLivePreview('light')]
+    })
+    const inserted = 'Paragraph text'
+    const transaction = state.update({
+      changes: { from: separatorPosition, insert: inserted },
+      selection: { anchor: separatorPosition + inserted.length },
+      userEvent: 'input.type'
+    })
+    const expected = `${table}\n\n${inserted}\n## Next`
+    expect(transaction.newDoc.toString()).toBe(expected)
+
+    let tableEnd = -1
+    syntaxTree(transaction.state).iterate({ enter: (node) => { if (node.name === 'Table') tableEnd = node.to } })
+    expect(tableEnd).toBe(table.length)
+    expect(transaction.newSelection.main.head).toBe(separatorPosition + inserted.length + 1)
+  })
+
+  it('turns typing at the rendered table end into text outside the table', () => {
+    const table = '| A | B |\n| --- | --- |\n| x | y |'
+    const text = `${table}\n## Next`
+    const inserted = 'Paragraph text'
+    const state = EditorState.create({
+      doc: text,
+      selection: { anchor: table.length },
+      extensions: [markdown({ base: markdownLanguage }), ...markdownLivePreview('light')]
+    })
+    const transaction = state.update({
+      changes: { from: table.length, insert: inserted },
+      selection: { anchor: table.length + inserted.length },
+      userEvent: 'input.type'
+    })
+    expect(transaction.newDoc.toString()).toBe(`${table}\n\n${inserted}\n## Next`)
+    let tableEnd = -1
+    syntaxTree(transaction.state).iterate({ enter: (node) => { if (node.name === 'Table') tableEnd = node.to } })
+    expect(tableEnd).toBe(table.length)
   })
 
   it('hides parsed inline and block syntax while preserving the original source text', () => {
