@@ -62,6 +62,7 @@
   .agenda-toolbar { padding: 0 9px; }
   .agenda-toolbar .search-box { width: auto; }
   .agenda-day { padding: 16px 10px 3px; }
+  .agenda-virtual-day { padding: 16px 10px 0; }
   .agenda-event { gap: 9px; padding: 10px 8px; }
   .event-detail { padding: 16px; }
   .contacts-layout { grid-template-columns: minmax(115px, 35%) minmax(0, 1fr); }

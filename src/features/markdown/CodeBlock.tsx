@@ -4,8 +4,12 @@ import { Check, Code2 } from 'lucide-react'
 import { highlightMarkdownCode } from './codeHighlight'
 import type { MarkdownCodeBlockState } from './codeBlockState'
 import { useOutsideClick } from '../../components/useOutsideClick'
+import { ensureRuntimeAssetGroup } from '../../platform/pwa/runtimeAssets'
 
-const MarkdownCodeBlockMonacoEditor = lazy(() => import('./CodeBlockEditor'))
+const MarkdownCodeBlockMonacoEditor = lazy(async () => {
+  await ensureRuntimeAssetGroup('monaco').catch(() => undefined)
+  return import('./CodeBlockEditor')
+})
 
 interface Props { block: MarkdownCodeBlockState }
 

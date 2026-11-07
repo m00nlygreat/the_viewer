@@ -31,6 +31,7 @@ export function sourceFingerprint(text: string, from: number, to: number): numbe
 }
 
 export function sameStructuredNode(a: StructuredNode | null, b: StructuredNode | null): boolean {
+  if (a === b) return true
   if (!a || !b) return a === b
   if (a.id !== b.id || a.kind !== b.kind) return false
   if (a.kind === 'scalar' && b.kind === 'scalar') return a.dataType === b.dataType && a.raw === b.raw && a.sourceFormat === b.sourceFormat && a.dateKind === b.dateKind

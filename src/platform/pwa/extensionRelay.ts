@@ -1,5 +1,7 @@
-import { FORMATS, type Format, type PickedFile } from '../fileTypes'
+import { FORMATS, type Format, type PickedBytesFile } from '../fileTypes'
 import { isStructuredModel } from '../../domain/structured/validate'
+import { isDiffModel } from '../../domain/diff/validate'
+import { isEnvModel } from '../../domain/env/validate'
 import type { CalendarModel, ContactModel, CsvModel, EmailModel, ViewerDocument } from '../../domain/types'
 import { normalizeEmailAttachmentBytes } from '../../domain/emailAttachmentBytes'
 import {
@@ -12,7 +14,7 @@ export { parseRelayRoute } from '../relay/protocol'
 export type { RelayRoute } from '../relay/protocol'
 
 export interface RelayProgress { receivedBytes: number; totalBytes: number }
-export interface ReceivedExtensionFile { ticketId: string; kind: MetaMessage['kind']; source?: MetaMessage['source']; file: PickedFile }
+export interface ReceivedExtensionFile { ticketId: string; kind: MetaMessage['kind']; source?: MetaMessage['source']; file: PickedBytesFile }
 export interface ReceiveOptions { extensionId: string; ticketId: string; onProgress?: (progress: RelayProgress) => void }
 const TIMEOUT_MS = 30_000
 const receiving = new Map<string, Promise<ReceivedExtensionFile>>()
@@ -260,6 +262,8 @@ function isDocumentModel(format: Format, value: unknown): value is ViewerDocumen
   if (format === 'json' || format === 'yaml' || format === 'toml') {
     return isStructuredModel(value)
   }
+  if (format === 'diff') return isDiffModel(value)
+  if (format === 'env') return isEnvModel(value)
   if (format === 'csv') {
     const model = value as unknown as CsvModel
     return isStringArray(model.headers) && isStringArray(model.headerRow) && isStringRows(model.rows) &&

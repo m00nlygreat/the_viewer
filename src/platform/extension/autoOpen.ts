@@ -5,7 +5,7 @@ const AUTO_OPEN_TOKEN_KEY = 'auto-open-token'
 const AUTO_OPEN_RULE_IDS = [73101, 73102, 73103, 73104, 73105]
 let ruleSetup: Promise<void> | null = null
 
-function createAutoOpenRules(token: string): chrome.declarativeNetRequest.Rule[] {
+export function createAutoOpenRules(token: string): chrome.declarativeNetRequest.Rule[] {
   const extensionPage = `chrome-extension://${chrome.runtime.id}/extension.html`
   const condition: chrome.declarativeNetRequest.RuleCondition = {
     regexFilter: '^(https?://.*)$',
@@ -15,7 +15,8 @@ function createAutoOpenRules(token: string): chrome.declarativeNetRequest.Rule[]
   const redirect = {
     regexSubstitution: `${extensionPage}#auto/${token}/\\0`
   }
-  const supportedPath = `[^?]*\\.(${Object.values(FORMAT_EXTENSIONS).flat().join('|')})(\\?.*)?$`
+  const extensions = Object.values(FORMAT_EXTENSIONS).flat().join('|')
+  const supportedPath = `[^?#]*(?:\\.(?:${extensions})|(?:^|/)\\.env\\.[^/?#]+)(?:\\?.*)?$`
   const mimePatterns = (types: readonly string[]) => types.flatMap((type) => [type, `${type};*`, `${type} ;*`])
   const supportedMimeValues = mimePatterns(FORMATS.flatMap((format) => FORMAT_MIME_ALIASES[format]))
   const genericMimeValues = mimePatterns(GENERIC_FILE_MIME_TYPES)
@@ -64,10 +65,10 @@ function createAutoOpenRules(token: string): chrome.declarativeNetRequest.Rule[]
       action: { type: 'redirect', redirect },
       condition: {
         ...condition,
-        responseHeaders: [{ header: 'content-disposition', values: Object.values(FORMAT_EXTENSIONS).flat().flatMap((extension) => [
+        responseHeaders: [{ header: 'content-disposition', values: [...Object.values(FORMAT_EXTENSIONS).flat().flatMap((extension) => [
           `*filename=*.${extension}`, `*filename=*.${extension};*`, `*filename="*.${extension}"*`,
           `*filename*=UTF-8''*.${extension}`, `*filename*=UTF-8''*.${extension};*`
-        ]) }],
+        ]), '*filename=*.env.*', '*filename="*.env.*"*', "*filename*=UTF-8''*.env.*"] }],
         excludedResponseHeaders: [{ header: 'content-type', excludedValues: [...supportedMimeValues, ...genericMimeValues] }]
       }
     }

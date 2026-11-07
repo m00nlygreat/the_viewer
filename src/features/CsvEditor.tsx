@@ -20,6 +20,8 @@ import { readCsvEditorState, saveCsvEditorState } from './csvEditorState'
 import { GridStructureToolbar } from './GridStructureToolbar'
 
 interface Props { document: ViewerDocument; model: CsvModel; onChange: (model: CsvModel, group?: 'typing' | 'command') => void; theme: 'light' | 'dark' }
+interface CsvViewState { rows: CsvModel['rows']; query: string; sort: { column: number; direction: 1 | -1 } | null; requestId: number; indices: number[] | null }
+interface CsvViewWorkerResponse { requestId: number; indices: number[] }
 
 const CSV_HEADER_HEIGHT = 34
 const CSV_ROW_HEIGHT = 38
@@ -32,6 +34,9 @@ const CSV_BASE_FONT_STYLE = GRID_BASE_FONT_STYLE
 const CSV_HEADER_FONT_STYLE = GRID_HEADER_FONT_STYLE
 const CSV_CELL_FONT = `${CSV_BASE_FONT_STYLE} ${CSV_FONT_FAMILY}`
 const CSV_HEADER_FONT = `${CSV_HEADER_FONT_STYLE} ${CSV_FONT_FAMILY}`
+const CSV_WORKER_ROW_THRESHOLD = 20_000
+const normalizedRowCache = new WeakMap<readonly string[], readonly string[]>()
+const measuredWidths = new Map<string, number>()
 
 function approximateTextWidth(text: string): number {
   return Array.from(text).reduce((width, character) => width + ((character.codePointAt(0) ?? 0) > 0x2e7f ? 13 : 7), 0)
@@ -39,32 +44,41 @@ function approximateTextWidth(text: string): number {
 
 function columnTitle(headers: readonly string[], column: number): string { return headers[column] || `열 ${column + 1}` }
 
-function autoFitColumnWidths(headers: readonly string[], rows: readonly (readonly string[])[], columnsCount: number, sort: { column: number; direction: 1 | -1 } | null): number[] {
+function normalizedCells(row: readonly string[]): readonly string[] {
+  let cells = normalizedRowCache.get(row)
+  if (!cells) { cells = row.map((value) => value.toLocaleLowerCase()); normalizedRowCache.set(row, cells) }
+  return cells
+}
+
+function cachedTextWidth(context: CanvasRenderingContext2D | null, font: string, text: string): number {
+  const key = `${font}\0${text}`
+  const cached = measuredWidths.get(key)
+  if (cached !== undefined) return cached
+  if (measuredWidths.size >= 8192) measuredWidths.delete(measuredWidths.keys().next().value!)
+  if (context) context.font = font
+  const width = context ? context.measureText(text).width : approximateTextWidth(text)
+  measuredWidths.set(key, width)
+  return width
+}
+
+async function autoFitColumnWidths(headers: readonly string[], rows: readonly (readonly string[])[], columnsCount: number, sort: { column: number; direction: 1 | -1 } | null, cancelled: () => boolean = () => false): Promise<number[]> {
   const canvas = typeof document === 'undefined' ? null : document.createElement('canvas')
   const context = canvas?.getContext('2d') ?? null
   const widths = Array.from({ length: columnsCount }, () => CSV_MIN_COLUMN_WIDTH)
-  if (!context) {
-    for (let column = 0; column < columnsCount; column++) {
-      let contentWidth = approximateTextWidth(columnTitle(headers, column))
-      for (const row of rows) {
-        contentWidth = Math.max(contentWidth, approximateTextWidth(row[column] ?? ''))
-        if (contentWidth + CSV_COLUMN_PADDING >= CSV_MAX_COLUMN_WIDTH) break
-      }
-      widths[column] = Math.min(CSV_MAX_COLUMN_WIDTH, Math.max(CSV_MIN_COLUMN_WIDTH, Math.ceil(contentWidth + CSV_COLUMN_PADDING)))
-    }
-    return widths
-  }
-
-  for (let column = 0; column < columnsCount; column++) {
+  for (let column = 0; column < columnsCount && !cancelled(); column++) {
     const title = columnTitle(headers, column)
     const header = sort?.column === column ? `${title} ${sort.direction === 1 ? '▲' : '▼'}` : title
-    context.font = CSV_HEADER_FONT
-    let contentWidth = context.measureText(header).width
-    context.font = CSV_CELL_FONT
+    let contentWidth = cachedTextWidth(context, CSV_HEADER_FONT, header)
+    let frameStart = performance.now()
     for (const row of rows) {
+      if (cancelled()) return widths
       const value = row[column] ?? ''
-      if (value) contentWidth = Math.max(contentWidth, context.measureText(value).width)
+      if (value) contentWidth = Math.max(contentWidth, cachedTextWidth(context, CSV_CELL_FONT, value))
       if (contentWidth + CSV_COLUMN_PADDING >= CSV_MAX_COLUMN_WIDTH) break
+      if (performance.now() - frameStart >= 4) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+        frameStart = performance.now()
+      }
     }
     widths[column] = Math.min(CSV_MAX_COLUMN_WIDTH, Math.max(CSV_MIN_COLUMN_WIDTH, Math.ceil(contentWidth + CSV_COLUMN_PADDING)))
   }
@@ -83,20 +97,109 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
   const [headerDraft, setHeaderDraft] = useState(() => saved?.headerDraft ?? '')
   const canEdit = document.parseState === 'ready' && document.modelRevision === document.revision
   const rows = model.rows
-  const columnsCount = rows.reduce((count, row) => Math.max(count, row.length), Math.max(model.headers.length, 1))
-  const [columnWidths, setColumnWidths] = useState<number[]>(() => saved?.columnWidths ?? autoFitColumnWidths(model.headers, rows, columnsCount, null))
+  const columnsCount = useMemo(() => rows.reduce((count, row) => Math.max(count, row.length), Math.max(model.headers.length, 1)), [model.headers.length, rows])
+  const [columnWidths, setColumnWidths] = useState<number[]>(() => saved?.columnWidths ?? Array.from({ length: columnsCount }, () => CSV_DEFAULT_COLUMN_WIDTH))
+  const workerRef = useRef<Worker | null>(null)
+  const workerRows = useRef<CsvModel['rows'] | null>(null)
+  const workerRequest = useRef(0)
+  const [workerView, setWorkerView] = useState<CsvViewState | null>(null)
+  const [workerFailed, setWorkerFailed] = useState(false)
+  const usesWorker = rows.length >= CSV_WORKER_ROW_THRESHOLD
+  const normalizedQuery = useMemo(() => query.toLocaleLowerCase(), [query])
+  const collator = useMemo(() => new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }), [])
+  const autoFitPending = useRef(!saved?.columnWidths)
+  const manuallySizedColumns = useRef(new Set<number>())
+  const widthRequest = useRef(0)
   const savedView = useRef({ query, sort, gridSelection, columnWidths, editingHeader, headerDraft })
   savedView.current = { query, sort, gridSelection, columnWidths, editingHeader, headerDraft }
+  const failWorker = useCallback((worker: Worker) => {
+    worker.terminate()
+    if (workerRef.current === worker) workerRef.current = null
+    workerRows.current = null
+    setWorkerFailed(true)
+    setWorkerView(null)
+  }, [])
   useEffect(() => () => saveCsvEditorState(document.id, savedView.current), [document.id])
-  const visible = useMemo(() => {
-    const filtered = rows.map((row, index) => ({ row, index })).filter(({ row }) => !query || row.some((value) => value.toLocaleLowerCase().includes(query.toLocaleLowerCase())))
-    if (sort) filtered.sort((a, b) => (a.row[sort.column] ?? '').localeCompare(b.row[sort.column] ?? '', undefined, { numeric: true, sensitivity: 'base' }) * sort.direction)
-    return filtered
-  }, [rows, query, sort])
+  useEffect(() => () => { widthRequest.current += 1 }, [])
+  useEffect(() => {
+    if (!autoFitPending.current) return
+    const request = ++widthRequest.current
+    let cancelled = false
+    void autoFitColumnWidths(model.headers, rows, columnsCount, null, () => cancelled || request !== widthRequest.current).then((widths) => {
+      if (cancelled || request !== widthRequest.current) return
+      autoFitPending.current = false
+      setColumnWidths((current) => widths.map((width, index) => manuallySizedColumns.current.has(index) ? current[index] ?? width : width))
+    })
+    return () => { cancelled = true }
+  }, [columnsCount, model.headers, rows])
+  useEffect(() => {
+    if (!usesWorker) { workerRef.current?.terminate(); workerRef.current = null; workerRows.current = null; setWorkerView(null); return }
+    let worker: Worker
+    try { worker = new Worker(new URL('../domain/csvView.worker.ts', import.meta.url), { type: 'module', name: 'the-viewer-csv-view' }) }
+    catch { workerRef.current = null; setWorkerFailed(true); return }
+    setWorkerFailed(false)
+    workerRef.current = worker
+    worker.onmessage = (event: MessageEvent<CsvViewWorkerResponse>) => {
+      const result = event.data
+      if (result.requestId !== workerRequest.current) return
+      setWorkerView((current) => current?.requestId === result.requestId ? { ...current, indices: result.indices } : current)
+    }
+    worker.onerror = () => failWorker(worker)
+    return () => {
+      worker.terminate()
+      if (workerRef.current === worker) workerRef.current = null
+      workerRows.current = null
+    }
+  }, [document.id, failWorker, usesWorker])
+
+  useEffect(() => {
+    const worker = workerRef.current
+    if (!usesWorker || !worker) return
+    const previous = workerRows.current
+    try {
+      if (!previous) worker.postMessage({ type: 'init', rows })
+      else if (previous !== rows) {
+        const changes: Array<{ index: number; row: readonly string[] }> = []
+        for (let index = 0; index < rows.length; index++) if (previous[index] !== rows[index]) changes.push({ index, row: rows[index]! })
+        worker.postMessage({ type: 'update', length: rows.length, changes })
+      }
+    } catch {
+      failWorker(worker)
+      return
+    }
+    workerRows.current = rows
+  }, [failWorker, rows, usesWorker])
+
+  useEffect(() => {
+    if (!usesWorker || (!normalizedQuery && !sort)) { setWorkerView(null); return }
+    const worker = workerRef.current
+    if (!worker) { setWorkerView(null); return }
+    const requestId = ++workerRequest.current
+    setWorkerView({ rows, query: normalizedQuery, sort, requestId, indices: null })
+    try { worker.postMessage({ type: 'query', requestId, query: normalizedQuery, sort }) }
+    catch { failWorker(worker) }
+  }, [failWorker, normalizedQuery, rows, sort, usesWorker])
+
+  const workerResultIsCurrent = Boolean(workerView && workerView.rows === rows && workerView.query === normalizedQuery && workerView.sort?.column === sort?.column && workerView.sort?.direction === sort?.direction && workerView.indices)
+  const workerPending = Boolean(usesWorker && (normalizedQuery || sort) && !workerResultIsCurrent && !workerFailed)
+  const visible = useMemo<number[] | null>(() => {
+    if (workerPending) return []
+    if (workerResultIsCurrent && workerView?.indices) return workerView.indices
+    if (!normalizedQuery && !sort) return null
+    const indices: number[] = []
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index]!
+      if (!normalizedQuery || normalizedCells(row).some((value) => value.includes(normalizedQuery))) indices.push(index)
+    }
+    if (sort) indices.sort((left, right) => collator.compare(rows[left]?.[sort.column] ?? '', rows[right]?.[sort.column] ?? '') * sort.direction || left - right)
+    return indices
+  }, [collator, normalizedQuery, rows, sort, workerPending, workerResultIsCurrent, workerView])
+  const visibleCount = visible?.length ?? rows.length
+  const sourceRowAt = useCallback((viewRow: number) => visible ? visible[viewRow] : viewRow, [visible])
   const activeCell = gridSelection.current?.cell ?? [0, 0]
   const activeColumn = Math.max(0, Math.min(columnsCount - 1, activeCell[0]))
-  const activeRow = Math.max(0, Math.min(Math.max(visible.length - 1, 0), activeCell[1]))
-  const activeSourceRow = visible[activeRow]?.index ?? activeRow
+  const activeRow = Math.max(0, Math.min(Math.max(visibleCount - 1, 0), activeCell[1]))
+  const activeSourceRow = sourceRowAt(activeRow) ?? activeRow
   const selectedRange = gridSelection.current?.range
 
   const gridColumns = useMemo<GridColumn[]>(() => Array.from({ length: columnsCount }, (_, column) => {
@@ -114,21 +217,22 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
     }), [theme])
 
   const getCellContent = useCallback(([column, row]: Item): GridCell => {
-    const value = visible[row]?.row[column] ?? ''
+    const sourceRow = sourceRowAt(row)
+    const value = sourceRow === undefined ? '' : rows[sourceRow]?.[column] ?? ''
     return { kind: GridCellKind.Text, data: value, displayData: value, readonly: !canEdit, allowOverlay: canEdit }
-  }, [canEdit, visible])
+  }, [canEdit, rows, sourceRowAt])
 
   const applyTextEdits = useCallback((edits: readonly { location: Item; value: string }[], group: 'typing' | 'command' = 'typing') => {
     if (edits.length === 0) return
     const updates: Array<{ row: number; column: number; value: string }> = []
     for (const { location: [column, viewRow], value } of edits) {
-      const sourceRow = visible[viewRow]?.index
+      const sourceRow = sourceRowAt(viewRow)
       if (sourceRow === undefined || column < 0 || column >= columnsCount) continue
       updates.push({ row: sourceRow, column, value })
     }
     const nextRows = applyGridCellUpdates(rows, updates)
     if (nextRows !== rows && canEdit) onChange({ ...model, rows: nextRows }, group)
-  }, [canEdit, columnsCount, model, onChange, rows, visible])
+  }, [canEdit, columnsCount, model, onChange, rows, sourceRowAt])
 
   const applyGridEdits = useCallback((edits: readonly EditListItem[]) => {
     applyTextEdits(edits.map(({ location, value }) => ({
@@ -146,7 +250,7 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
     let nextNewRow = rows.length
     values.forEach((line, rowOffset) => {
       const viewRow = startViewRow + rowOffset
-      const sourceRow = visible[viewRow]?.index ?? nextNewRow++
+      const sourceRow = sourceRowAt(viewRow) ?? nextNewRow++
       line.forEach((value, columnOffset) => updates.push({ row: sourceRow, column: startColumn + columnOffset, value }))
     })
     const next = applyGridCellUpdates(rows, updates, { allowAddRows: true, minColumns: columnsCount, materializeBlankCells: true })
@@ -157,7 +261,7 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
       onChange({ ...model, rows: next }, 'command')
     }
     return false
-  }, [canEdit, columnsCount, model, onChange, rows, visible])
+  }, [canEdit, columnsCount, model, onChange, rows, sourceRowAt])
 
   const clearSelection = useCallback((selection: GridSelection) => {
     const range = selection.current?.range
@@ -173,7 +277,7 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
 
   useEffect(() => {
     const current = gridSelection.current
-    if (!visible.length) {
+    if (!visibleCount) {
       if (current) setGridSelection(emptyGridSelection)
       return
     }
@@ -182,12 +286,12 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
     if (!current) return
     const [column, row] = current.cell
     const range = current.range
-    const outside = column < 0 || column >= columnsCount || row < 0 || row >= visible.length || range.x < 0 || range.y < 0 || range.x + range.width > columnsCount || range.y + range.height > visible.length
+    const outside = column < 0 || column >= columnsCount || row < 0 || row >= visibleCount || range.x < 0 || range.y < 0 || range.x + range.width > columnsCount || range.y + range.height > visibleCount
     if (outside) {
-      const nextCell: Item = [Math.max(0, Math.min(columnsCount - 1, column)), Math.max(0, Math.min(visible.length - 1, row))]
+      const nextCell: Item = [Math.max(0, Math.min(columnsCount - 1, column)), Math.max(0, Math.min(visibleCount - 1, row))]
       setGridSelection({ current: { cell: nextCell, range: { x: nextCell[0], y: nextCell[1], width: 1, height: 1 }, rangeStack: [] }, columns: CompactSelection.empty(), rows: CompactSelection.empty() })
     }
-  }, [columnsCount, editingHeader, gridSelection, sort, visible.length])
+  }, [columnsCount, editingHeader, gridSelection, sort, visibleCount])
 
   const addRow = () => { if (canEdit) onChange({ ...model, rows: [...rows, Array(columnsCount).fill('')] }) }
   const addColumn = () => {
@@ -202,7 +306,7 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
   }
   const removeActiveRow = () => {
     if (!canEdit) return
-    const sourceRow = visible[activeRow]?.index
+    const sourceRow = sourceRowAt(activeRow)
     if (sourceRow !== undefined) onChange({ ...model, rows: rows.filter((_, index) => index !== sourceRow) })
   }
   const removeActiveColumn = () => {
@@ -242,8 +346,17 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
     onChange({ ...model, headers })
     setEditingHeader(null)
   }
-  const autoFitColumns = () => setColumnWidths(autoFitColumnWidths(model.headers, rows, columnsCount, sort))
+  const autoFitColumns = () => {
+    const request = ++widthRequest.current
+    manuallySizedColumns.current.clear()
+    void autoFitColumnWidths(model.headers, rows, columnsCount, sort, () => request !== widthRequest.current).then((widths) => {
+      if (request !== widthRequest.current) return
+      autoFitPending.current = false
+      setColumnWidths((current) => widths.map((width, index) => manuallySizedColumns.current.has(index) ? current[index] ?? width : width))
+    })
+  }
   const resizeColumn = (_column: GridColumn, newSize: number, columnIndex: number) => {
+    manuallySizedColumns.current.add(columnIndex)
     setColumnWidths((current) => {
       const next = [...current]
       next[columnIndex] = Math.min(CSV_MAX_COLUMN_WIDTH, Math.max(CSV_MIN_COLUMN_WIDTH, newSize))
@@ -285,7 +398,7 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
         <SpreadsheetGrid
           className="csv-data-grid"
           columns={gridColumns}
-          rows={visible.length}
+          rows={visibleCount}
           getCellContent={getCellContent}
           getCellsForSelection={true}
           gridSelection={gridSelection}
@@ -310,10 +423,10 @@ export function CsvEditor({ document, model, onChange, theme }: Props) {
           height="100%"
           theme={gridTheme}
         />
-        {visible.length === 0 && query && <div className="csv-empty-overlay">검색 결과가 없습니다.</div>}
+        {visibleCount === 0 && query && !workerPending && <div className="csv-empty-overlay">검색 결과가 없습니다.</div>}
       </div>
       <div className="csv-statusbar">
-        <span>{visible.length.toLocaleString()} / {rows.length.toLocaleString()}행</span><span>{columnsCount}열</span><span>{model.delimiter === '\t' ? 'TAB' : model.delimiter === ';' ? 'SEMICOLON' : 'CSV'}</span><span>{model.encoding}{model.bom ? ' · BOM' : ''}</span>
+        <span>{visibleCount.toLocaleString()} / {rows.length.toLocaleString()}행</span><span>{columnsCount}열</span><span>{model.delimiter === '\t' ? 'TAB' : model.delimiter === ';' ? 'SEMICOLON' : 'CSV'}</span><span>{model.encoding}{model.bom ? ' · BOM' : ''}</span>
         <div className="toolbar-spacer" />
         <span>{columnTitle(model.headers, activeColumn)} · 행 {activeSourceRow + 1}</span>
         {(selectedRows > 1 || selectedColumns > 1) && <span>{selectedRows} × {selectedColumns} 선택</span>}

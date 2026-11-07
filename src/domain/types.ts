@@ -1,5 +1,7 @@
 import type { Format } from './fileFormats'
 import type { StructuredModel } from './structured/model'
+import type { DiffModel } from './diff/model'
+import type { EnvModel } from './env/model'
 import type { FolderDocumentRef } from './workspace'
 export { FORMATS, FORMAT_MIME, FORMAT_MIME_ALIASES, GENERIC_FILE_MIME_TYPES, FORMAT_LABEL, getFormat } from './fileFormats'
 export type { Format } from './fileFormats'
@@ -93,15 +95,15 @@ export interface DocumentModelByFormat {
   json: StructuredModel
   yaml: StructuredModel
   toml: StructuredModel
+  diff: DiffModel
+  env: EnvModel
 }
 export type DocumentModel = DocumentModelByFormat[Format]
 
-export interface ViewerDocument {
+interface ViewerDocumentFields {
   id: string
   name: string
-  format: Format
   /** The viewer's raw-text or unsupported-file path, instead of a supported document format. */
-  contentKind?: 'plain-text' | 'unsupported'
   mimeType: string
   size: number
   /** Bytes as first opened. Older recovered sessions may not have this value. */
@@ -112,7 +114,6 @@ export interface ViewerDocument {
   savedBytes: ArrayBuffer
   sourceText: string
   text: string
-  model: DocumentModel
   mode: EditorMode
   revision: number
   modelRevision: number
@@ -140,9 +141,64 @@ export interface ViewerDocument {
   shareFileIndex?: number
 }
 
-type PersistedDocumentFor<K extends Format> = Omit<ViewerDocument, 'format' | 'model'> & {
+type SupportedViewerDocument = { [K in Format]: ViewerDocumentFields & {
+  format: K
+  model: DocumentModelByFormat[K]
+  contentKind?: never
+} }[Format]
+
+type PlainTextViewerDocument = ViewerDocumentFields & {
+  format: 'md'
+  contentKind: 'plain-text'
+  model: { text: string }
+}
+
+type UnsupportedViewerDocument = ViewerDocumentFields & {
+  format: 'md'
+  contentKind: 'unsupported'
+  model: { text: string }
+}
+
+export type ViewerDocument = (SupportedViewerDocument | PlainTextViewerDocument | UnsupportedViewerDocument) & {
+  /** False while a document list entry has not loaded its recoverable payload. */
+  payloadLoaded?: boolean
+}
+
+type PersistedDocumentFor<K extends Format> = ViewerDocumentFields & {
   schemaVersion: 3
   format: K
   model: DocumentModelByFormat[K]
+  contentKind?: never
 }
-export type PersistedViewerDocument = { [K in Format]: PersistedDocumentFor<K> }[Format]
+type PersistedSpecialDocument = ViewerDocumentFields & {
+  schemaVersion: 3
+  format: 'md'
+  contentKind: 'plain-text' | 'unsupported'
+  model: { text: string }
+}
+export type PersistedViewerDocument = { [K in Format]: PersistedDocumentFor<K> }[Format] | PersistedSpecialDocument
+
+type PersistedPayloadKey = 'model' | 'text' | 'sourceText' | 'savedText' | 'savedBytes' | 'initialBytes'
+type PersistedSummaryFor<K extends Format> = Omit<PersistedDocumentFor<K>, PersistedPayloadKey> & { payloadRef: true }
+type PersistedSpecialSummary = Omit<PersistedSpecialDocument, PersistedPayloadKey> & { payloadRef: true }
+export type PersistedViewerDocumentSummary = { [K in Format]: PersistedSummaryFor<K> }[Format] | PersistedSpecialSummary
+
+type PersistedEmailAttachment = Omit<EmailAttachment, 'content'>
+type PersistedEmailModel = Omit<EmailModel, 'attachments'> & { attachments: PersistedEmailAttachment[] }
+type PersistedDocumentModelByFormat = { [K in Format]: K extends 'eml' ? PersistedEmailModel : DocumentModelByFormat[K] }
+
+export type PersistedViewerDocumentPayload = { [K in Format]: {
+  id: string
+  format: K
+  model: PersistedDocumentModelByFormat[K]
+  text: string
+  sourceText: string
+  savedText: string
+} }[Format]
+
+export interface PersistedViewerDocumentBlobs {
+  id: string
+  savedBytes: ArrayBuffer
+  initialBytes?: ArrayBuffer
+  emailAttachmentContents?: ArrayBuffer[]
+}

@@ -98,19 +98,21 @@ export default function MonacoSourceEditor({ documentId, format, plainText = fal
   const valueRef = useRef(value)
   const editorText = useRef(value)
   const themeRef = useRef(theme)
+  const plainTextRef = useRef(plainText)
   const externalUpdate = useRef(false)
   const textSync = useRef(new EditorTextSyncSession())
   changeRef.current = onChange
   undoRef.current = onUndo
   redoRef.current = onRedo
   themeRef.current = theme
+  plainTextRef.current = plainText
 
   useEffect(() => {
     if (!host.current) return
     const textSession = textSync.current
     configureMonacoWorker()
     if (format === 'json') registerMonacoJsonLanguage()
-    const language = plainText ? 'plaintext' : format === 'md' ? 'markdown' : format === 'csv' ? registerCsvMonacoLanguage(csvDelimiter) : format === 'json' || format === 'yaml' ? format : 'plaintext'
+    const language = plainTextRef.current ? 'plaintext' : format === 'md' ? 'markdown' : format === 'csv' ? registerCsvMonacoLanguage(csvDelimiter) : format === 'json' || format === 'yaml' ? format : 'plaintext'
     const uri = monaco.Uri.parse(`inmemory://the-viewer/${encodeURIComponent(documentId)}.${format}`)
     let model = models.get(documentId)
     if (!model || model.isDisposed()) {
@@ -217,6 +219,13 @@ export default function MonacoSourceEditor({ documentId, format, plainText = fal
       textSession.reset()
     }
   }, [csvDelimiter, documentId, format, label])
+
+  useEffect(() => {
+    const model = models.get(documentId)
+    if (!model || model.isDisposed()) return
+    const language = plainText ? 'plaintext' : format === 'md' ? 'markdown' : format === 'csv' ? registerCsvMonacoLanguage(csvDelimiter) : format === 'json' || format === 'yaml' ? format : 'plaintext'
+    monaco.editor.setModelLanguage(model, language)
+  }, [csvDelimiter, documentId, format, plainText])
 
   useEffect(() => {
     const model = models.get(documentId)

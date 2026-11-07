@@ -63,7 +63,8 @@ function DocumentModeTabs({ document, placement, onModeChange }: { document: Vie
   const modes: ViewerDocument['mode'][] = ['view', 'source']
   const label: Record<ViewerDocument['mode'], string> = { view: '보기', source: '원본' }
   return <div className="mode-switch" role="tablist" aria-label="문서 탭" onKeyDown={(event) => {
-    const current = event.target instanceof HTMLButtonElement ? event.target.dataset.mode as ViewerDocument['mode'] | undefined : undefined
+    const value = event.target instanceof HTMLButtonElement ? event.target.dataset.mode : undefined
+    const current = value === 'view' || value === 'source' ? value : undefined
     const index = current ? modes.indexOf(current) : -1
     const next = event.key === 'ArrowRight' ? (index + 1) % modes.length : event.key === 'ArrowLeft' ? (index + modes.length - 1) % modes.length : event.key === 'Home' ? 0 : event.key === 'End' ? modes.length - 1 : -1
     if (next < 0) return

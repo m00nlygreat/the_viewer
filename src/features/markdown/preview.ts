@@ -17,6 +17,51 @@ import type { RefObject } from 'react'
 export { taskMarkerRangesForSelection } from './taskMarkers'
 
 type MarkdownNode = ReturnType<typeof syntaxTree>['topNode']
+interface MarkdownDocumentAnalysis {
+  tree: ReturnType<typeof syntaxTree>
+  complete: boolean
+  frontmatter: ReturnType<typeof detectMarkdownFrontmatter>
+  references: MarkdownReference[]
+  localReferences: MarkdownReference[]
+  renderableLocalReferences: MarkdownReference[]
+  localReferencesByLine: Map<number, MarkdownReference[]>
+  localReferenceRanges: Set<string>
+  tableRanges: Array<{ from: number; to: number }>
+}
+const markdownAnalysisByDocument = new WeakMap<object, MarkdownDocumentAnalysis>()
+const noMarkdownReferenceRanges = new Set<string>()
+
+function markdownDocumentAnalysis(state: EditorState): MarkdownDocumentAnalysis {
+  const key = state.doc as object
+  const cached = markdownAnalysisByDocument.get(key)
+  if (cached?.complete) return cached
+  const source = state.doc.toString()
+  const completeTree = ensureSyntaxTree(state, state.doc.length, 40)
+  const tree = completeTree ?? syntaxTree(state)
+  const frontmatter = detectMarkdownFrontmatter(source)
+  const references = collectMarkdownReferences(source)
+  const localReferences = references.filter(isLocalReference)
+  const tableRanges: Array<{ from: number; to: number }> = []
+  tree.iterate({ enter: (node) => { if (node.name === 'Table') tableRanges.push({ from: node.from, to: node.to }) } })
+  const renderableLocalReferences = localReferences.filter((reference) =>
+    !overlapsFrontmatter(reference, frontmatter) && !tableRanges.some((range) => reference.from >= range.from && reference.to <= range.to))
+  const localReferencesByLine = new Map<number, MarkdownReference[]>()
+  for (const reference of renderableLocalReferences) {
+    const first = state.doc.lineAt(reference.from).number
+    const last = state.doc.lineAt(Math.max(reference.from, reference.to - 1)).number
+    for (let line = first; line <= last; line++) {
+      const items = localReferencesByLine.get(line)
+      if (items) items.push(reference)
+      else localReferencesByLine.set(line, [reference])
+    }
+  }
+  const analysis: MarkdownDocumentAnalysis = {
+    tree, complete: completeTree !== null, frontmatter, references, localReferences, renderableLocalReferences, localReferencesByLine,
+    localReferenceRanges: new Set(localReferences.map((reference) => `${reference.from}:${reference.to}`)), tableRanges
+  }
+  if (analysis.complete) markdownAnalysisByDocument.set(key, analysis)
+  return analysis
+}
 
 const setCompositionPosition = StateEffect.define<number | null>()
 export const markdownContextChanged = StateEffect.define<void>()
@@ -79,7 +124,7 @@ function descendants(node: MarkdownNode): MarkdownNode[] {
 }
 
 function frontmatterRange(state: EditorState) {
-  return detectMarkdownFrontmatter(state.doc.toString())
+  return markdownDocumentAnalysis(state).frontmatter
 }
 
 function overlapsFrontmatter(node: { from: number; to: number }, frontmatter: { from: number; to: number } | null): boolean {
@@ -124,32 +169,45 @@ function isPositionInBlock(state: EditorState, from: number, to: number, positio
   return positionLine >= firstLine && positionLine <= lastLine
 }
 
+function walkMarkdownTree(node: MarkdownNode, visit: (node: MarkdownNode) => void): void {
+  const stack = [node]
+  while (stack.length) {
+    const current = stack.pop()!
+    visit(current)
+    for (let child = current.firstChild; child; child = child.nextSibling) stack.push(child)
+  }
+}
+
+function markdownBlockAtPosition(state: EditorState, position: number): MarkdownNode | null {
+  const tree = markdownDocumentAnalysis(state).tree
+  let node = tree.resolveInner(Math.min(position, state.doc.length), -1)
+  while (node.parent?.parent) node = node.parent
+  return node.parent ? node : null
+}
+
 export function buildMarkdownPreviewDecorations(
   state: EditorState,
   composingPosition: number | null = null,
   codeBlocksAreWidgets = false,
   editorIsFocused = true,
-  contextRef?: RefObject<MarkdownReferenceContext | null>
+  contextRef?: RefObject<MarkdownReferenceContext | null>,
+  onlyBlocks?: readonly MarkdownNode[]
 ): DecorationSet {
-  const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
-  const frontmatter = frontmatterRange(state)
+  const analysis = markdownDocumentAnalysis(state)
+  const tree = analysis.tree
+  const blocks = onlyBlocks ?? Array.from((function* () { for (let block = tree.topNode.firstChild; block; block = block.nextSibling) yield block })())
+  const frontmatter = analysis.frontmatter
   const editingPosition = composingPosition ?? state.selection.main.head
   const activeLine = state.doc.lineAt(editingPosition)
   const editingLine = { from: activeLine.from, to: activeLine.to }
   const lineClasses = new Map<number, Set<string>>()
   const decorations: Range<Decoration>[] = []
   const hidden = new Set<string>()
-  const localReferenceRanges = new Set<string>()
-  const referenceContext = contextRef?.current
-  if (referenceContext?.folderId) {
-    for (const reference of collectMarkdownReferences(state.doc.toString())) {
-      if (isLocalReference(reference)) localReferenceRanges.add(`${reference.from}:${reference.to}`)
-    }
-  }
+  const localReferenceRanges = contextRef?.current?.folderId ? analysis.localReferenceRanges : noMarkdownReferenceRanges
   const widgetRanges: Array<{ from: number; to: number }> = []
-  if (codeBlocksAreWidgets) tree.iterate({ enter: (node) => {
+  if (codeBlocksAreWidgets) for (const block of blocks) walkMarkdownTree(block, (node) => {
     if (node.name === 'FencedCode' && !overlapsFrontmatter(node, frontmatter)) widgetRanges.push({ from: markdownCodeBlockFrom(state, node.from), to: node.to })
-  } })
+  })
 
   const addLineClass = (from: number, to: number, className: string) => {
     const firstLine = state.doc.lineAt(from)
@@ -205,11 +263,11 @@ export function buildMarkdownPreviewDecorations(
   }
 
   let editingRenderedBlock = false
-  tree.iterate({ enter: (node) => {
+  for (const block of blocks) walkMarkdownTree(block, (node) => {
     if ((node.name === 'Table' || node.name === 'FencedCode') && editingPosition >= node.from && editingPosition <= node.to && !overlapsFrontmatter(node, frontmatter)) {
       editingRenderedBlock = true
     }
-  } })
+  })
   const editingFrontmatter = Boolean(frontmatter && editingPosition >= frontmatter.from && editingPosition < frontmatter.to)
   if (editorIsFocused && !editingRenderedBlock && !editingFrontmatter) addLineClass(editingLine.from, editingLine.to, 'cm-md-editing-block')
 
@@ -288,7 +346,7 @@ export function buildMarkdownPreviewDecorations(
     for (let child = node.firstChild; child; child = child.nextSibling) visit(child, editingLine)
   }
 
-  for (let block = tree.topNode.firstChild; block; block = block.nextSibling) {
+  for (const block of blocks) {
     const canPreviewBlock = !overlapsFrontmatter(block, frontmatter) && supportsPreview(block.name) && !startsUnknownContainerDirective(state, block)
     if (canPreviewBlock) addBlockLineClasses(block)
     if (canPreviewBlock && (block.name === 'BulletList' || block.name === 'OrderedList' || block.name === 'Blockquote')) addNestedListLineClasses(block)
@@ -305,6 +363,43 @@ export function buildMarkdownPreviewDecorations(
   return Decoration.set(decorations, true)
 }
 
+export function refreshMarkdownPreviewForActiveLine(
+  previous: DecorationSet,
+  oldState: EditorState,
+  state: EditorState,
+  composingPosition: number | null,
+  codeBlocksAreWidgets: boolean,
+  editorIsFocused: boolean,
+  contextRef: RefObject<MarkdownReferenceContext | null> | undefined
+): DecorationSet {
+  const oldLine = oldState.doc.lineAt(oldState.selection.main.head)
+  const newLine = state.doc.lineAt(state.selection.main.head)
+  const blocks = [
+    markdownBlockAtPosition(oldState, oldState.selection.main.head),
+    markdownBlockAtPosition(state, state.selection.main.head)
+  ].filter((block): block is MarkdownNode => block !== null)
+  const uniqueBlocks = [...new Map(blocks.map((block) => [`${block.from}:${block.to}:${block.name}`, block])).values()]
+  const affectedRanges = [
+    ...uniqueBlocks.map((block) => ({ from: block.from, to: block.to })),
+    { from: oldLine.from, to: oldLine.to },
+    { from: newLine.from, to: newLine.to }
+  ]
+  let decorations = previous
+  for (const range of affectedRanges) {
+    decorations = decorations.update({
+      filterFrom: range.from,
+      filterTo: Math.max(range.from + 1, range.to),
+      filter: (from, to) => from === to
+        ? !(from >= range.from && from <= range.to)
+        : !(from < range.to && to > range.from)
+    })
+  }
+  const refreshed = buildMarkdownPreviewDecorations(state, composingPosition, codeBlocksAreWidgets, editorIsFocused, contextRef, uniqueBlocks)
+  const additions: Range<Decoration>[] = []
+  refreshed.between(0, state.doc.length, (from, to, decoration) => { additions.push(decoration.range(from, to)) })
+  return decorations.update({ add: additions, sort: true })
+}
+
 function isLocalReference(reference: MarkdownReference): boolean {
   const syntax = reference.kind.startsWith('obsidian') ? 'obsidian' : 'markdown'
   return parseLocalReference(reference.target, syntax).kind !== 'external'
@@ -313,46 +408,71 @@ function isLocalReference(reference: MarkdownReference): boolean {
 function buildLocalReferenceDecorations(
   state: EditorState,
   contextRef: RefObject<MarkdownReferenceContext | null>,
-  editorIsFocused: boolean
+  editorIsFocused: boolean,
+  analysis = markdownDocumentAnalysis(state)
 ): DecorationSet {
   const context = contextRef.current
   if (!context?.folderId || !context.services) return Decoration.set([], true)
-  const source = state.doc.toString()
-  const frontmatter = frontmatterRange(state)
   const active = state.doc.lineAt(state.selection.main.head)
-  const tableRanges: Array<{ from: number; to: number }> = []
-  const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
-  tree.iterate({ enter: (node) => { if (node.name === 'Table') tableRanges.push({ from: node.from, to: node.to }) } })
   const ranges: Range<Decoration>[] = []
-  const references = collectMarkdownReferences(source)
-  const localReferences = references.filter(isLocalReference)
-  context.referenceState.retain(context.instanceId, new Set(localReferences.map((reference) => markdownReferenceKey(context.instanceId, reference))))
-  for (const reference of localReferences) {
-    if (overlapsFrontmatter(reference, frontmatter)) continue
-    if (tableRanges.some((range) => reference.from >= range.from && reference.to <= range.to)) continue
+  context.referenceState.retain(context.instanceId, new Set(analysis.localReferences.map((reference) => markdownReferenceKey(context.instanceId, reference))))
+  for (const reference of analysis.renderableLocalReferences) {
     if (editorIsFocused && reference.from < active.to && reference.to > active.from) continue
-    if (!isLocalReference(reference)) continue
-    const block = reference.kind === 'image' || reference.kind === 'obsidian-embed'
-    ranges.push(Decoration.replace({ widget: new LocalReferenceWidget(reference, contextRef), inclusive: false, ...(block ? { block: true } : {}) }).range(reference.from, reference.to))
+    ranges.push(localReferenceDecoration(reference, contextRef))
   }
   return Decoration.set(ranges, true)
 }
 
-interface LocalReferenceDecorationValue { focused: boolean; decorations: DecorationSet }
+function localReferenceDecoration(reference: MarkdownReference, contextRef: RefObject<MarkdownReferenceContext | null>): Range<Decoration> {
+  const block = reference.kind === 'image' || reference.kind === 'obsidian-embed'
+  return Decoration.replace({ widget: new LocalReferenceWidget(reference, contextRef), inclusive: false, ...(block ? { block: true } : {}) }).range(reference.from, reference.to)
+}
+
+function localReferenceDecorationsForLine(
+  analysis: MarkdownDocumentAnalysis,
+  contextRef: RefObject<MarkdownReferenceContext | null>,
+  lineNumber: number,
+  skipLine?: { from: number; to: number }
+): Range<Decoration>[] {
+  const context = contextRef.current
+  if (!context?.folderId || !context.services) return []
+  return (analysis.localReferencesByLine.get(lineNumber) ?? [])
+    .filter((reference) => !(skipLine && reference.from < skipLine.to && reference.to > skipLine.from))
+    .map((reference) => localReferenceDecoration(reference, contextRef))
+}
+
+interface LocalReferenceDecorationValue { focused: boolean; activeLine: number | null; analysis: MarkdownDocumentAnalysis; decorations: DecorationSet }
 
 function markdownLocalReferenceDecorations(contextRef: RefObject<MarkdownReferenceContext | null>) {
   return StateField.define<LocalReferenceDecorationValue>({
-    create: (state) => ({ focused: false, decorations: buildLocalReferenceDecorations(state, contextRef, false) }),
+    create: (state) => {
+      const analysis = markdownDocumentAnalysis(state)
+      return { focused: false, activeLine: null, analysis, decorations: buildLocalReferenceDecorations(state, contextRef, false, analysis) }
+    },
     update(value, transaction) {
       let focused = value.focused
-      let refresh = transaction.docChanged || Boolean(transaction.selection)
+      let contextChanged = false
       const context = contextRef.current
       if (transaction.docChanged && context) context.referenceState.remap(transaction.changes, context.instanceId)
       for (const effect of transaction.effects) {
-        if (effect.is(markdownContextChanged)) refresh = true
-        if (effect.is(setMarkdownFocus) && effect.value !== focused) { focused = effect.value; refresh = true }
+        if (effect.is(markdownContextChanged)) contextChanged = true
+        if (effect.is(setMarkdownFocus) && effect.value !== focused) focused = effect.value
       }
-      return refresh ? { focused, decorations: buildLocalReferenceDecorations(transaction.state, contextRef, focused) } : value
+      const state = transaction.state
+      const analysis = transaction.docChanged ? markdownDocumentAnalysis(state) : value.analysis
+      const activeLine = focused ? state.doc.lineAt(state.selection.main.head).number : null
+      if (transaction.docChanged || contextChanged || focused !== value.focused) {
+        return { focused, activeLine, analysis, decorations: buildLocalReferenceDecorations(state, contextRef, focused, analysis) }
+      }
+      if (!transaction.selection || activeLine === value.activeLine) return value
+
+      const oldLine = value.activeLine === null ? null : state.doc.line(value.activeLine)
+      const nextLine = activeLine === null ? null : state.doc.line(activeLine)
+      const add = oldLine ? localReferenceDecorationsForLine(analysis, contextRef, value.activeLine!, nextLine ?? undefined) : []
+      const decorations = nextLine
+        ? value.decorations.update({ add, sort: true, filterFrom: nextLine.from, filterTo: nextLine.to, filter: (from, to) => !(from < nextLine.to && to > nextLine.from) })
+        : value.decorations.update({ add, sort: true })
+      return { focused, activeLine, analysis, decorations }
     },
     provide: (field) => EditorView.decorations.from(field, (value) => value.decorations)
   })
@@ -437,7 +557,7 @@ function buildMarkdownTableDecorationValue(
   const tableStates = new Map<number, MarkdownTableState>()
   const ranges: Range<Decoration>[] = []
   const frontmatter = frontmatterRange(state)
-  const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
+  const tree = markdownDocumentAnalysis(state).tree
   const context = contextRef?.current ?? null
 
   tree.iterate({ enter: (node) => {
@@ -466,7 +586,7 @@ function markdownTableDecorations(theme: 'light' | 'dark', contextRef: RefObject
 
 function markdownTableSeparatorPrefix(state: EditorState, from: number, to: number, inserted: string): string {
   if (!inserted || inserted.startsWith('\n')) return ''
-  const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
+  const tree = markdownDocumentAnalysis(state).tree
   let tableEnd: number | null = null
   tree.iterate({ enter: (node) => {
     if (node.name === 'Table' && (node.to === from || node.to + 1 === from)) tableEnd = node.to
@@ -534,7 +654,7 @@ function buildMarkdownCodeBlockDecorationValue(
   const codeBlocks = new Map<number, MarkdownCodeBlockState>()
   const ranges: Range<Decoration>[] = []
   const frontmatter = frontmatterRange(state)
-  const tree = ensureSyntaxTree(state, state.doc.length, 40) ?? syntaxTree(state)
+  const tree = markdownDocumentAnalysis(state).tree
 
   const visit = (node: MarkdownNode): void => {
     if (node.name === 'FencedCode') {
@@ -580,17 +700,24 @@ class MarkdownPreviewPlugin {
 
   update(update: ViewUpdate): void {
     if (update.docChanged && this.composingPosition !== null) this.composingPosition = update.changes.mapPos(this.composingPosition, 1)
-    let needsRefresh = update.docChanged || update.selectionSet || update.focusChanged || update.transactions.some((transaction) => transaction.effects.some((effect) => effect.is(markdownContextChanged)))
+    const activeLineChanged = update.selectionSet && update.startState.doc.lineAt(update.startState.selection.main.head).number !== update.state.doc.lineAt(update.state.selection.main.head).number
+    const contextChanged = update.transactions.some((transaction) => transaction.effects.some((effect) => effect.is(markdownContextChanged)))
+    let compositionChanged = false
+    let needsRefresh = update.docChanged || activeLineChanged || update.focusChanged || contextChanged
     if (update.focusChanged) this.editorIsFocused = update.view.hasFocus
     for (const transaction of update.transactions) {
       for (const effect of transaction.effects) {
         if (effect.is(setCompositionPosition) && effect.value !== this.composingPosition) {
           this.composingPosition = effect.value
+          compositionChanged = true
           needsRefresh = true
         }
       }
     }
-    if (needsRefresh) this.decorations = buildMarkdownPreviewDecorations(update.state, this.composingPosition, true, this.editorIsFocused, this.contextRef)
+    if (!needsRefresh) return
+    if (!update.docChanged && activeLineChanged && !update.focusChanged && !contextChanged && !compositionChanged) {
+      this.decorations = refreshMarkdownPreviewForActiveLine(this.decorations, update.startState, update.state, this.composingPosition, true, this.editorIsFocused, this.contextRef)
+    } else this.decorations = buildMarkdownPreviewDecorations(update.state, this.composingPosition, true, this.editorIsFocused, this.contextRef)
   }
 }
 

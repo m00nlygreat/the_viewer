@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { Check, Download, HardDrive, Info, Moon, Sun, Trash2, X } from 'lucide-react'
 import type { ThemePreference } from '../domain/types'
 import { useFocusTrap } from './useFocusTrap'
@@ -20,7 +20,7 @@ const themeOptions: Array<{ id: ThemePreference; label: string; icon: typeof Sun
   { id: 'dark', label: '다크', icon: Moon, detail: '어두운 테마를 사용합니다.' }
 ]
 
-export function SettingsDialog({ theme, onThemeChange, recoveryEnabled, onRecoveryChange, onClearData, onClose, onInstall, canInstall }: Props) {
+export const SettingsDialog = memo(function SettingsDialog({ theme, onThemeChange, recoveryEnabled, onRecoveryChange, onClearData, onClose, onInstall, canInstall }: Props) {
   const [confirmClear, setConfirmClear] = useState(false)
   const dialog = useFocusTrap<HTMLElement>()
   return <div className="overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
@@ -36,4 +36,4 @@ export function SettingsDialog({ theme, onThemeChange, recoveryEnabled, onRecove
       </div>
     </section>
   </div>
-}
+})

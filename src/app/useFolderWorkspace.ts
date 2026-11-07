@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { documentIsDirty, makeFileDocumentFromBytes } from '../domain/session'
 import { transitionFolderPhase, type FolderTransitionPhase } from '../domain/folderTransition'
 import { getFormat } from '../domain/fileFormats'
@@ -11,12 +11,33 @@ import type { DocumentSaveResult, DocumentSaveService } from './documentSave'
 import type { TransitionRow } from './FolderTransitionDialog'
 import { parseWithWorker } from '../domain/workerClient'
 import type { MarkdownReferenceResolution } from '../features/markdown/localReferenceState'
+import type { DocumentListItem } from './documentStore'
+
+interface CachedReferenceText { generation: number; text: string; bytes: number }
+interface PendingReferenceText { generation: number; controller: AbortController; promise: Promise<string> }
+const MAX_REFERENCE_TEXT_CACHE_BYTES = 8 * 1024 * 1024
+const emptyDocumentSummaries: readonly DocumentListItem[] = []
+const emptySubscribe = () => () => {}
+const readEmptyDocumentSummaries = () => emptyDocumentSummaries
+
+function waitForReferenceText<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(new DOMException('참조가 취소되었습니다.', 'AbortError'))
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener('abort', abort)
+    const abort = () => { cleanup(); reject(new DOMException('참조가 취소되었습니다.', 'AbortError')) }
+    signal.addEventListener('abort', abort, { once: true })
+    promise.then((value) => { cleanup(); resolve(value) }, (error: unknown) => { cleanup(); reject(error) })
+  })
+}
 
 interface Options {
   initialFolder?: FolderWorkspace | null
   initialSource?: FolderSource | null
   initialEntries?: FolderEntry[]
   getDocuments: () => readonly ViewerDocument[]
+  getDocumentSummaries?: () => readonly DocumentListItem[]
+  subscribeDocumentSummaries?: (listener: () => void) => () => void
+  loadDocumentPayload: (documentId: string) => Promise<ViewerDocument>
   getPendingSerializations: () => ReadonlyMap<string, Promise<void>>
   saveService: DocumentSaveService
   onCommit: (folder: FolderWorkspace | null, source: FolderSource | null, rootEntries: FolderEntry[]) => Promise<void>
@@ -32,13 +53,15 @@ interface Options {
 }
 
 export function useFolderWorkspace(options: Options) {
+  const subscribeDocumentSummaries = options.subscribeDocumentSummaries ?? emptySubscribe
+  const getDocumentSummaries = options.getDocumentSummaries ?? readEmptyDocumentSummaries
+  const documentSummaries = useSyncExternalStore(subscribeDocumentSummaries, getDocumentSummaries, getDocumentSummaries)
   const [folder, setFolder] = useState<FolderWorkspace | null>(options.initialFolder ?? null)
   const [entriesByPath, setEntriesByPath] = useState<Map<FolderPath, FolderEntry[]>>(() => options.initialFolder && options.initialEntries ? new Map([['', options.initialEntries]]) : new Map())
   const [loadingPaths, setLoadingPaths] = useState<Set<FolderPath>>(new Set())
   const [errorsByPath, setErrorsByPath] = useState<Map<FolderPath, string>>(new Map())
   const [activePath, setActivePath] = useState<FolderPath | null>(options.initialFolder?.activePath ?? null)
   const [activeAssetPath, setActiveAssetPath] = useState<FolderPath | null>(null)
-  const [activeFilePath, setActiveFilePath] = useState<FolderPath | null>(null)
   const [phase, setPhase] = useState<FolderTransitionPhase>('idle')
   const [rows, setRows] = useState<TransitionRow[]>([])
   const rowsRef = useRef(rows)
@@ -58,7 +81,56 @@ export function useFolderWorkspace(options: Options) {
   const controllers = useRef(new Map<FolderPath, AbortController>())
   const loadChildrenRef = useRef<((path: FolderPath, refresh?: boolean) => void) | null>(null)
   const openPromises = useRef(new Map<string, Promise<void>>())
-  const referenceTextCache = useRef(new Map<FolderPath, { generation: number; text: string }>() )
+  const referenceTextCache = useRef(new Map<FolderPath, CachedReferenceText>())
+  const referenceTextReads = useRef(new Map<FolderPath, PendingReferenceText>())
+  const referenceTextCacheBytes = useRef(0)
+  const clearReferenceTextCache = useCallback(() => {
+    for (const pending of referenceTextReads.current.values()) pending.controller.abort()
+    referenceTextReads.current.clear()
+    referenceTextCache.current.clear()
+    referenceTextCacheBytes.current = 0
+  }, [])
+  const loadMarkdownReferenceText = useCallback(async (source: FolderSource, path: FolderPath, requestedGeneration: number, signal: AbortSignal): Promise<string> => {
+    const cached = referenceTextCache.current.get(path)
+    if (cached?.generation === requestedGeneration) {
+      referenceTextCache.current.delete(path)
+      referenceTextCache.current.set(path, cached)
+      return cached.text
+    }
+    if (cached) { referenceTextCache.current.delete(path); referenceTextCacheBytes.current -= cached.bytes }
+
+    let pending = referenceTextReads.current.get(path)
+    if (!pending || pending.generation !== requestedGeneration) {
+      const controller = new AbortController()
+      const promise = (async () => {
+        const { file } = await readFolderFile(source, path, controller.signal)
+        assertCurrentReference(requestedGeneration, generation.current, controller.signal)
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        assertCurrentReference(requestedGeneration, generation.current, controller.signal)
+        const parsed = await parseWithWorker(file.name, file.type, bytes, 'md')
+        assertCurrentReference(requestedGeneration, generation.current, controller.signal)
+        const old = referenceTextCache.current.get(path)
+        if (old) referenceTextCacheBytes.current -= old.bytes
+        if (bytes.byteLength <= MAX_REFERENCE_TEXT_CACHE_BYTES) {
+          const record = { generation: requestedGeneration, text: parsed.text, bytes: bytes.byteLength }
+          referenceTextCache.current.delete(path)
+          referenceTextCache.current.set(path, record)
+          referenceTextCacheBytes.current += record.bytes
+          while (referenceTextCacheBytes.current > MAX_REFERENCE_TEXT_CACHE_BYTES && referenceTextCache.current.size) {
+            const oldestPath = referenceTextCache.current.keys().next().value!
+            const oldest = referenceTextCache.current.get(oldestPath)!
+            referenceTextCache.current.delete(oldestPath)
+            referenceTextCacheBytes.current -= oldest.bytes
+          }
+        }
+        return parsed.text
+      })()
+      pending = { generation: requestedGeneration, controller, promise }
+      referenceTextReads.current.set(path, pending)
+      void promise.finally(() => { if (referenceTextReads.current.get(path) === pending) referenceTextReads.current.delete(path) }).catch(() => undefined)
+    }
+    return waitForReferenceText(pending.promise, signal)
+  }, [])
   const nameIndex = useRef<{ generation: number; promise: Promise<Map<string, FolderPath[]>> } | null>(null)
   const reconnecting = useRef(false)
 
@@ -81,18 +153,17 @@ export function useFolderWorkspace(options: Options) {
     sourceRef.current = source
     generation.current += 1
     onGenerationChange?.(generation.current)
-    referenceTextCache.current.clear()
+    clearReferenceTextCache()
     nameIndex.current = null
     setFolder(restored)
     setEntriesByPath(restored && !rootError && source ? new Map([['', entries]]) : new Map())
     setErrorsByPath(rootError ? new Map([['', rootError]]) : new Map())
     setActivePath(restored?.activePath ?? null)
     setActiveAssetPath(null)
-    setActiveFilePath(null)
     for (const controller of controllers.current.values()) controller.abort()
     controllers.current.clear()
     if (restored && source && !rootError) for (const path of restored.expandedPaths) if (path) loadChildrenRef.current?.(path, true)
-  }, [onGenerationChange])
+  }, [clearReferenceTextCache, onGenerationChange])
 
   const captureDocuments = useCallback(() => {
     revisions.current = new Map(options.getDocuments().map((document) => [document.id, document.revision]))
@@ -251,7 +322,7 @@ export function useFolderWorkspace(options: Options) {
         setEntriesByPath(new Map([['', rootEntries]]))
         generation.current += 1
         options.onGenerationChange?.(generation.current)
-        referenceTextCache.current.clear()
+        clearReferenceTextCache()
         nameIndex.current = null
         options.onMetadataChange?.(updated, picked.source, generation.current)
         for (const path of updated.expandedPaths) if (path) loadChildrenRef.current?.(path, true)
@@ -291,7 +362,7 @@ export function useFolderWorkspace(options: Options) {
       transitionLock.current = false
       options.onTransitionLock?.(false)
     }
-  }, [captureDocuments, move, options, updateRows, waitForSerializations])
+  }, [captureDocuments, clearReferenceTextCache, move, options, updateRows, waitForSerializations])
 
   const commitCandidate = useCallback(async () => {
     const next = candidate.current
@@ -316,7 +387,7 @@ export function useFolderWorkspace(options: Options) {
       controllers.current.clear()
       generation.current += 1
       options.onGenerationChange?.(generation.current)
-      referenceTextCache.current.clear()
+      clearReferenceTextCache()
       nameIndex.current = null
       candidate.current = null
       sourceRef.current = nextSource
@@ -327,7 +398,6 @@ export function useFolderWorkspace(options: Options) {
       setErrorsByPath(new Map())
       setActivePath(null)
       setActiveAssetPath(null)
-      setActiveFilePath(null)
       options.onAssetSelect(null)
       if (nextFolder) options.onMetadataChange?.(nextFolder, nextSource, generation.current)
       transitionLock.current = false
@@ -340,7 +410,7 @@ export function useFolderWorkspace(options: Options) {
       transitionLock.current = false
       options.onTransitionLock?.(false)
     }
-  }, [captureDocuments, isClosing, move, options, updateRows, waitForSerializations])
+  }, [captureDocuments, clearReferenceTextCache, isClosing, move, options, updateRows, waitForSerializations])
   commitCandidateRef.current = commitCandidate
 
   const beginPicking = useCallback(() => {
@@ -431,7 +501,7 @@ export function useFolderWorkspace(options: Options) {
     for (const [activePath, controller] of controllers.current) {
       if (activePath === path || (path === '' ? Boolean(activePath) : activePath.startsWith(`${path}/`))) { controller.abort(); controllers.current.delete(activePath) }
     }
-    referenceTextCache.current.clear()
+    clearReferenceTextCache()
     nameIndex.current = null
     setEntriesByPath((items) => {
       const next = new Map(items)
@@ -443,7 +513,7 @@ export function useFolderWorkspace(options: Options) {
     if (current) for (const expanded of current.expandedPaths) {
       if (expanded && expanded !== path && (path === '' || expanded.startsWith(`${path}/`))) void loadChildren(expanded, true)
     }
-  }, [loadChildren, options])
+  }, [clearReferenceTextCache, loadChildren, options])
 
   const reconnectInput = useCallback(() => {
     if (folderRef.current?.access !== 'input') return
@@ -458,7 +528,6 @@ export function useFolderWorkspace(options: Options) {
     if (!format && /\.(?:avif|gif|jpe?g|png|svg|webp)$/iu.test(path)) {
       setActivePath(path)
       setActiveAssetPath(path)
-      setActiveFilePath(null)
       const updated = { ...currentFolder, activePath: path }
       folderRef.current = updated
       setFolder(updated)
@@ -477,7 +546,6 @@ export function useFolderWorkspace(options: Options) {
       setFolder(updated)
       options.onMetadataChange?.(updated, source, generation.current)
       setActiveAssetPath(null)
-      setActiveFilePath(null)
       options.onAssetSelect(null)
       options.onDocumentSelect(existing.id)
       return
@@ -493,7 +561,7 @@ export function useFolderWorkspace(options: Options) {
       if (controller.signal.aborted || startedGeneration !== generation.current || transitionLock.current) return
       const latest = options.getDocuments().find((item) => item.folderRef?.folderId === currentFolder.id && item.folderRef.path === path)
       if (latest) { options.onDocumentSelect(latest.id); return }
-      const document = await makeFileDocumentFromBytes(file.name, file.type, bytes)
+      const document = await makeFileDocumentFromBytes(file.name, file.type, bytes, undefined, { transferInputBytes: true })
       if (controller.signal.aborted || startedGeneration !== generation.current || transitionLock.current) return
       document.folderRef = { folderId: currentFolder.id, path }
       if (fileHandle) document.sourceFileHandle = fileHandle
@@ -577,28 +645,24 @@ export function useFolderWorkspace(options: Options) {
     const opened = options.getDocuments().find((item) => item.folderRef?.folderId === currentFolder.id && item.folderRef.path === path)
     const targetFormat = getFormat(path)
     if (opened) {
-      if (opened.format === 'md') return { status: 'markdown', path, text: opened.text, revision: opened.revision, ...(parsed.fragment ? { fragment: parsed.fragment } : {}) }
+      if (opened.format === 'md') {
+        const document = opened.payloadLoaded === false ? await options.loadDocumentPayload(opened.id) : opened
+        assertCurrentReference(requestedGeneration, generation.current, signal)
+        return { status: 'markdown', path, text: document.text, revision: document.revision, ...(parsed.fragment ? { fragment: parsed.fragment } : {}) }
+      }
       return { status: 'file', path, name: opened.name, mimeType: opened.mimeType, size: opened.size, supported: true }
     }
 
     try {
+      if (targetFormat === 'md') {
+        const text = await loadMarkdownReferenceText(source, path, requestedGeneration, signal)
+        assertCurrentReference(requestedGeneration, generation.current, signal)
+        return { status: 'markdown', path, text, revision: 0, ...(parsed.fragment ? { fragment: parsed.fragment } : {}) }
+      }
       const { file } = await readFolderFile(source, path, signal)
       assertCurrentReference(requestedGeneration, generation.current, signal)
       if (/\.(?:avif|gif|jpe?g|png|svg|webp)$/iu.test(path) || file.type.toLowerCase().startsWith('image/')) {
         return { status: 'image', path, mimeType: file.type, ...(parsed.fragment ? { fragment: parsed.fragment } : {}) }
-      }
-      if (targetFormat === 'md') {
-        const cached = referenceTextCache.current.get(path)
-        let text = cached?.generation === requestedGeneration ? cached.text : ''
-        if (cached?.generation !== requestedGeneration) {
-          const bytes = new Uint8Array(await file.arrayBuffer())
-          assertCurrentReference(requestedGeneration, generation.current, signal)
-          const parsedFile = await parseWithWorker(file.name, file.type, bytes, 'md')
-          assertCurrentReference(requestedGeneration, generation.current, signal)
-          text = parsedFile.text
-          referenceTextCache.current.set(path, { generation: requestedGeneration, text })
-        }
-        return { status: 'markdown', path, text, revision: 0, ...(parsed.fragment ? { fragment: parsed.fragment } : {}) }
       }
       return { status: 'file', path, name: file.name, mimeType: file.type, size: file.size, supported: Boolean(targetFormat) }
     } catch (error) {
@@ -607,7 +671,7 @@ export function useFolderWorkspace(options: Options) {
       const missing = error instanceof DOMException && error.name === 'NotFoundError' || error instanceof Error && /찾을 수 없습니다/u.test(error.message)
       return { status: 'error', kind: permission ? 'permission-denied' : missing ? 'missing' : 'missing', message: error instanceof Error ? error.message : '로컬 참조를 읽지 못했습니다.' }
     }
-  }, [options])
+  }, [loadMarkdownReferenceText, options])
 
   const getNameIndex = async (source: FolderSource, requestedGeneration: number, signal: AbortSignal): Promise<Map<string, FolderPath[]>> => {
     if (nameIndex.current?.generation === requestedGeneration) return nameIndex.current.promise
@@ -642,7 +706,6 @@ export function useFolderWorkspace(options: Options) {
       options.onMetadataChange?.(updated, sourceRef.current, generation.current)
     }
     setActiveAssetPath(null)
-    setActiveFilePath(null)
     options.onAssetSelect(null)
   }, [options])
 
@@ -651,11 +714,11 @@ export function useFolderWorkspace(options: Options) {
 
   const dirtyPaths = useMemo(() => {
     if (!folder) return new Set<FolderPath>()
-    return new Set(options.getDocuments().filter((item) => item.folderRef?.folderId === folder.id && item.isDirty).map((item) => item.folderRef!.path))
-  }, [folder, options])
+    return new Set(documentSummaries.filter((item) => item.folderRef?.folderId === folder.id && item.isDirty).map((item) => item.folderRef!.path))
+  }, [documentSummaries, folder])
 
   return {
-    folder, source: sourceRef.current, generation: generation.current, entriesByPath, loadingPaths, errorsByPath, activePath, activeAssetPath, activeFilePath, phase, rows, busyRowId, isClosing, dirtyPaths,
+    folder, source: sourceRef.current, generation: generation.current, entriesByPath, loadingPaths, errorsByPath, activePath, activeAssetPath, phase, rows, busyRowId, isClosing, dirtyPaths,
     openFolder, closeFolder, beginPicking, acceptPickedFolder, commitClose, saveAll, discardAndContinue, cancelTransition, continueSave, confirmDownload, restoreWorkspace, beginReconnect, cancelReconnect,
     toggleDirectory, openPath, downloadPath, refreshFolder, reconnectInput, selectDocumentPath, resolveReference,
     isTransitioning: transitionLock.current

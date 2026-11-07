@@ -1,6 +1,10 @@
 import ICAL from 'ical.js'
 import type { CalendarEvent, CalendarModel } from '../types'
 
+const parsedComponentCache = new WeakMap<object, { root: ICAL.Component; events: ICAL.Component[]; timezones: ConstructorParameters<typeof ICAL.Component>[0][] }>()
+const occurrenceCache = new WeakMap<object, Map<string, string[]>>()
+const MAX_CACHED_OCCURRENCE_RESULTS = 256
+
 export function parseCalendar(text: string): CalendarModel {
   const diagnostics: string[] = []
   try {
@@ -35,10 +39,27 @@ function localCalendarValue(time: ICAL.Time): string {
 
 export function expandCalendarEvent(model: CalendarModel, event: CalendarEvent): string[] {
   if (!event.recurrence || !event.start) return event.start ? [event.start] : []
-  const data = JSON.parse(JSON.stringify(model.jcal)) as ConstructorParameters<typeof ICAL.Component>[0]
-  const root = new ICAL.Component(data)
-  const component = event.componentIndex === undefined ? undefined : root.getAllSubcomponents('vevent')[event.componentIndex]
-  const target = component ?? new ICAL.Component('vevent')
+  const now = Date.now()
+  const cacheKey = JSON.stringify([
+    event.componentIndex ?? `new:${event.uid}`, Math.floor(now / 86_400_000), event.start, event.end, event.allDay, event.timezone, event.recurrence,
+    event.originalStart, event.originalEnd, event.originalAllDay, event.originalTimezone, event.originalRecurrence
+  ])
+  let results = occurrenceCache.get(model.jcal as object)
+  const cached = results?.get(cacheKey)
+  if (cached) return cached
+
+  let parsed = parsedComponentCache.get(model.jcal as object)
+  if (!parsed) {
+    const root = new ICAL.Component(model.jcal as ConstructorParameters<typeof ICAL.Component>[0])
+    parsed = {
+      root,
+      events: root.getAllSubcomponents('vevent'),
+      timezones: root.getAllSubcomponents('vtimezone').map((timezone) => structuredClone(timezone.toJSON()) as ConstructorParameters<typeof ICAL.Component>[0])
+    }
+    parsedComponentCache.set(model.jcal as object, parsed)
+  }
+  const component = event.componentIndex === undefined ? undefined : parsed.events[event.componentIndex]
+  const target = component ? new ICAL.Component(structuredClone(component.toJSON()) as ConstructorParameters<typeof ICAL.Component>[0]) : new ICAL.Component('vevent')
   if (!component) {
     target.addPropertyWithValue('uid', event.uid)
     target.addPropertyWithValue('dtstart', eventTime(event.start, event.allDay))
@@ -49,9 +70,12 @@ export function expandCalendarEvent(model: CalendarModel, event: CalendarEvent):
     if (event.timezone !== event.originalTimezone || event.allDay !== event.originalAllDay) updateEventTimezone(target, event.timezone, event.allDay)
     if (event.recurrence !== event.originalRecurrence) target.updatePropertyWithValue('rrule', ICAL.Recur.fromString(event.recurrence))
   }
+  const calendar = new ICAL.Component('vcalendar')
+  for (const timezone of parsed.timezones) calendar.addSubcomponent(new ICAL.Component(structuredClone(timezone)))
+  calendar.addSubcomponent(target)
   const iterator = new ICAL.Event(target).iterator()
-  const from = Date.now() - 90 * 86_400_000
-  const through = Date.now() + 365 * 86_400_000
+  const from = now - 90 * 86_400_000
+  const through = now + 365 * 86_400_000
   const dates: string[] = []
   for (let count = 0; count < 10_000; count += 1) {
     const occurrence = iterator.next()
@@ -60,7 +84,11 @@ export function expandCalendarEvent(model: CalendarModel, event: CalendarEvent):
     if (timestamp > through) break
     if (timestamp >= from) dates.push(localCalendarValue(occurrence))
   }
-  return dates.length ? dates : [event.start]
+  const value = dates.length ? dates : [event.start]
+  if (!results) { results = new Map(); occurrenceCache.set(model.jcal as object, results) }
+  results.set(cacheKey, value)
+  while (results.size > MAX_CACHED_OCCURRENCE_RESULTS) results.delete(results.keys().next().value!)
+  return value
 }
 
 function eventTime(value: string, allDay: boolean): ICAL.Time {

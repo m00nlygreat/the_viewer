@@ -7,6 +7,7 @@ import { container, scalar, slot, type StructuredContainer, type StructuredForma
 import { parseStructured } from '../src/domain/structured/parse'
 import { inferSchemas, outputStructured, serializeStructured } from '../src/domain/structured/output'
 import { applyDrop } from '../src/domain/structured/operations'
+import { matchDocumentModel } from '../src/domain/documentModel'
 
 function asContainer(value: unknown): StructuredContainer { return value as StructuredContainer }
 function makeDocument(format: StructuredFormat, text: string): ViewerDocument {
@@ -98,7 +99,7 @@ describe('structured formats', () => {
     const model = parseStructured(text, 'json')
     const document: ViewerDocument = { id: '1', name: 'a.json', format: 'json', mimeType: 'application/json', size: bytes.byteLength, savedBytes: bytes, sourceText: text, text, model, mode: 'view', revision: 0, modelRevision: 0, textRevision: 0, parseState: 'ready', diagnostics: [], encoding: 'UTF-8', bom: false, savedText: text, isDirty: false, openedAt: 1, lastEditedAt: 1 }
     const draft = structuredClone(model); asContainer(draft.root).items[0].node = null
-    const next = await applyViewCommand(document.id, 0, draft, document)
+    const next = await applyViewCommand(document.id, 0, matchDocumentModel(document, draft))
     expect(next.structuredDraft).toBe(true)
     expect(next.text).toBe(text)
     expect(canPersistRecovery(next)).toBe(true)
@@ -116,7 +117,7 @@ describe('structured formats', () => {
     const model = parseStructured(text, 'json')
     const document: ViewerDocument = { id: '2', name: 'a.json', format: 'json', mimeType: 'application/json', size: bytes.byteLength, savedBytes: bytes, sourceText: text, text, model, mode: 'view', revision: 0, modelRevision: 0, textRevision: 0, parseState: 'ready', diagnostics: [], encoding: 'UTF-8', bom: false, savedText: text, isDirty: false, openedAt: 1, lastEditedAt: 1 }
     const draft = structuredClone(model); draft.loose.push({ id: 'loose', x: 10, y: 20, node: scalar('string', 'abc') })
-    const next = await applyViewCommand(document.id, 0, draft, document)
+    const next = await applyViewCommand(document.id, 0, matchDocumentModel(document, draft))
     expect(next.isDirty).toBe(true)
     expect(next.text).toBe(text)
     expect(buildExportSnapshot(next.id, next).bytes).toEqual(new Uint8Array(bytes))
@@ -131,11 +132,11 @@ describe('structured formats', () => {
     const firstValue = asContainer(firstModel.root).items[0].node as StructuredScalar
     expect(firstValue.sourceRange?.format).toBe(format)
     firstValue.raw = '새 값'
-    const firstResult = await applyViewCommand(original.id, original.revision, firstModel, original)
+    const firstResult = await applyViewCommand(original.id, original.revision, matchDocumentModel(original, firstModel))
     expect(firstResult.text).toBe(text.replace(first, firstEdit))
     const secondModel = structuredClone(firstResult.model) as StructuredModel
     ;(asContainer(secondModel.root).items[1].node as StructuredScalar).raw = '2000'
-    const secondResult = await applyViewCommand(original.id, firstResult.revision, secondModel, firstResult)
+    const secondResult = await applyViewCommand(original.id, firstResult.revision, matchDocumentModel(firstResult, secondModel))
     expect(secondResult.text).toBe(text.replace(first, firstEdit).replace(second, secondEdit))
     expect(parseStructured(secondResult.text, format).root).toBeTruthy()
   })
@@ -144,7 +145,7 @@ describe('structured formats', () => {
     const document = makeDocument('yaml', text)
     const model = structuredClone(document.model) as StructuredModel
     ;(asContainer(model.root).items[0].node as StructuredScalar).raw = 'changed\nlines\n'
-    const result = await applyViewCommand(document.id, document.revision, model, document)
+    const result = await applyViewCommand(document.id, document.revision, matchDocumentModel(document, model))
     expect(result.text).toBe('body: "changed\\nlines\\n" # explanation\nnext: 2 # keep\n')
     expect((asContainer(parseStructured(result.text, 'yaml').root).items[0].node as StructuredScalar).raw).toBe('changed\nlines\n')
   })

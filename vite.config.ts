@@ -26,7 +26,7 @@ function extensionAssets(): Plugin {
         name: 'The Viewer',
         short_name: 'Viewer',
         version: packageVersion,
-        description: '이메일, 표, 문서, 일정과 연락처 파일을 브라우저 안에서 편집합니다.',
+          description: '이메일, 표, 문서, 일정, 연락처와 텍스트 파일을 브라우저 안에서 편집합니다.',
         minimum_chrome_version: '128',
         action: { default_title: 'The Viewer 열기', default_icon: { 16: 'icons/16.png', 32: 'icons/32.png' } },
         background: { service_worker: 'background.js', type: 'module' },
@@ -56,6 +56,33 @@ function verifyExtensionBundle(): Plugin {
   }
 }
 
+function runtimeAssetManifest(base: string): Plugin {
+  return {
+    name: 'viewer-runtime-asset-manifest',
+    apply: 'build',
+    generateBundle(_, bundle) {
+      const fonts: Array<{ url: string; size: number }> = []
+      const monaco: Array<{ url: string; size: number }> = []
+      for (const output of Object.values(bundle)) {
+        const source = output.type === 'asset' ? output.source : output.code
+        const size = typeof source === 'string' ? new TextEncoder().encode(source).byteLength : source.byteLength
+        if (output.type === 'asset' && /\.(?:woff2?|ttf)$/iu.test(output.fileName)) {
+          fonts.push({ url: `${base}${output.fileName}`, size })
+        }
+        const normalizedFileName = output.fileName.replaceAll('\\', '/')
+        const monacoOutput = /(?:monacosourceeditor|codeblockeditor|monacojsonlanguage|editor\.worker).*\.(?:js|css)$/iu.test(normalizedFileName)
+        if (monacoOutput) monaco.push({ url: `${base}${output.fileName}`, size })
+      }
+      if (!fonts.length || !monaco.length) throw new Error('Runtime font or Monaco assets were not found in the PWA build.')
+      this.emitFile({
+        type: 'asset',
+        fileName: 'runtime-assets.json',
+        source: JSON.stringify({ fonts, monaco })
+      })
+    }
+  }
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const extension = mode === 'extension'
@@ -68,6 +95,7 @@ export default defineConfig(({ mode }) => {
     publicDir: extension ? false : 'dist/build-assets',
     plugins: [
       react(),
+      ...(!extension ? [runtimeAssetManifest(base)] : []),
       ...(extension ? [extensionAssets(), verifyExtensionBundle()] : [VitePWA({
         strategies: 'injectManifest',
         srcDir: 'src/platform/pwa',
@@ -75,13 +103,14 @@ export default defineConfig(({ mode }) => {
         registerType: 'prompt',
         injectManifest: {
           globPatterns: ['**/*.{html,js,css,svg,png,woff,woff2,ttf,json}'],
+          globIgnores: ['**/*.woff', '**/*.woff2', '**/*.ttf', '**/*monaco*.js', '**/*monaco*.css', '**/*MonacoSourceEditor*.js', '**/*CodeBlockEditor*.js', '**/*editor.worker*.js'],
           maximumFileSizeToCacheInBytes: 15 * 1024 * 1024
         },
         manifest: {
           id: base,
           name: 'The Viewer — 파일 뷰어',
           short_name: 'The Viewer',
-          description: '이메일, 표, 문서, 일정과 연락처 파일을 브라우저 안에서 보고 편집합니다.',
+          description: '이메일, 표, 문서, 일정, 연락처와 텍스트 파일을 브라우저 안에서 보고 편집합니다.',
           lang: 'ko-KR',
           start_url: base,
           scope: base,

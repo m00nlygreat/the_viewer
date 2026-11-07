@@ -33,7 +33,7 @@ interface FileSystemHandle {
 interface FileSystemFileHandle { createWritable: () => Promise<FileSystemWritableFileStream> }
 interface FileSystemWritableFileStream { write: (data: Blob | BufferSource | string) => Promise<void>; close: () => Promise<void> }
 
-interface ImportMetaEnv { readonly MODE: string }
+interface ImportMetaEnv { readonly MODE: string; readonly DEV: boolean }
 interface ImportMeta { readonly env: ImportMetaEnv }
 
 declare module 'virtual:pwa-register' {

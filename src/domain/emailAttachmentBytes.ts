@@ -1,5 +1,6 @@
 export function normalizeEmailAttachmentBytes(value: unknown): Uint8Array {
   if (value instanceof Uint8Array) return value
+  if (value instanceof ArrayBuffer) return new Uint8Array(value.slice(0))
   if (Array.isArray(value) && value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)) {
     return Uint8Array.from(value)
   }

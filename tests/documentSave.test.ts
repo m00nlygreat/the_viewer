@@ -20,7 +20,7 @@ function makeDocument(overrides: Partial<ViewerDocument> = {}): ViewerDocument {
     sourceText: 'old', text: 'new', model: { text: 'new' }, mode: 'view', revision: 1, modelRevision: 1, textRevision: 1,
     parseState: 'ready', diagnostics: [], encoding: 'UTF-8', bom: false, savedText: 'old', isDirty: true,
     openedAt: 1, lastEditedAt: 1, ...overrides
-  }
+  } as ViewerDocument
 }
 
 describe('document save service', () => {

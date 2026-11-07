@@ -2,6 +2,13 @@ import type { StructuredModel } from './model'
 
 type WorkItem = { kind: 'node' | 'slot' | 'loose'; value: unknown; parent?: 'object' | 'array' }
 
+/** Cheap shape check for models already owned by the structured editor. */
+export function hasStructuredModelEnvelope(value: unknown): value is StructuredModel {
+  if (!isRecord(value) || !Array.isArray(value.loose)) return false
+  if (value.root !== null && !isRecord(value.root)) return false
+  return value.unsupported === undefined || typeof value.unsupported === 'string'
+}
+
 /** Validate serialized block data before accepting it from the extension relay. */
 export function isStructuredModel(value: unknown): value is StructuredModel {
   if (!isRecord(value) || !Array.isArray(value.loose) || (value.unsupported !== undefined && typeof value.unsupported !== 'string')) return false

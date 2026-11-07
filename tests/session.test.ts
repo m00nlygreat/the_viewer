@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { parseCsv } from '../src/domain/formats/csv'
-import { applySourceEdit, applyViewCommand, buildExportSnapshot, flushDocument, historyEntry, redoDocument, undoDocument } from '../src/domain/session'
+import { applySourceEdit, applyViewCommand, buildExportSnapshot, canPersistRecovery, documentIsDirty, flushDocument, historyEntry, makeDocumentFromBytes, redoDocument, undoDocument } from '../src/domain/session'
+import { matchDocumentModel } from '../src/domain/documentModel'
 import type { CsvModel, ViewerDocument } from '../src/domain/types'
+import { parseEnv } from '../src/domain/env/parse'
+import { scalar, slot } from '../src/domain/structured/model'
 
 function makeDocument(overrides: Partial<ViewerDocument> = {}): ViewerDocument {
   const text = 'name,value\nalpha,1'
@@ -12,7 +15,7 @@ function makeDocument(overrides: Partial<ViewerDocument> = {}): ViewerDocument {
     initialBytes: bytes.slice(0), savedBytes: bytes.slice(0), sourceText: text, text, model, mode: 'view',
     revision: 0, modelRevision: 0, textRevision: 0, parseState: 'ready', diagnostics: [], encoding: 'UTF-8', bom: false,
     savedText: text, isDirty: false, openedAt: 1, lastEditedAt: 1, ...overrides
-  }
+  } as ViewerDocument
 }
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
@@ -22,6 +25,20 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 describe('document session', () => {
+  it('keeps the dirty state of a lazy document summary without comparing empty payload placeholders', () => {
+    const summary = makeDocument({ text: '', savedText: '', savedBytes: new ArrayBuffer(0), isDirty: true, payloadLoaded: false })
+    expect(documentIsDirty(summary)).toBe(true)
+    expect(documentIsDirty({ ...summary, isDirty: false })).toBe(false)
+  })
+
+  it('shares the immutable original and saved byte baseline without retaining another copy', async () => {
+    const input = new TextEncoder().encode('name,value\nalpha,1')
+    const document = await makeDocumentFromBytes('sample.csv', 'text/csv', input)
+    expect(document.initialBytes).toBe(document.savedBytes)
+    expect(document.initialBytes).not.toBe(input.buffer)
+    expect(new Uint8Array(document.initialBytes!)).toEqual(input)
+  })
+
   it('applies source text immediately while keeping the last model and input bytes', () => {
     const document = makeDocument()
     const next = applySourceEdit(document.id, 'name,value\nbeta,2', document)
@@ -37,13 +54,13 @@ describe('document session', () => {
   it('serializes a view command against its base revision and updates the shared text', async () => {
     const document = makeDocument()
     const model = document.model as CsvModel
-    const next = await applyViewCommand(document.id, document.revision, { ...model, rows: [['beta', '2']] }, document)
+    const next = await applyViewCommand(document.id, document.revision, matchDocumentModel(document, { ...model, rows: [['beta', '2']] }))
     expect(next.text).toBe('name,value\nbeta,2')
     expect(next.revision).toBe(1)
     expect(next.textRevision).toBe(1)
     expect(next.modelRevision).toBe(1)
     expect(next.isDirty).toBe(true)
-    await expect(applyViewCommand(document.id, 4, model, document)).rejects.toThrow(/문서가 변경/u)
+    await expect(applyViewCommand(document.id, 4, matchDocumentModel(document, model))).rejects.toThrow(/문서가 변경/u)
   })
 
   it('waits through replacement serializations before flushing a document', async () => {
@@ -135,5 +152,45 @@ describe('document session', () => {
     const redone = redoDocument(document.id, undone, historyEntry(viewed))
     expect(redone.text).toBe(editedText)
     expect(buildExportSnapshot(redone.id, redone).bytes.slice(0, 3)).toEqual(new Uint8Array([0xef, 0xbb, 0xbf]))
+  })
+
+  it('keeps ENV drafts recoverable, blocks view export, and resolves them through shared undo history', async () => {
+    const text = 'A=one\n'
+    const bytes = new TextEncoder().encode(text).buffer
+    const envDocument = makeDocument({
+      id: 'env-session', name: 'app.env', format: 'env', mimeType: 'text/plain', size: bytes.byteLength,
+      initialBytes: bytes.slice(0), savedBytes: bytes.slice(0), sourceText: text, text, model: parseEnv(text), savedText: text
+    }) as Extract<ViewerDocument, { format: 'env' }>
+    const initialModel = envDocument.model
+    const draftModel = structuredClone(initialModel)
+    if (draftModel.blocks.root?.kind !== 'object') throw new Error('ENV root expected')
+    draftModel.blocks.root.items.push(slot('NEW', null))
+
+    const draft = await applyViewCommand(envDocument.id, 0, matchDocumentModel(envDocument, draftModel))
+    expect(draft.structuredDraft).toBe(true)
+    expect(draft.text).toBe(text)
+    expect(draft.textRevision).toBe(0)
+    expect(draft.revision).toBe(1)
+    expect(documentIsDirty(draft)).toBe(true)
+    expect(() => buildExportSnapshot(draft.id, draft)).toThrow(/빈 자리/u)
+    await expect(flushDocument(draft.id, () => draft)).rejects.toThrow(/빈 자리/u)
+
+    const undone = undoDocument(draft.id, draft, historyEntry(envDocument))
+    expect(undone.text).toBe(text)
+    expect(undone.structuredDraft).not.toBe(true)
+    const redone = redoDocument(draft.id, undone, historyEntry(draft))
+    expect(redone.structuredDraft).toBe(true)
+    expect(canPersistRecovery(redone)).toBe(true)
+
+    if (redone.format !== 'env') throw new Error('ENV document expected')
+    const resolvedModel = structuredClone(redone.model)
+    const resolvedRoot = resolvedModel.blocks.root
+    if (resolvedRoot?.kind !== 'object') throw new Error('ENV root expected')
+    const added = resolvedRoot.items.at(-1)!
+    added.node = scalar('string', 'two')
+    const resolved = await applyViewCommand(redone.id, redone.revision, matchDocumentModel(redone, resolvedModel))
+    expect(resolved.structuredDraft).toBe(false)
+    expect(resolved.text).toBe('A=one\nNEW=two\n')
+    expect(resolved.textRevision).toBe(resolved.revision)
   })
 })

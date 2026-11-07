@@ -1,9 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Ellipsis } from 'lucide-react'
 import { findNode, findSlot, type DragSource } from '../../domain/structured/operations'
 import { type StructuredContainer, type StructuredNode, type StructuredScalar, type StructuredSlot } from '../../domain/structured/model'
 import { isoDateKind } from '../../domain/structured/output'
-import { useBlocks, type Selection } from './BlockContext'
+import { useBlocks, type Selection } from '../block-editor/BlockContext'
 import { BlockIcon } from './BlockIcon'
 import { valueType } from './valueType'
 import { DatePopover } from './DatePopover'
@@ -77,12 +77,12 @@ function containerPreview(node: StructuredContainer): string {
   return `${node.items.slice(0, 4).map((item) => { const child = item.node; return !child ? '빈 자리' : child.kind === 'scalar' ? child.raw : child.kind === 'object' ? '객체' : '배열' }).join(', ')}${node.items.length > 4 ? '…' : ''}`
 }
 
-function ValueChip({ node, source = { type: 'node', id: node.id } }: { node: StructuredScalar; source?: DragSource }) {
+export function BlockValueChip({ node, source = { type: 'node', id: node.id } }: { node: StructuredScalar; source?: DragSource }) {
   const context = useBlocks()
   const [popover, setPopover] = useState<'date' | 'color' | 'type' | null>(null)
   const [showShortColor, setShowShortColor] = useState(false)
   const popRef = useRef<HTMLSpanElement>(null)
-  const type = showShortColor ? 'color' : valueType(node)
+  const type = context.stringValuesOnly ? 'text' : showShortColor ? 'color' : valueType(node)
   const editing = context.editing?.type === 'node' && context.editing.id === node.id
   const selected = context.selected?.id === node.id
   const expanded = context.expanded.has(node.id)
@@ -133,7 +133,8 @@ function ValueChip({ node, source = { type: 'node', id: node.id } }: { node: Str
       const value = findNode(model, node.id)
       if (value?.kind !== 'scalar') return
       value.raw = raw
-      if (value.dataType === 'native-date-time') value.dateKind = isoDateKind(raw) ?? value.dateKind
+      if (context.stringValuesOnly) { value.dataType = 'string'; value.sourceFormat = undefined; value.dateKind = undefined; value.displayHint = undefined }
+      else if (value.dataType === 'native-date-time') value.dateKind = isoDateKind(raw) ?? value.dateKind
     }, group)
   }
   const closePopover = () => { setPopover(null); requestAnimationFrame(() => popRef.current?.querySelector<HTMLElement>('.sd-value')?.focus({ preventScroll: true })) }
@@ -141,7 +142,7 @@ function ValueChip({ node, source = { type: 'node', id: node.id } }: { node: Str
   const long = node.dataType === 'string' && (node.raw.length > 80 || node.raw.includes('\n'))
   const number = type === 'number' ? Number(node.raw.replaceAll('_', '')) : NaN
   const unsafe = type === 'number' && /^-?\d+$/.test(node.raw) && !Number.isSafeInteger(number)
-  const isLink = /^https?:\/\//i.test(node.raw) && node.dataType === 'string'
+  const isLink = !context.stringValuesOnly && /^https?:\/\//i.test(node.raw) && node.dataType === 'string'
   const nonIso = node.dataType === 'string' && node.raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
   const dateCandidate = nonIso ? `${nonIso[3]}-${nonIso[1].padStart(2, '0')}-${nonIso[2].padStart(2, '0')}` : ''
   const rgb = node.raw.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i)
@@ -155,7 +156,7 @@ function ValueChip({ node, source = { type: 'node', id: node.id } }: { node: Str
   if (long) valueExtras.push(`${node.raw.length}자`)
   return <span className="sd-value-wrap" ref={popRef}>
     <span className="sd-value-line">
-      <span className={`sd-value sd-${type}${long ? ' long' : ''}${selected ? ' selected' : ''}${expanded ? ' expanded' : ''}${context.draggingIds.has(node.id) ? ' dragging' : ''}`} data-node={node.id} title={valueExtras.length ? valueExtras.join('\n') : undefined} tabIndex={0} role="button" aria-label={`${type} ${node.dataType === 'null' ? '없음' : node.raw || '빈 텍스트'}`} onFocus={(event) => { if (event.target === event.currentTarget) context.select(select) }} onPointerDown={(event) => context.startDrag(event, source, select)} onDoubleClick={(event) => { event.stopPropagation(); begin() }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (!context.readonly) { context.select(select); setPopover('type') } }} onKeyDown={(event) => { if (event.shiftKey && event.key === 'F10') { event.preventDefault(); setPopover('type') } }}>
+      <span className={`sd-value sd-${type}${long ? ' long' : ''}${selected ? ' selected' : ''}${expanded ? ' expanded' : ''}${context.draggingIds.has(node.id) ? ' dragging' : ''}`} data-node={node.id} title={valueExtras.length ? valueExtras.join('\n') : undefined} tabIndex={0} role="button" aria-label={`${type} ${node.dataType === 'null' ? '없음' : node.raw || '빈 텍스트'}`} onFocus={(event) => { if (event.target === event.currentTarget) context.select(select) }} onPointerDown={(event) => context.startDrag(event, source, select)} onDoubleClick={(event) => { event.stopPropagation(); begin() }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (!context.readonly && !context.stringValuesOnly) { context.select(select); setPopover('type') } }} onKeyDown={(event) => { if (!context.stringValuesOnly && event.shiftKey && event.key === 'F10') { event.preventDefault(); setPopover('type') } }}>
         {type === 'color' ? <span className="sd-swatch" style={{ background: /^#[\da-f]{8}$/i.test(node.raw) ? `linear-gradient(${node.raw}, ${node.raw}), repeating-conic-gradient(#d4d4d4 0% 25%, #fff 0% 50%) 0 0 / 6px 6px` : node.raw }} /> : <BlockIcon name={type === 'boolean' && node.raw === 'false' ? 'booleanFalse' : isLink ? 'link' : type} />}
         {editing && type !== 'date' && type !== 'color' ? <InlineInput value={node.raw} label="값" valid={type === 'number' ? (value) => /^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$/.test(value) : undefined} onCommit={(value, refocus) => { if (value !== node.raw) update(value); closeEditor(refocus) }} onCancel={closeEditor} /> : <span className="sd-value-text">{type === 'null' ? '없음' : expanded ? node.raw : displayText(node.raw)}</span>}
       </span>
@@ -163,13 +164,13 @@ function ValueChip({ node, source = { type: 'node', id: node.id } }: { node: Str
     </span>
     {unsafe && <span className="sd-value-warning">정확히 저장할 수 없는 크기 · 텍스트로 바꿀까요?</span>}
     {unsafe && <button type="button" className="sd-suggestion" onPointerDown={(event) => event.stopPropagation()} onClick={() => context.mutate((model) => { const value = findNode(model, node.id); if (value?.kind === 'scalar') { value.dataType = 'string'; value.sourceFormat = undefined } })}>텍스트로 바꾸기</button>}
-    {nonIso && isoDateKind(dateCandidate) && <button type="button" className="sd-suggestion" onPointerDown={(event) => event.stopPropagation()} onClick={() => update(dateCandidate)}>날짜 {dateCandidate}로 바꾸기</button>}
-    {rgbHex && <button type="button" className="sd-suggestion" onPointerDown={(event) => event.stopPropagation()} onClick={() => update(rgbHex)}>{rgbHex}로 바꾸기</button>}
-    {!showShortColor && /^#[0-9a-f]{3}$/i.test(node.raw) && <button type="button" className="sd-suggestion" onPointerDown={(event) => event.stopPropagation()} onClick={() => setShowShortColor(true)}>색으로 보기</button>}
+    {!context.stringValuesOnly && nonIso && isoDateKind(dateCandidate) && <button type="button" className="sd-suggestion" onPointerDown={(event) => event.stopPropagation()} onClick={() => update(dateCandidate)}>날짜 {dateCandidate}로 바꾸기</button>}
+    {!context.stringValuesOnly && rgbHex && <button type="button" className="sd-suggestion" onPointerDown={(event) => event.stopPropagation()} onClick={() => update(rgbHex)}>{rgbHex}로 바꾸기</button>}
+    {!context.stringValuesOnly && !showShortColor && /^#[0-9a-f]{3}$/i.test(node.raw) && <button type="button" className="sd-suggestion" onPointerDown={(event) => event.stopPropagation()} onClick={() => setShowShortColor(true)}>색으로 보기</button>}
     {isLink && <a className="sd-link" href={node.raw} target="_blank" rel="noopener noreferrer" aria-label="링크 새 탭에서 열기" onPointerDown={(event) => event.stopPropagation()}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M7 17 17 7M9 7h8v8" /></svg></a>}
     {popover === 'date' && <DatePopover value={node.raw} onChange={(value) => update(value, 'typing')} onClose={closePopover} />}
     {popover === 'color' && <ColorPopover value={node.raw} model={context.model} onChange={(value) => update(value, 'typing')} onClose={closePopover} />}
-    {popover === 'type' && <div className="sd-type-menu" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); closePopover() } }}>{(['string', 'number', 'boolean', 'null'] as const).map((dataType) => {
+    {!context.stringValuesOnly && popover === 'type' && <div className="sd-type-menu" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); closePopover() } }}>{(['string', 'number', 'boolean', 'null'] as const).map((dataType) => {
       const current = node.dataType === dataType
       const allowed = current || (dataType === 'string' && node.dataType === 'number') || dataType === 'null'
       const icon = dataType === 'string' ? 'text' : dataType
@@ -180,28 +181,40 @@ function ValueChip({ node, source = { type: 'node', id: node.id } }: { node: Str
   </span>
 }
 
-function PropertyRow({ item, index, parent, depth, looseId, path = ['$'] }: { item: StructuredSlot; index: number; parent?: StructuredContainer; depth: number; looseId?: string; path?: string[] }) {
+type ObjectKeyStats = ReadonlyMap<string | null, { count: number; lastId: string }>
+
+export function BlockPropertyRow({ item, index, parent, depth, looseId, path = ['$'], keyStats }: { item: StructuredSlot; index: number; parent?: StructuredContainer; depth: number; looseId?: string; path?: string[]; keyStats?: ObjectKeyStats }) {
   const context = useBlocks()
   const rowRef = useRef<HTMLDivElement>(null)
   const editing = context.editing?.type === 'slot' && context.editing.id === item.id
   const key = parent?.kind === 'array' ? String(index) : item.key ?? ''
   const selected = context.selected?.id === item.id
-  const duplicate = parent?.kind === 'object' && parent.items.filter((other) => other.key === item.key).length > 1
+  const duplicateStats = parent?.kind === 'object' ? keyStats?.get(item.key ?? '') : undefined
+  const duplicate = (duplicateStats?.count ?? 0) > 1
   const source: DragSource = looseId ? { type: 'loose', id: looseId } : { type: 'slot', id: item.id }
   const closeEditor = (refocus: boolean) => { context.edit(null); if (refocus) requestAnimationFrame(() => rowRef.current?.focus({ preventScroll: true })) }
-  return <div ref={rowRef} className={`sd-row depth-${Math.min(depth, 3)}${selected ? ' selected' : ''}${item.node && item.node.kind !== 'scalar' ? ' container-row' : ''}${context.draggingIds.has(item.id) ? ' dragging' : ''}`} data-row={item.id} data-parent={parent?.id} tabIndex={0} onFocus={(event) => { if (event.target === event.currentTarget) context.select({ type: 'slot', id: item.id }) }} onPointerDown={(event) => context.startDrag(event, source, { type: 'slot', id: item.id })}>
+  return <div ref={rowRef} className={`sd-row depth-${Math.min(depth, 3)}${selected ? ' selected' : ''}${item.node && item.node.kind !== 'scalar' ? ' container-row' : ''}${context.draggingIds.has(item.id) ? ' dragging' : ''}`} data-row={item.id} data-parent={parent?.id} data-index={index} tabIndex={0} onFocus={(event) => { if (event.target === event.currentTarget) context.select({ type: 'slot', id: item.id }) }} onPointerDown={(event) => context.startDrag(event, source, { type: 'slot', id: item.id })}>
     {context.hover?.type === 'insert' && context.hover.id === parent?.id && context.hover.index === index && <span className="sd-insertion" />}
     <span className={`sd-key${item.nameMissing || duplicate ? ' error' : ''}${item.nameMissing ? ' name-missing' : ''}`} title={key} onDoubleClick={(event) => { event.stopPropagation(); if (parent?.kind !== 'array' && !context.readonly) context.edit({ type: 'slot', id: item.id }) }}>
       {editing ? <InlineInput value={key} label="이름" onCommit={(value, refocus) => { if (value !== key || item.nameMissing) context.mutate((model) => { const target = findSlot(model, item.id); if (target) { target.key = value; target.nameMissing = false } }); closeEditor(refocus) }} onCancel={closeEditor} /> : item.nameMissing ? '이름 없음' : key.replace(/ /g, '·')}
     </span>
     {!item.node ? <span className={`sd-socket${context.hover?.type === 'socket' && context.hover.id === item.id ? ' hover' : ''}`} data-socket={item.id} /> : <NodeBlock node={item.node} depth={depth + 1} path={[...path, key]} />}
-    {duplicate && <span className="sd-value-warning">{parent?.items.filter((other) => other.key === item.key).at(-1)?.id === item.id ? '내보내면 이 값이 남아요' : `같은 이름 ${parent?.items.filter((other) => other.key === item.key).length}개`}</span>}
+    {duplicate && <span className="sd-value-warning">{duplicateStats?.lastId === item.id ? '내보내면 이 값이 남아요' : `같은 이름 ${duplicateStats?.count}개`}</span>}
   </div>
 }
 
-export function NodeBlock({ node, depth = 1, root = false, looseId, path = ['$'] }: { node: StructuredNode; depth?: number; root?: boolean; looseId?: string; path?: string[] }) {
+export const NodeBlock = memo(function NodeBlock({ node, depth = 1, root = false, rootLabel = '최상위', looseId, path = ['$'] }: { node: StructuredNode; depth?: number; root?: boolean; rootLabel?: string; looseId?: string; path?: string[] }) {
   const context = useBlocks()
-  if (node.kind === 'scalar') return <ValueChip node={node} source={looseId ? { type: 'loose', id: looseId } : { type: 'node', id: node.id }} />
+  const keyStats: ObjectKeyStats | undefined = useMemo(() => {
+    if (node.kind !== 'object') return undefined
+    const stats = new Map<string | null, { count: number; lastId: string }>()
+    for (const item of node.items) {
+      const current = stats.get(item.key)
+      stats.set(item.key, { count: (current?.count ?? 0) + 1, lastId: item.id })
+    }
+    return stats
+  }, [node])
+  if (node.kind === 'scalar') return <BlockValueChip node={node} source={looseId ? { type: 'loose', id: looseId } : { type: 'node', id: node.id }} />
   const collapsed = !root && context.collapsed.has(node.id)
   const selection: Selection = { type: 'node', id: node.id }
   const source: DragSource = looseId ? { type: 'loose', id: looseId } : { type: 'node', id: node.id }
@@ -211,7 +224,7 @@ export function NodeBlock({ node, depth = 1, root = false, looseId, path = ['$']
   const block = <div className={`sd-container depth-${Math.min(depth, 3)}${context.selected?.id === node.id ? ' selected' : ''}${context.draggingIds.has(node.id) ? ' dragging' : ''}${context.focusedNodeId === node.id ? ' sd-focused-container' : ''}`} data-container={node.id} data-collapsed={collapsed}>
     <div className="sd-container-head" data-node={node.id} tabIndex={root ? undefined : 0} onFocus={(event) => { if (!root && event.target === event.currentTarget) context.select(selection) }} onPointerDown={(event) => { if (!root) context.startDrag(event, source, selection); else event.stopPropagation() }}>
       {!root && <button type="button" className="sd-fold" aria-label={collapsed ? '펼치기' : '접기'} aria-expanded={!collapsed} onPointerDown={(event) => event.stopPropagation()} onClick={() => context.toggleCollapsed(node.id)}><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: collapsed ? undefined : 'rotate(90deg)' }}><path d="m9 6 6 6-6 6" /></svg></button>}
-      <BlockIcon name={node.kind} size={depth === 1 ? 16 : depth === 2 ? 14 : 13} />{root && <strong>최상위</strong>}
+      <BlockIcon name={node.kind} size={depth === 1 ? 16 : depth === 2 ? 14 : 13} />{root && <strong>{rootLabel}</strong>}
       {collapsed && <span className="sd-collapse-preview">{containerPreview(node)}</span>}
       {collapsed && node.items.length === 0 && <span className="sd-empty-chip">비어 있음</span>}
       <span className="sd-count">{node.items.length}</span>
@@ -220,12 +233,12 @@ export function NodeBlock({ node, depth = 1, root = false, looseId, path = ['$']
     {!collapsed && <div className="sd-items">{visible.map((item, visibleIndex) => {
       const index = longArray && visibleIndex === 3 ? node.items.length - 1 : visibleIndex
       const showArrayToggle = manyArray && visibleIndex === 3
-      return <div className={`sd-row-holder${showArrayToggle ? ' sd-row-holder-more' : ''}`} key={item.id}>{showArrayToggle && <button type="button" className="sd-more" aria-label={longArray ? `${node.items.length - 4}개 더 보기` : '배열 접기'} aria-expanded={!longArray} title={longArray ? `${node.items.length - 4}개 더 보기` : '배열 접기'} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.preventDefault(); event.stopPropagation(); context.toggleExpanded(node.id) }}><Ellipsis size={16} aria-hidden="true" /></button>}<PropertyRow item={item} index={index} parent={node} depth={depth} path={path} /></div>
+      return <div className={`sd-row-holder${showArrayToggle ? ' sd-row-holder-more' : ''}`} key={item.id}>{showArrayToggle && <button type="button" className="sd-more" aria-label={longArray ? `${node.items.length - 4}개 더 보기` : '배열 접기'} aria-expanded={!longArray} title={longArray ? `${node.items.length - 4}개 더 보기` : '배열 접기'} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.preventDefault(); event.stopPropagation(); context.toggleExpanded(node.id) }}><Ellipsis size={16} aria-hidden="true" /></button>}<BlockPropertyRow item={item} index={index} parent={node} depth={depth} path={path} keyStats={keyStats} /></div>
     })}
     {context.hover?.type === 'insert' && context.hover.id === node.id && context.hover.index === node.items.length && <span className="sd-insertion sd-insertion-end" />}
     {node.items.length === 0 && <span className="sd-empty-chip">비어 있음</span>}</div>}
   </div>
   if (depth <= 3 || context.focusedNodeId !== node.id) return block
   return <div className="sd-deep"><div className="sd-breadcrumb">{path.map((part, index) => <span key={`${part}-${index}`}>{index > 0 && <i>›</i>}{part}</span>)}<small>깊이 {depth}</small></div>{block}</div>
-}
-export function LooseProperty({ item, looseId }: { item: StructuredSlot; looseId: string }) { return <PropertyRow item={item} index={0} depth={1} looseId={looseId} /> }
+})
+export function LooseProperty({ item, looseId }: { item: StructuredSlot; looseId: string }) { return <BlockPropertyRow item={item} index={0} depth={1} looseId={looseId} /> }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Command, FilePlus2, FileUp, FolderOpen, Search, Settings2, ClipboardPaste, Palette, RefreshCw } from 'lucide-react'
 import { useFocusTrap } from './useFocusTrap'
 
@@ -6,7 +6,7 @@ export interface CommandItem { id: string; title: string; detail?: string; secti
 interface Props { commands: CommandItem[]; onClose: () => void }
 const icons = { open: FileUp, folder: FolderOpen, new: FilePlus2, settings: Settings2, paste: ClipboardPaste, theme: Palette, refresh: RefreshCw }
 
-export function CommandMenu({ commands, onClose }: Props) {
+export const CommandMenu = memo(function CommandMenu({ commands, onClose }: Props) {
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const input = useRef<HTMLInputElement>(null)
@@ -41,4 +41,4 @@ export function CommandMenu({ commands, onClose }: Props) {
       <footer className="command-footer"><span><kbd>↑</kbd><kbd>↓</kbd> 이동</span><span><kbd>↵</kbd> 선택</span><span><kbd>ESC</kbd> 닫기</span><div className="toolbar-spacer" /><span className="small-muted"><Command size={12} /> 명령 메뉴</span></footer>
     </section>
   </div>
-}
+})

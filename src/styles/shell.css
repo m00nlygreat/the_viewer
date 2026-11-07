@@ -7,7 +7,7 @@
 .sidebar button:focus-visible { outline: none; }
 .sidebar-open, .sidebar-command { width: 100%; min-height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: 6px; background: transparent; color: var(--text-secondary); text-align: left; font-size: 14px; }
 .sidebar-open:hover, .sidebar-command:hover { background: var(--selected); color: var(--text-strong); }
-.sidebar-open kbd, .sidebar-command kbd { margin-left: auto; color: var(--text-weak); }
+.sidebar-open kbd, .sidebar-command kbd { gap: 3px; margin-left: auto; padding: 1px 6px; color: var(--text-weak); }
 .sidebar-section-divider { height: 1px; margin: 0 5px; background: var(--line); }
 .document-nav { min-height: 0; flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
 .document-nav-row { position: relative; display: flex; align-items: center; min-height: 30px; border-radius: 6px; color: var(--text-secondary); }
@@ -38,7 +38,7 @@
 .folder-tree-toolbar { position: sticky; top: 0; z-index: 1; min-height: 26px; display: flex; align-items: center; justify-content: space-between; padding: 0 4px 0 7px; color: var(--text-weak); background: var(--sidebar); font-size: 11px; }
 .folder-tree-toolbar .icon-button { width: 23px; height: 23px; }
 .folder-tree-toolbar-actions { display: flex; align-items: center; gap: 4px; }
-.folder-tree-toolbar .folder-tree-close { min-height: 23px; padding: 0 6px; }
+.folder-tree-toolbar .folder-tree-close { min-height: 23px; padding: 0; }
 .folder-tree-node { min-width: 0; }
 .folder-tree-row { width: 100%; min-width: 0; min-height: 27px; display: flex; align-items: center; gap: 5px; padding: 0 5px 0 calc(5px + var(--tree-depth) * 12px); border-radius: 5px; color: var(--text-secondary); background: transparent; text-align: left; }
 .folder-tree-row:hover, .folder-tree-row.active { color: var(--text-strong); background: var(--selected); }
@@ -149,6 +149,8 @@
 .viewer-zoom-content { min-width: 0; min-height: 100%; flex: 1 0 auto; display: flex; flex-direction: column; }
 .source-diagnostic { z-index: 2; padding: 9px 16px; display: flex; flex-direction: column; gap: 3px; border-bottom: 1px solid color-mix(in srgb, var(--warning) 28%, var(--line)); background: color-mix(in srgb, var(--warning) 7%, var(--bg)); color: var(--warning); font-size: 13px; }
 .source-diagnostic small { color: var(--text-muted); }
+.recovery-issue-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 5px; }
+.recovery-issue-row > span { flex: 1 1 320px; overflow-wrap: anywhere; color: var(--text-muted); }
 .source-statusbar { height: 28px; flex: 0 0 auto; display: flex; align-items: center; gap: 15px; padding: 0 14px; border-top: 1px solid var(--line); color: var(--text-weak); background: var(--sidebar); font-size: 12px; }
 .error-label { color: var(--warning); }.ready-label { color: #63B887; }
 .spinner { width: 18px; height: 18px; display: inline-block; border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
@@ -172,6 +174,16 @@
 kbd { min-height: 18px; padding: 1px 5px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--button-line); border-radius: 4px; color: var(--text-muted); background: var(--control); font: 11px/1 var(--font-mono); }
 
 .overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgb(0 0 0 / 48%); backdrop-filter: blur(2px); }
+.runtime-asset-overlay { z-index: 1200; }
+.runtime-asset-dialog { width: min(440px, 100%); padding: 22px; border: 1px solid var(--button-line); border-radius: 10px; background: var(--panel-raised); box-shadow: var(--shadow); }
+.runtime-asset-content h2 { margin: 0; color: var(--text-strong); font-size: 18px; font-weight: 530; }
+.runtime-asset-content p { margin: 8px 0 0; color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+.runtime-asset-progress { width: 100%; height: 10px; margin-top: 20px; overflow: hidden; border: 0; border-radius: 99px; color: var(--primary); background: var(--control); accent-color: var(--primary); }
+.runtime-asset-progress::-webkit-progress-bar { border-radius: 99px; background: var(--control); }
+.runtime-asset-progress::-webkit-progress-value { border-radius: 99px; background: var(--primary); }
+.runtime-asset-progress::-moz-progress-bar { border-radius: 99px; background: var(--primary); }
+.runtime-asset-content .runtime-asset-count { margin-top: 7px; color: var(--text-weak); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+.runtime-asset-dialog .dialog-actions { padding: 20px 0 0; }
 .command-overlay { align-items: flex-start; padding-top: max(112px, 12vh); background: transparent; backdrop-filter: none; pointer-events: none; }
 .command-menu { width: min(580px, calc(100% - 32px)); max-height: min(540px, calc(100dvh - 144px)); overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--button-line); border-radius: 10px; background: var(--panel-raised); box-shadow: var(--shadow); pointer-events: auto; }
 .command-search { height: 52px; flex: 0 0 auto; padding: 0 15px; display: flex; align-items: center; gap: 11px; border-bottom: 1px solid var(--line); color: var(--text-muted); }
@@ -241,11 +253,3 @@ kbd { min-height: 18px; padding: 1px 5px; display: inline-flex; align-items: cen
 .empty-state { min-height: 180px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; color: var(--text-weak); text-align: center; }
 .empty-state strong { color: var(--text-secondary); font-size: 14px; font-weight: 500; }
 .empty-state.compact { min-height: 100px; padding: 18px; font-size: 12px; }
-
-.folder-file-preview { box-sizing: border-box; min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: auto; background: var(--bg); }
-.folder-file-preview > header { min-height: 38px; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 13px; border-bottom: 1px solid var(--line); color: var(--text-weak); font: 11px var(--font-mono); overflow-wrap: anywhere; }
-.folder-file-summary { min-width: 0; margin: auto; padding: 20px; display: flex; align-items: flex-start; gap: 14px; }
-.folder-file-summary > svg { flex: 0 0 auto; color: var(--text-weak); }
-.folder-file-summary > div { min-width: 0; display: grid; gap: 9px; }
-.folder-file-summary strong { color: var(--text-strong); overflow-wrap: anywhere; }
-.folder-file-summary span { color: var(--text-weak); font-size: 12px; overflow-wrap: anywhere; }

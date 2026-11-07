@@ -51,7 +51,14 @@
 .agenda-day { padding: 17px 16px 4px; }
 .agenda-day > h2 { margin: 0 0 8px; display: flex; align-items: baseline; gap: 8px; color: var(--text-strong); font-size: 14px; font-weight: 500; }
 .agenda-day > h2 span { color: var(--text-weak); font-size: 12px; }
+.agenda-virtual-list { position: relative; width: 100%; }
+.agenda-virtual-row { position: absolute; right: 0; left: 0; overflow: hidden; }
+.agenda-virtual-day { box-sizing: border-box; padding: 17px 16px 0; }
+.agenda-virtual-day > h2 { margin-bottom: 0; }
+.agenda-virtual-color-0 .event-dot { background: #77BFA2; }
+.agenda-virtual-color-3 .event-dot { background: #C291D5; }
 .agenda-event { width: 100%; min-height: 60px; padding: 11px 12px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--row-line); color: var(--text-secondary); background: transparent; text-align: left; }
+.agenda-virtual-event { box-sizing: border-box; height: 100%; min-height: 0; }
 .agenda-event:hover, .agenda-event.selected { background: var(--selected-row); }
 .event-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #83A5F4; }
 .agenda-event:nth-of-type(4n) .event-dot { background: #C291D5; }.agenda-event:nth-of-type(4n + 1) .event-dot { background: #77BFA2; }

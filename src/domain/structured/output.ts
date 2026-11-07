@@ -201,27 +201,45 @@ export function inferSchemas(model: StructuredModel): SchemaDefinition[] {
   }
   visit(model.root, '')
   for (const loose of model.loose) visit(loose.node ?? loose.slot?.node ?? null, loose.slot?.key ?? '')
-  const groups: typeof entries[] = []
+  const groups: Array<{
+    members: typeof entries
+    representative: (typeof entries)[number]
+    representativeKeys: Set<string>
+    nameCounts: Map<string, number>
+    keyCounts: Map<string, number>
+  }> = []
   for (const entry of entries) {
-    const group = groups.find((candidates) => {
-      const other = [...candidates].sort((a, b) => b.keys.length - a.keys.length)[0].keys
-      const intersection = entry.keys.filter((key) => other.includes(key)).length
-      return intersection / new Set([...entry.keys, ...other]).size >= 0.5
+    const entryKeys = new Set(entry.keys)
+    const group = groups.find((candidate) => {
+      let intersection = 0
+      for (const key of entryKeys) if (candidate.representativeKeys.has(key)) intersection++
+      const union = entryKeys.size + candidate.representativeKeys.size - intersection
+      return union > 0 && intersection / union >= 0.5
     })
-    if (group) group.push(entry); else groups.push([entry])
+    if (group) {
+      group.members.push(entry)
+      group.nameCounts.set(entry.name, (group.nameCounts.get(entry.name) ?? 0) + 1)
+      for (const key of entryKeys) group.keyCounts.set(key, (group.keyCounts.get(key) ?? 0) + 1)
+      if (entry.keys.length > group.representative.keys.length) {
+        group.representative = entry
+        group.representativeKeys = entryKeys
+      }
+    } else {
+      groups.push({
+        members: [entry], representative: entry, representativeKeys: entryKeys,
+        nameCounts: new Map([[entry.name, 1]]), keyCounts: new Map([...entryKeys].map((key) => [key, 1]))
+      })
+    }
   }
   return groups.map((group) => {
-    const representative = [...group].sort((a, b) => b.keys.length - a.keys.length)[0]
-    const counts = new Map<string, number>()
-    for (const item of group) counts.set(item.name, (counts.get(item.name) ?? 0) + 1)
-    const name = [...counts].sort((a, b) => b[1] - a[1])[0][0]
-    return { name, count: group.length, fields: representative.node.items.filter((item) => Boolean(item.key)).map((item) => {
+    const name = [...group.nameCounts].sort((a, b) => b[1] - a[1])[0][0]
+    return { name, count: group.members.length, fields: group.representative.node.items.filter((item) => Boolean(item.key)).map((item) => {
       const key = item.key!
       const child = item.node
       let icon: SchemaFieldIcon | undefined
       if (child?.kind === 'object' || child?.kind === 'array') icon = child.kind
       else if (child?.kind === 'scalar') icon = child.dataType === 'native-date-time' || (child.dataType === 'string' && isoDateKind(child.raw)) ? 'date' : child.dataType === 'string' ? 'text' : child.dataType
-      return { key, optional: group.some((member) => !member.keys.includes(key)), icon }
+      return { key, optional: (group.keyCounts.get(key) ?? 0) < group.members.length, icon }
     }) }
   })
 }

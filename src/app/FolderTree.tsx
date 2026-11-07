@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Folder, FolderOpen, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, FolderOpen, RefreshCw, X } from 'lucide-react'
 import type { FolderEntry, FolderPath, FolderWorkspace } from '../domain/workspace'
 import { getFormat } from '../domain/fileFormats'
 
@@ -48,7 +48,7 @@ export function FolderTree({ folder, entriesByPath, loadingPaths, errorsByPath, 
     }
     visit('', 0)
     return nodes
-  }, [entriesByPath, folder.expandedPaths, folder.name, openPaths])
+  }, [entriesByPath, folder.expandedPaths, openPaths])
 
   useEffect(() => {
     if (visible.some((item) => item.path === focusedPath)) return
@@ -151,7 +151,7 @@ export function FolderTree({ folder, entriesByPath, loadingPaths, errorsByPath, 
 
   const rootNodes = visible.filter((item) => item.depth === 0)
   return <div className="folder-tree">
-    <div className="folder-tree-toolbar"><span>폴더</span><div className="folder-tree-toolbar-actions">{onCloseFolder && <button type="button" className="subtle-button folder-tree-close" aria-label="폴더 닫기" title="폴더 닫기" onClick={onCloseFolder}>폴더 닫기</button>}<button type="button" className="icon-button" aria-label="폴더 새로고침" title="새로고침" onClick={() => onRefresh('')}><RefreshCw size={13} /></button></div></div>
+    <div className="folder-tree-toolbar"><span>폴더</span><div className="folder-tree-toolbar-actions">{onCloseFolder && <button type="button" className="icon-button folder-tree-close" aria-label="폴더 닫기" title="폴더 닫기" onClick={onCloseFolder}><X size={13} /></button>}<button type="button" className="icon-button" aria-label="폴더 새로고침" title="새로고침" onClick={() => onRefresh('')}><RefreshCw size={13} /></button></div></div>
     <div className="folder-tree-root"><FolderOpen size={14} className="folder-tree-icon" /><span title={folder.name}>{folder.name}</span></div>
     {loadingPaths.has('') && <div className="folder-tree-status" role="status">폴더를 읽고 있습니다…</div>}
     {errorsByPath.get('') && <div className="folder-tree-error" role="alert"><span>{errorsByPath.get('')}</span><button type="button" className="subtle-button" onClick={() => onRefresh('')}>다시 시도</button></div>}

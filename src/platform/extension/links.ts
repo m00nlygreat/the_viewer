@@ -1,5 +1,5 @@
-import { getFormat, FORMAT_MIME, GENERIC_FILE_MIME_TYPES } from '../fileTypes'
-import type { Format, PickedFile } from '../fileTypes'
+import { getFormat, FORMAT_MIME, GENERIC_FILE_MIME_TYPES, matchesFormatName } from '../fileTypes'
+import type { Format, PickedBytesFile } from '../fileTypes'
 import { isLocalFileAccessAllowed } from './autoOpen'
 import { assertInputFileSize, maxInputFileBytes } from '../../domain/inputPolicy'
 
@@ -12,10 +12,10 @@ export async function readRemoteLinkTicket(id: string): Promise<string | null> {
 
 export async function deleteRemoteLinkTicket(id: string): Promise<void> { await chrome.storage.local.remove(`link:${id}`) }
 
-export async function fetchAutoOpenedFile(source: string): Promise<PickedFile> {
+export async function fetchAutoOpenedFile(source: string): Promise<PickedBytesFile> {
   const url = new URL(source)
   if (url.protocol !== 'file:') return fetchRemoteLinkFile(source, { requestPermission: false })
-  const format = getFormat(url.pathname)
+  const format = getFormat(decodeUrlName(url))
   if (!format) throw new Error('지원하지 않는 파일 형식입니다.')
   if (!await isLocalFileAccessAllowed()) throw new Error('Chrome 확장 세부정보에서 “파일 URL에 대한 액세스 허용”을 켜세요.')
   const response = await fetch(url.href)
@@ -23,7 +23,7 @@ export async function fetchAutoOpenedFile(source: string): Promise<PickedFile> {
   return { name: decodeUrlName(url), type: FORMAT_MIME[format], bytes: await readFileBytes(response) }
 }
 
-export async function fetchRemoteLinkFile(source: string, options: { requestPermission?: boolean } = {}): Promise<PickedFile> {
+export async function fetchRemoteLinkFile(source: string, options: { requestPermission?: boolean } = {}): Promise<PickedBytesFile> {
   const url = new URL(source)
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('HTTP 또는 HTTPS 링크만 열 수 있습니다.')
   const originPattern = `${url.origin}/*`
@@ -96,7 +96,7 @@ function safeFilename(name: string): string {
 
 function ensureFormatExtension(name: string, format: Format): string {
   const safeName = safeFilename(name)
-  if (safeName.toLowerCase().endsWith(`.${format}`)) return safeName
+  if (matchesFormatName(safeName, format)) return safeName
   const dot = safeName.lastIndexOf('.')
   const base = (dot > 0 ? safeName.slice(0, dot) : safeName).replace(/^\.+/, '') || 'download'
   return `${base}.${format}`

@@ -1,11 +1,12 @@
+import { memo } from 'react'
 import { Command, FilePlus2, FolderOpen, PanelLeftClose, PanelLeftOpen, Settings2, X } from 'lucide-react'
-import type { ViewerDocument } from '../domain/types'
 import type { FolderEntry, FolderPath, FolderWorkspace } from '../domain/workspace'
 import { safeDisplayFileName } from './displayName'
+import type { DocumentListItem } from './documentStore'
 import { FolderTree } from './FolderTree'
 
 interface Props {
-  documents: readonly ViewerDocument[]
+  documents: readonly DocumentListItem[]
   activeId: string
   collapsed: boolean
   onToggleCollapsed: () => void
@@ -31,13 +32,13 @@ interface Props {
   folderPickingAvailable?: boolean
 }
 
-export function WorkspaceSidebar({ documents, activeId, collapsed, onToggleCollapsed, onPickFiles, onOpenCommands, onSelectDocument, onCloseDocument, onOpenSettings, folder = null, folderTree, onOpenFolder, onCloseFolder, folderPickingAvailable = true }: Props) {
+export const WorkspaceSidebar = memo(function WorkspaceSidebar({ documents, activeId, collapsed, onToggleCollapsed, onPickFiles, onOpenCommands, onSelectDocument, onCloseDocument, onOpenSettings, folder = null, folderTree, onOpenFolder, onCloseFolder, folderPickingAvailable = true }: Props) {
   const additionalDocuments = folder ? documents.filter((item) => item.folderRef?.folderId !== folder.id) : documents
   return <aside id="document-sidebar" className={`sidebar${collapsed ? ' collapsed' : ''}`}>
     <div className="sidebar-brand"><img src={`${__APP_BASE__}icons/viewer.svg`} alt="" /><span>The Viewer</span><button className="sidebar-toggle" aria-label={collapsed ? '사이드바 펼치기' : '사이드바 접기'} title={collapsed ? '사이드바 펼치기' : '사이드바 접기'} aria-controls="document-sidebar" aria-expanded={!collapsed} onClick={onToggleCollapsed}>{collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
-    <button className="sidebar-open" aria-label="파일 열기" title="파일 열기" onClick={onPickFiles}><FilePlus2 size={15} /><span>파일 열기</span><kbd>⌘ O</kbd></button>
+    <button className="sidebar-open" aria-label="파일 열기" title="파일 열기" onClick={onPickFiles}><FilePlus2 size={15} /><span>파일 열기</span><kbd><span>⌘</span><span>O</span></kbd></button>
     <button className="sidebar-folder-open" aria-label={folder ? '다른 폴더 열기' : '폴더 열기'} title={folder ? '다른 폴더 열기' : '폴더 열기'} onClick={onOpenFolder} disabled={!folderPickingAvailable}><FolderOpen size={15} /><span>{folder ? '다른 폴더 열기' : '폴더 열기'}</span></button>
-    <button className="sidebar-command" aria-label="명령 메뉴" title="명령 메뉴" onClick={onOpenCommands}><Command size={14} /><span>명령 메뉴</span><kbd>⌘ K</kbd></button>
+    <button className="sidebar-command" aria-label="명령 메뉴" title="명령 메뉴" onClick={onOpenCommands}><Command size={14} /><span>명령 메뉴</span><kbd><span>⌘</span><span>K</span></kbd></button>
     <div className="sidebar-section-divider" role="separator" />
     {folder && folderTree && <div className="sidebar-folder-area">
       <FolderTree folder={folder} {...folderTree} onCloseFolder={onCloseFolder} compact={collapsed} />
@@ -52,4 +53,4 @@ export function WorkspaceSidebar({ documents, activeId, collapsed, onToggleColla
     </nav>
     <div className="sidebar-bottom"><button className="sidebar-settings" aria-label="설정" title="설정" onClick={onOpenSettings}><Settings2 size={14} /><span className="sidebar-settings-label">설정</span><span className="sidebar-version">v{__APP_VERSION__}</span></button></div>
   </aside>
-}
+})

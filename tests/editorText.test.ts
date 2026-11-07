@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { EditorState } from '@codemirror/state'
 import { applyCodeMirrorChanges, applyLineBasedTextChanges, createTextPositionMapper, EditorTextSyncSession, findTextChanges, mergeTextDuringComposition, normalizeLineEndings } from '../src/components/editorText'
-import { remapCodeEditorState } from '../src/components/codeEditorState'
+import { remapCodeEditorState } from '../src/components/codeEditorStateRemap'
 
 describe('CodeMirror source text mapping', () => {
   it('preserves mixed line endings and a leading BOM around an edited range', () => {

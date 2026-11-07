@@ -2,8 +2,12 @@ import { lazy, Suspense, useSyncExternalStore } from 'react'
 import { Check, Code2 } from 'lucide-react'
 import type { MarkdownFrontmatterState } from './frontmatterState'
 import { useOutsideClick } from '../../components/useOutsideClick'
+import { ensureRuntimeAssetGroup } from '../../platform/pwa/runtimeAssets'
 
-const MarkdownCodeBlockMonacoEditor = lazy(() => import('./CodeBlockEditor'))
+const MarkdownCodeBlockMonacoEditor = lazy(async () => {
+  await ensureRuntimeAssetGroup('monaco').catch(() => undefined)
+  return import('./CodeBlockEditor')
+})
 
 interface Props { frontmatter: MarkdownFrontmatterState }
 

@@ -1,4 +1,4 @@
-import { sourceFingerprint, type SourceRange, type StructuredFormat, type StructuredModel, type StructuredNode, type StructuredScalar } from './model'
+import { sourceFingerprint, type StructuredFormat, type StructuredModel, type StructuredNode, type StructuredScalar } from './model'
 import { serializeStructured } from './output'
 
 interface ScalarChange { before: StructuredScalar; after: StructuredScalar }
@@ -7,6 +7,7 @@ function singleScalarChange(before: StructuredNode | null, after: StructuredNode
   let change: ScalarChange | null = null
   let valid = true
   const compare = (oldNode: StructuredNode | null, newNode: StructuredNode | null) => {
+    if (oldNode === newNode) return
     if (!valid || !oldNode || !newNode) { if (oldNode !== newNode) valid = false; return }
     if (oldNode.id !== newNode.id || oldNode.kind !== newNode.kind) { valid = false; return }
     if (oldNode.kind === 'scalar' && newNode.kind === 'scalar') {
@@ -28,18 +29,41 @@ function singleScalarChange(before: StructuredNode | null, after: StructuredNode
   return valid ? change : null
 }
 
-function eachNode(model: StructuredModel, visit: (node: StructuredNode) => void): void {
-  const stack: StructuredNode[] = []
-  if (model.root) stack.push(model.root)
-  for (const block of model.loose) {
-    const node = block.node ?? block.slot?.node
-    if (node) stack.push(node)
-  }
-  while (stack.length) {
-    const node = stack.pop()!
-    visit(node)
-    if (node.kind !== 'scalar') for (const item of node.items) if (item.node) stack.push(item.node)
-  }
+function mapNode(node: StructuredNode, updateScalar: (node: StructuredScalar) => StructuredScalar): StructuredNode {
+  if (node.kind === 'scalar') return updateScalar(node)
+  let changed = false
+  const items = node.items.map((item) => {
+    if (!item.node) return item
+    const child = mapNode(item.node, updateScalar)
+    if (child === item.node) return item
+    changed = true
+    return { ...item, node: child }
+  })
+  return changed ? { ...node, items } : node
+}
+
+function withoutScalarSourceRange(node: StructuredScalar): StructuredScalar {
+  const copy = { ...node }
+  delete copy.sourceRange
+  return copy
+}
+
+function mapModelNodes(model: StructuredModel, updateScalar: (node: StructuredScalar) => StructuredScalar): StructuredModel {
+  const root = model.root ? mapNode(model.root, updateScalar) : null
+  let changed = root !== model.root
+  const loose = model.loose.map((block) => {
+    if (block.node) {
+      const node = mapNode(block.node, updateScalar)
+      if (node !== block.node) { changed = true; return { ...block, node } }
+      return block
+    }
+    if (block.slot?.node) {
+      const node = mapNode(block.slot.node, updateScalar)
+      if (node !== block.slot.node) { changed = true; return { ...block, slot: { ...block.slot, node } } }
+    }
+    return block
+  })
+  return changed ? { ...model, root, loose } : model
 }
 
 function scalarSource(node: StructuredScalar, format: StructuredFormat): string {
@@ -69,25 +93,24 @@ export function patchSingleScalarSource(before: StructuredModel, after: Structur
   const replacement = encoded + suffix
   const updatedText = text.slice(0, range.from) + replacement + text.slice(range.to)
   const delta = replacement.length - (range.to - range.from)
-  const previousRanges = new Map<string, SourceRange>()
-  eachNode(before, (node) => { if (node.kind === 'scalar' && node.sourceRange) previousRanges.set(node.id, node.sourceRange) })
-  const model = structuredClone(after)
-  eachNode(model, (node) => {
-    if (node.kind !== 'scalar') return
-    const previous = previousRanges.get(node.id)
-    if (!previous || previous.format !== format) { delete node.sourceRange; return }
-    if (node.id === change.before.id) {
-      node.sourceRange = { from: range.from, to: range.from + encoded.length, format, fingerprint: sourceFingerprint(encoded, 0, encoded.length) }
-    } else if (previous.to <= range.from) node.sourceRange = { ...previous }
-    else if (previous.from >= range.to) node.sourceRange = { ...previous, from: previous.from + delta, to: previous.to + delta }
-    else delete node.sourceRange
+  const model = mapModelNodes(after, (node) => {
+    const previous = node.sourceRange
+    if (!previous || previous.format !== format) {
+      if (!previous) return node
+      return withoutScalarSourceRange(node)
+    }
+    if (node.id === change.before.id) return { ...node, sourceRange: { from: range.from, to: range.from + encoded.length, format, fingerprint: sourceFingerprint(encoded, 0, encoded.length) } }
+    if (previous.to <= range.from) return node
+    if (previous.from >= range.to) return { ...node, sourceRange: { ...previous, from: previous.from + delta, to: previous.to + delta } }
+    return withoutScalarSourceRange(node)
   })
   return { model, text: updatedText }
 }
 
 /** A structural rewrite creates new locations; stale ranges must not be reused. */
 export function withoutSourceRanges(model: StructuredModel): StructuredModel {
-  const copy = structuredClone(model)
-  eachNode(copy, (node) => { if (node.kind === 'scalar') delete node.sourceRange })
-  return copy
+  return mapModelNodes(model, (node) => {
+    if (!node.sourceRange) return node
+    return withoutScalarSourceRange(node)
+  })
 }

@@ -1,8 +1,13 @@
-import { getFormat, type Format } from './types'
-import type { DocumentModel, EmailModel } from './types'
+import { getFormat, type DocumentModelByFormat, type EmailModel, type Format } from './types'
 export { hasFatalDiagnostics } from './parseDiagnostics'
 
-export interface ParsedFile { format: Format; model: DocumentModel; text: string; diagnostics: string[]; encoding: string }
+export type ParsedFile = { [K in Format]: {
+  format: K
+  model: DocumentModelByFormat[K]
+  text: string
+  diagnostics: string[]
+  encoding: string
+} }[Format]
 
 export function decodeBytes(bytes: Uint8Array): { text: string; encoding: string; bom: boolean } {
   let encoding = 'UTF-8'
@@ -42,6 +47,19 @@ export async function parseFileContent(name: string, mimeType: string, bytes: Ui
     const { parseStructured } = await import('./structured/parse')
     try { return { format, model: parseStructured(text, format), text, encoding: decoded.encoding, diagnostics: [] } }
     catch (error) { return { format, model: { root: null, loose: [] }, text, encoding: decoded.encoding, diagnostics: [error instanceof Error ? error.message : '구조 데이터를 해석하지 못했습니다.'] } }
+  }
+  if (format === 'diff') {
+    const { parseDiff } = await import('./diff/parse')
+    const model = parseDiff(text)
+    return { format, model, text, encoding: decoded.encoding, diagnostics: model.diagnostics }
+  }
+  if (format === 'env') {
+    const { parseEnv } = await import('./env/parse')
+    try { return { format, model: parseEnv(text), text, encoding: decoded.encoding, diagnostics: [] } }
+    catch (error) {
+      const model = { blocks: { root: null, loose: [] }, syntax: null, detached: [] }
+      return { format, model, text, encoding: decoded.encoding, diagnostics: [error instanceof Error ? error.message : '.env 문법을 해석하지 못했습니다.'] }
+    }
   }
   if (format === 'csv') {
     const { parseCsv } = await import('./formats/csv')

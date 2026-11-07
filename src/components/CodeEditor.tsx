@@ -4,7 +4,8 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirro
 import { history, historyKeymap, defaultKeymap, insertTab } from '@codemirror/commands'
 import { csvEditorLanguage } from './csvLanguage'
 import { applyCodeMirrorChanges, EditorTextSyncSession, findTextChanges, normalizeLineEndings } from './editorText'
-import { readCodeEditorState, remapCodeEditorState, saveCodeEditorState } from './codeEditorState'
+import { readCodeEditorState, saveCodeEditorState } from './codeEditorState'
+import { remapCodeEditorState } from './codeEditorStateRemap'
 import { registerEditorSettlementTarget } from './editorSettling'
 import type { MarkdownReferenceContext } from '../features/markdown/localReferenceState'
 

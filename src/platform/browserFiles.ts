@@ -1,4 +1,4 @@
-import { FORMAT_EXTENSIONS, FORMAT_LABEL, FORMAT_MIME, type Format } from '../domain/fileFormats'
+import { FORMAT_EXTENSIONS, FORMAT_LABEL, FORMAT_MIME, matchesFormatName, type Format } from '../domain/fileFormats'
 import { assertInputFileSize } from '../domain/inputPolicy'
 import type { PickedFile } from './fileTypes'
 import { folderFromHandle, type PickedFolder } from './folderAccess'
@@ -91,7 +91,8 @@ export async function saveLocalFile(name: string, format: Format, bytes: Uint8Ar
 export function pickLocalSaveHandle(name: string, format?: Format): Promise<FileSystemFileHandle> | null {
   const picker = window.showSaveFilePicker
   if (!picker) return null
-  return picker.call(window, format
+  const requireExactExtension = format === 'env' && matchesFormatName(name, format) && !name.toLowerCase().endsWith('.env')
+  return picker.call(window, format && !requireExactExtension
     ? { suggestedName: name, types: [{ description: FORMAT_LABEL[format], accept: { [FORMAT_MIME[format]]: FORMAT_EXTENSIONS[format].map((extension) => `.${extension}`) } }] }
     : { suggestedName: name })
 }
@@ -114,8 +115,19 @@ export async function readClipboardText(): Promise<string> {
   return navigator.clipboard.readText()
 }
 
+export async function writeClipboardText(text: string): Promise<void> {
+  if (!navigator.clipboard?.writeText) throw new Error('현재 브라우저에서 클립보드 복사를 지원하지 않습니다.')
+  await navigator.clipboard.writeText(text)
+}
+
 export async function readDroppedFiles(files: FileList | File[]): Promise<PickedFile[]> {
   return readFileInputs(files)
+}
+
+export async function readPickedFileBytes(file: PickedFile): Promise<Uint8Array> {
+  if ('bytes' in file && file.bytes) return file.bytes
+  if ('file' in file && file.file) return new Uint8Array(await file.file.arrayBuffer())
+  throw new Error('선택한 파일을 읽을 수 없습니다.')
 }
 
 export interface DroppedItems { files: PickedFile[]; folders: PickedFolder[] }
@@ -141,7 +153,7 @@ export async function readDroppedItems(items: DataTransferItemList): Promise<Dro
       continue
     }
     const file = fileItems[index]?.getAsFile()
-    if (file) picked.push(await readFile(file))
+    if (file) picked.push(readFileReference(file))
   }
   return { files: picked, folders }
 }
@@ -155,19 +167,8 @@ export function receiveLaunchedFiles(onFiles: (files: PickedFile[]) => void, onE
   })
 }
 
-async function readFileInputs(files: FileList | File[]): Promise<PickedFile[]> {
-  const inputs = Array.from(files)
-  const result = new Array<PickedFile>(inputs.length)
-  let nextIndex = 0
-  const readNext = async () => {
-    while (nextIndex < inputs.length) {
-      const index = nextIndex++
-      const file = inputs[index]!
-      result[index] = await readFile(file)
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(inputs.length, 2) }, readNext))
-  return result
+function readFileInputs(files: FileList | File[]): Promise<PickedFile[]> {
+  return Promise.resolve(Array.from(files, (file) => readFileReference(file)))
 }
 
 async function readFileHandles(handles: readonly FileSystemFileHandle[]): Promise<PickedFile[]> {
@@ -184,12 +185,12 @@ async function readFileHandles(handles: readonly FileSystemFileHandle[]): Promis
 }
 
 async function readFileHandle(fileHandle: FileSystemFileHandle): Promise<PickedFile> {
-  return readFile(await fileHandle.getFile(), fileHandle)
+  return readFileReference(await fileHandle.getFile(), fileHandle)
 }
 
-async function readFile(file: File, fileHandle?: FileSystemFileHandle): Promise<PickedFile> {
+function readFileReference(file: File, fileHandle?: FileSystemFileHandle): PickedFile {
   assertInputFileSize(file.name, file.size, navigator.userAgent)
-  return { name: file.name, type: file.type, bytes: new Uint8Array(await file.arrayBuffer()), fileHandle }
+  return { name: file.name, type: file.type, file, fileHandle }
 }
 
 function sameBytes(left: Uint8Array, right: Uint8Array): boolean {

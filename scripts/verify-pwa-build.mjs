@@ -31,8 +31,28 @@ for (const icon of manifest.icons ?? []) {
   assert.ok(existsSync(path.join(output, icon.src.slice(base.length))), `Missing PWA icon: ${icon.src}`)
 }
 
+const runtimeAssetsPath = path.join(output, 'runtime-assets.json')
+assert.ok(existsSync(runtimeAssetsPath), 'Missing on-demand runtime asset manifest')
+const runtimeAssets = JSON.parse(readFileSync(runtimeAssetsPath, 'utf8'))
+for (const group of ['fonts', 'monaco']) {
+  assert.ok(Array.isArray(runtimeAssets[group]) && runtimeAssets[group].length > 0, `Missing on-demand ${group} assets`)
+  for (const asset of runtimeAssets[group]) {
+    assert.ok(typeof asset.url === 'string' && Number.isSafeInteger(asset.size) && asset.size >= 0, `Invalid on-demand ${group} asset entry`)
+    if (asset.url.startsWith('/')) assert.ok(asset.url.startsWith(base), `${group} asset does not use base path ${base}: ${asset.url}`)
+    const relative = asset.url.startsWith(base) ? asset.url.slice(base.length) : asset.url.replace(/^\.\//u, '')
+    assert.ok(existsSync(path.join(output, relative)), `Missing on-demand ${group} asset: ${asset.url}`)
+  }
+}
+
 const worker = readFileSync(path.join(output, 'sw.js'), 'utf8')
-assert.ok(worker.includes('SourceEditor-'), 'Monaco source editor chunk is not precached')
-assert.ok(worker.includes('editor.worker-'), 'Monaco worker chunk is not precached')
+assert.match(worker, /"url":"[^"]*runtime-assets\.json"/u, 'Runtime asset manifest must be available offline from the install-time precache')
+const basePath = new URL(base, 'https://viewer.invalid').pathname
+for (const group of ['fonts', 'monaco']) {
+  for (const asset of runtimeAssets[group]) {
+    const precachePath = new URL(asset.url, new URL(base, 'https://viewer.invalid')).pathname.slice(basePath.length)
+    assert.ok(!worker.includes(`"url":"${precachePath}"`), `${group} asset is still in the install-time precache: ${asset.url}`)
+  }
+}
 assert.ok(worker.includes(`\`${base}\``) && worker.includes('index.html'), 'PWA navigation fallback does not use the configured base path')
-console.log(`Verified PWA output for base ${base}`)
+const assetBytes = (group) => runtimeAssets[group].reduce((total, asset) => total + asset.size, 0)
+console.log(`Verified PWA output for base ${base}; ${runtimeAssets.fonts.length} font files (${assetBytes('fonts')} bytes), ${runtimeAssets.monaco.length} Monaco files (${assetBytes('monaco')} bytes) load on demand`)

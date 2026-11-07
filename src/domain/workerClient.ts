@@ -16,15 +16,20 @@ interface ParseJob {
   id: string
   name: string
   mimeType: string
-  bytes: ArrayBuffer
+  bytes?: ArrayBuffer
+  text?: string
   format?: Format
   context?: ParseRequestContext
   resolve: (parsed: ParsedFile) => void
   reject: (error: Error) => void
   timer?: number
+  fallback?: boolean
+  settled?: boolean
 }
 
 interface WorkerSlot { worker: Worker | null; job: ParseJob | null }
+
+export interface ParseWithWorkerOptions { transferInputBytes?: boolean }
 
 const WORKER_COUNT = 2
 const PARSE_TIMEOUT_MS = 60_000
@@ -35,10 +40,27 @@ const jobsByDocument = new Map<string, ParseJob>()
 function abortError(): Error { return new DOMException('문서가 변경되어 이전 해석을 취소했습니다.', 'AbortError') }
 
 function finishJob(job: ParseJob, result: { parsed: ParsedFile } | { error: Error }): void {
+  if (job.settled) return
+  job.settled = true
   if (job.timer !== undefined) globalThis.clearTimeout(job.timer)
   if (job.context && jobsByDocument.get(job.context.documentId) === job) jobsByDocument.delete(job.context.documentId)
   if ('parsed' in result) job.resolve(result.parsed)
   else job.reject(result.error)
+}
+
+function runFallback(job: ParseJob): void {
+  job.fallback = true
+  job.timer = globalThis.setTimeout(() => {
+    finishJob(job, { error: new Error('파일 처리 시간이 초과되었습니다.') })
+    dispatch()
+  }, PARSE_TIMEOUT_MS) as unknown as number
+  void import('./formatParsing').then(({ parseFileContent }) => {
+    if (job.settled) return undefined
+    const bytes = job.bytes ? new Uint8Array(job.bytes) : new TextEncoder().encode(job.text ?? '')
+    return parseFileContent(job.name, job.mimeType, bytes, job.format, job.context)
+  }).then((parsed) => {
+    if (parsed) finishJob(job, { parsed })
+  }).catch((error: unknown) => finishJob(job, { error: error instanceof Error ? error : new Error('파일을 읽지 못했습니다.') })).finally(dispatch)
 }
 
 function ensureWorker(slot: WorkerSlot): Worker {
@@ -82,15 +104,15 @@ function dispatch(): void {
 
     try {
       const worker = ensureWorker(slot)
-      worker.postMessage({ id: job.id, name: job.name, mimeType: job.mimeType, bytes: job.bytes, format: job.format, ...job.context }, [job.bytes])
+      const input = job.bytes ? { bytes: job.bytes } : { text: job.text ?? '' }
+      worker.postMessage({ id: job.id, name: job.name, mimeType: job.mimeType, format: job.format, ...input, ...job.context }, job.bytes ? [job.bytes] : [])
     } catch {
       slot.job = null
+      slot.worker?.terminate()
+      slot.worker = null
       if (job.timer !== undefined) globalThis.clearTimeout(job.timer)
       job.timer = undefined
-      void import('./formatParsing').then(({ parseFileContent }) => parseFileContent(job.name, job.mimeType, new Uint8Array(job.bytes), job.format, job.context))
-        .then((parsed) => finishJob(job, { parsed }))
-        .catch((error: unknown) => finishJob(job, { error: error instanceof Error ? error : new Error('파일을 읽지 못했습니다.') }))
-        .finally(dispatch)
+      runFallback(job)
     }
   }
 }
@@ -105,7 +127,10 @@ export function cancelDocumentParse(documentId: string): void {
     return
   }
   const slot = slots.find((candidate) => candidate.job === job)
-  if (!slot) return
+  if (!slot) {
+    if (job.fallback) finishJob(job, { error: abortError() })
+    return
+  }
   slot.worker?.terminate()
   slot.worker = null
   slot.job = null
@@ -113,20 +138,28 @@ export function cancelDocumentParse(documentId: string): void {
   dispatch()
 }
 
-export function parseWithWorker(name: string, mimeType: string, bytes: Uint8Array, format?: Format, context?: ParseRequestContext): Promise<ParsedFile> {
+function enqueueParseJob(name: string, mimeType: string, input: { bytes: ArrayBuffer } | { text: string }, format?: Format, context?: ParseRequestContext): Promise<ParsedFile> {
   if (context) cancelDocumentParse(context.documentId)
   const id = crypto.randomUUID()
-  const buffer = bytes.slice().buffer as ArrayBuffer
   return new Promise((resolve, reject) => {
-    const job: ParseJob = { id, name, mimeType, bytes: buffer, format, context, resolve, reject }
+    const job: ParseJob = { id, name, mimeType, ...input, format, context, resolve, reject }
     if (context) jobsByDocument.set(context.documentId, job)
     if (typeof Worker === 'undefined') {
-      void import('./formatParsing').then(({ parseFileContent }) => parseFileContent(name, mimeType, new Uint8Array(buffer), format, context))
-        .then((parsed) => finishJob(job, { parsed }))
-        .catch((error: unknown) => finishJob(job, { error: error instanceof Error ? error : new Error('파일을 읽지 못했습니다.') }))
+      runFallback(job)
       return
     }
     queue.push(job)
     dispatch()
   })
+}
+
+export function parseWithWorker(name: string, mimeType: string, bytes: Uint8Array, format?: Format, context?: ParseRequestContext, options: ParseWithWorkerOptions = {}): Promise<ParsedFile> {
+  const sourceBuffer = bytes.buffer
+  const ownsWholeBuffer = sourceBuffer instanceof ArrayBuffer && bytes.byteOffset === 0 && bytes.byteLength === sourceBuffer.byteLength
+  const buffer = options.transferInputBytes && ownsWholeBuffer ? sourceBuffer : bytes.slice().buffer as ArrayBuffer
+  return enqueueParseJob(name, mimeType, { bytes: buffer }, format, context)
+}
+
+export function parseTextWithWorker(name: string, mimeType: string, text: string, format: Format, context?: ParseRequestContext): Promise<ParsedFile> {
+  return enqueueParseJob(name, mimeType, { text }, format, context)
 }

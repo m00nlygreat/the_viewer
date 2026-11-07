@@ -1,15 +1,21 @@
 import { Component, type ReactNode } from 'react'
 
 interface Props { children: ReactNode; fileName: string; sourceText: string }
-interface State { failed: boolean }
+interface State { failed: boolean; error: string | null }
 
 export class FeatureLoadBoundary extends Component<Props, State> {
-  state: State = { failed: false }
+  state: State = { failed: false, error: null }
 
-  static getDerivedStateFromError(): State { return { failed: true } }
+  static getDerivedStateFromError(error: unknown): State {
+    return { failed: true, error: error instanceof Error ? error.message : '알 수 없는 화면 오류' }
+  }
 
   render() {
-    if (this.state.failed) return <section className="feature-load-error" role="alert">
+    if (this.state.failed) return <section
+      className="feature-load-error"
+      role="alert"
+      aria-label={this.state.error ? `파일 화면을 불러오지 못했습니다. ${this.state.error}` : '파일 화면을 불러오지 못했습니다.'}
+    >
       <strong>파일 화면을 불러오지 못했습니다.</strong>
       <p>현재 작업본 원문은 아래에서 확인하고 복사할 수 있습니다.</p>
       <details><summary>{this.props.fileName} 원문</summary><textarea readOnly value={this.props.sourceText} aria-label={`${this.props.fileName} 원문 복구`} /></details>

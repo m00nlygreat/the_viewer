@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { EditorSelection, EditorState } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { buildMarkdownFrontmatterDecorations, buildMarkdownPreviewDecorations, markdownLivePreview, taskMarkerRangesForSelection } from '../src/features/markdown/preview'
+import * as markdownReferences from '../src/domain/markdownReferences'
+import { buildMarkdownFrontmatterDecorations, buildMarkdownPreviewDecorations, markdownLivePreview, refreshMarkdownPreviewForActiveLine, taskMarkerRangesForSelection } from '../src/features/markdown/preview'
 import { MarkdownFrontmatterState } from '../src/features/markdown/frontmatterState'
 import { detectMarkdownFrontmatter } from '../src/domain/formats/markdownFrontmatter'
 import { markdownLinkAttributes } from '../src/domain/markdown'
@@ -24,6 +25,14 @@ function collectDecorations(state: EditorState, composingPosition: number | null
       items.push({ from, to, className: decoration.spec.class, tagName: decoration.spec.tagName, attributes: decoration.spec.attributes, hasWidget: Boolean(decoration.spec.widget) })
     })
   }
+  return items
+}
+
+function previewDecorationSignature(decorations: ReturnType<typeof buildMarkdownPreviewDecorations>, length: number) {
+  const items: Array<{ from: number; to: number; className?: string; tagName?: string; attributes?: Record<string, string>; widget?: string }> = []
+  decorations.between(0, length, (from, to, decoration) => {
+    items.push({ from, to, className: decoration.spec.class, tagName: decoration.spec.tagName, attributes: decoration.spec.attributes, widget: decoration.spec.widget?.constructor.name })
+  })
   return items
 }
 
@@ -135,6 +144,41 @@ describe('Markdown live preview decorations', () => {
     expect(decorations.some((item) => item.className === 'cm-md-bold' && item.from === previewStart + 2)).toBe(true)
     expect(decorations.some((item) => item.className === 'cm-md-bold' && item.from === editingStart + 2)).toBe(false)
     expect(state.doc.toString()).toBe(text)
+  })
+
+  it('refreshes only the previous and current blocks when the active line moves', () => {
+    const text = '# **heading**\n\n- **first**\n- **second**\n\n> **quote**\n\n```ts\nconst code = 1\n```\n\n![image](https://example.com/image.png)\n\n**tail**\n'
+    let state = makeState(text, text.indexOf('heading') + 2)
+    let decorations = buildMarkdownPreviewDecorations(state, null, true, true)
+    const targets = [text.indexOf('first') + 2, text.indexOf('second') + 2, text.indexOf('\n\n') + 1, text.indexOf('quote') + 2, text.indexOf('code =') + 2, text.indexOf('![image]') + 4, text.indexOf('tail') + 2]
+
+    for (const target of targets) {
+      const next = state.update({ selection: { anchor: target } }).state
+      decorations = refreshMarkdownPreviewForActiveLine(decorations, state, next, null, true, true, undefined)
+      expect(previewDecorationSignature(decorations, text.length)).toEqual(previewDecorationSignature(buildMarkdownPreviewDecorations(next, null, true, true), text.length))
+      state = next
+    }
+  })
+
+  it('reuses document reference analysis when only the selection moves', () => {
+    const collectReferences = vi.spyOn(markdownReferences, 'collectMarkdownReferences')
+    try {
+      const text = '# title\n\n[one](./one.md)\n\n[two](./two.md)'
+      const state = EditorState.create({
+        doc: text,
+        selection: { anchor: 0 },
+        extensions: [markdown({ base: markdownLanguage }), ...markdownLivePreview('light')]
+      })
+      const scansAfterInitialAnalysis = collectReferences.mock.calls.length
+
+      const moved = state.update({ selection: { anchor: text.indexOf('[two]') } }).state
+
+      expect(scansAfterInitialAnalysis).toBeGreaterThan(0)
+      expect(collectReferences).toHaveBeenCalledTimes(scansAfterInitialAnalysis)
+      expect(moved.doc.toString()).toBe(text)
+    } finally {
+      collectReferences.mockRestore()
+    }
   })
 
   it('keeps the complete Markdown preview visible before the editor is focused', () => {

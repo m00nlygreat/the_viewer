@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import type { ParseDiagnostic } from '../domain/types'
 import type { Format } from '../domain/fileFormats'
+import { ensureRuntimeAssetGroup } from '../platform/pwa/runtimeAssets'
 
 interface Props {
   documentId: string
@@ -16,7 +17,10 @@ interface Props {
   label: string
 }
 
-const DesktopEditor = lazy(() => import('./MonacoSourceEditor'))
+const DesktopEditor = lazy(async () => {
+  await ensureRuntimeAssetGroup('monaco').catch(() => undefined)
+  return import('./MonacoSourceEditor')
+})
 const MobileEditor = lazy(() => import('./MobileSourceEditor'))
 
 export default function SourceEditor(props: Props) {

@@ -58,7 +58,7 @@ export function LocalReferenceWidgetView({ reference, context, onMeasure, onEdit
   const previousExpanded = useRef(expanded)
   const [imageUrl, setImageUrl] = useState('')
   const [imageError, setImageError] = useState('')
-  const preload = isEmbed
+  const preload = isEmbed && getFormat(targetPath) !== 'md'
   const syntax = reference.kind.startsWith('obsidian') ? 'obsidian' : 'markdown'
   const label = reference.label || reference.target
   const cycle = resolution?.status === 'markdown' && Boolean(context.folderId) && context.ancestors.some((item) => item.folderId === context.folderId && item.path === resolution.path && item.fragment === (resolution.fragment ?? ''))
