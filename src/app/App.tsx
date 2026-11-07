@@ -1314,6 +1314,8 @@ export function App() {
   )
 
   const folderPickingAvailable = supportsDirectoryPicker() || supportsFolderInput()
+  const activeFolderErrorPath = folderWorkspace.activePath
+  const activeFolderError = activeFolderErrorPath ? folderWorkspace.errorsByPath.get(activeFolderErrorPath) : undefined
   return <div className="app-shell" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <FilePicker ref={inputRef} onFiles={(files, format) => { void openFiles(files, format) }} onError={notify} />
     <FolderPicker ref={folderInputRef} onFolder={(picked) => { void folderWorkspace.acceptPickedFolder(picked) }} onCancel={() => { if (folderWorkspace.phase === 'picking') folderWorkspace.cancelTransition(); else folderWorkspace.cancelReconnect() }} onError={(message) => { if (folderWorkspace.phase === 'picking') folderWorkspace.cancelTransition(); else folderWorkspace.cancelReconnect(); notify(message, 'error') }} />
@@ -1348,7 +1350,9 @@ export function App() {
         {activeDocument.payloadLoaded !== false && activeDocument.mode === 'source' && <div className="source-statusbar"><span>{activeDocument.contentKind === 'plain-text' ? '일반 텍스트 · 원본 보기' : '원본 텍스트 · UTF-8 출력'}</span><span>{activeDocument.text.split(/\r\n|\r|\n/).length}줄 · {activeDocument.text.length.toLocaleString()}자</span><div className="toolbar-spacer" />{activeDocument.parseState === 'pending' ? <span>해석 중</span> : activeDocument.parseState === 'error' ? <span className="error-label">문법 오류</span> : <span className="ready-label">{activeDocument.contentKind === 'plain-text' ? '텍스트' : '유효한 문서'}</span>}</div>}
       </> : folderWorkspace.folder ? (folderWorkspace.activeAssetPath && folderWorkspace.source
         ? <FolderAssetPreview source={folderWorkspace.source} generation={folderWorkspace.generation} path={folderWorkspace.activeAssetPath} resources={folderResources.current} onClose={() => folderWorkspace.selectDocumentPath(null)} />
-        : <section className="folder-empty-state" aria-live="polite"><FolderOpen size={24} /><strong>{folderWorkspace.source ? '폴더에서 파일을 선택하세요' : '폴더에 접근할 수 없습니다'}</strong><p>{folderWorkspace.source ? `${folderWorkspace.folder.name} 폴더의 트리에서 문서를 열 수 있습니다.` : '복구된 작업본은 유지됩니다. 폴더 목록의 새로고침을 눌러 현재 폴더 접근을 복구하세요.'}</p></section>)
+        : activeFolderError && activeFolderErrorPath
+          ? <UnsupportedFilePage name={safeDisplayFileName(activeFolderErrorPath.split('/').pop() ?? activeFolderErrorPath)} reason={activeFolderError} />
+          : <section className="folder-empty-state" aria-live="polite"><FolderOpen size={24} /><strong>{folderWorkspace.source ? '폴더에서 파일을 선택하세요' : '폴더에 접근할 수 없습니다'}</strong><p>{folderWorkspace.source ? `${folderWorkspace.folder.name} 폴더의 트리에서 문서를 열 수 있습니다.` : '복구된 작업본은 유지됩니다. 폴더 목록의 새로고침을 눌러 현재 폴더 접근을 복구하세요.'}</p></section>)
         : <WelcomeScreen onOpen={() => pickFiles()} onPaste={() => { void handlePaste() }} onCommand={() => { if (!workspaceOperations.current.locked) setShowCommand(true) }} />}
 
       <DocumentActionBar document={activeDocument?.payloadLoaded === false ? null : activeDocument} saveLabel={saveLabel} onModeChange={setMode} onUndo={() => undo()} onRedo={() => undo(true)} onSave={() => { void saveCurrent() }} />

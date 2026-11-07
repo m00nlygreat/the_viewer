@@ -54,7 +54,7 @@
 .folder-tree-compact { display: flex; flex-direction: column; overflow: hidden; }
 .folder-tree-file-rail { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; align-items: center; flex-direction: column; gap: 3px; padding: 2px 0; }
 .folder-tree-file-rail > div { flex: 0 0 auto; }
-.folder-tree-rail-file { position: relative; width: 38px; height: 30px; display: grid; place-items: center; border-radius: 5px; color: var(--text-muted); background: transparent; }
+.folder-tree-rail-file { position: relative; width: 38px; height: 30px; padding: 0; display: grid; place-items: center; border-radius: 5px; color: var(--text-muted); background: transparent; }
 .folder-tree-rail-file:hover, .folder-tree-rail-file.active { color: var(--text-strong); background: var(--selected); }
 .folder-tree-rail-file .file-badge { height: 15px; font-size: 8px; }
 .folder-tree-rail-dirty { position: absolute; right: 4px; bottom: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--warning); }

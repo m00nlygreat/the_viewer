@@ -61,6 +61,7 @@ export function useFolderWorkspace(options: Options) {
   const [loadingPaths, setLoadingPaths] = useState<Set<FolderPath>>(new Set())
   const [errorsByPath, setErrorsByPath] = useState<Map<FolderPath, string>>(new Map())
   const [activePath, setActivePath] = useState<FolderPath | null>(options.initialFolder?.activePath ?? null)
+  const activeOpenIntent = useRef<FolderPath | null>(options.initialFolder?.activePath ?? null)
   const [activeAssetPath, setActiveAssetPath] = useState<FolderPath | null>(null)
   const [phase, setPhase] = useState<FolderTransitionPhase>('idle')
   const [rows, setRows] = useState<TransitionRow[]>([])
@@ -159,6 +160,7 @@ export function useFolderWorkspace(options: Options) {
     setEntriesByPath(restored && !rootError && source ? new Map([['', entries]]) : new Map())
     setErrorsByPath(rootError ? new Map([['', rootError]]) : new Map())
     setActivePath(restored?.activePath ?? null)
+    activeOpenIntent.current = restored?.activePath ?? null
     setActiveAssetPath(null)
     for (const controller of controllers.current.values()) controller.abort()
     controllers.current.clear()
@@ -397,6 +399,7 @@ export function useFolderWorkspace(options: Options) {
       setLoadingPaths(new Set())
       setErrorsByPath(new Map())
       setActivePath(null)
+      activeOpenIntent.current = null
       setActiveAssetPath(null)
       options.onAssetSelect(null)
       if (nextFolder) options.onMetadataChange?.(nextFolder, nextSource, generation.current)
@@ -524,6 +527,7 @@ export function useFolderWorkspace(options: Options) {
     const currentFolder = folderRef.current
     const source = sourceRef.current
     if (!currentFolder || !source || transitionLock.current) return
+    activeOpenIntent.current = path
     const format = getFormat(path)
     if (!format && /\.(?:avif|gif|jpe?g|png|svg|webp)$/iu.test(path)) {
       setActivePath(path)
@@ -574,7 +578,20 @@ export function useFolderWorkspace(options: Options) {
       setActiveAssetPath(null)
       options.onAssetSelect(null)
     })().catch((error: unknown) => {
-      if (!controller.signal.aborted && startedGeneration === generation.current) setErrorsByPath((items) => new Map(items).set(path, error instanceof Error ? error.message : '파일을 열지 못했습니다.'))
+      if (!controller.signal.aborted && startedGeneration === generation.current) {
+        const message = error instanceof Error ? error.message : '파일을 열지 못했습니다.'
+        setErrorsByPath((items) => new Map(items).set(path, message))
+        if (activeOpenIntent.current === path) {
+          setActivePath(path)
+          setActiveAssetPath(null)
+          const failedFolder = { ...currentFolder, activePath: path }
+          folderRef.current = failedFolder
+          setFolder(failedFolder)
+          options.onMetadataChange?.(failedFolder, source, generation.current)
+          options.onAssetSelect(null)
+          options.onDocumentSelect('')
+        }
+      }
     }).finally(() => { if (openPromises.current.get(key) === operation) openPromises.current.delete(key) })
     openPromises.current.set(key, operation)
     await operation
@@ -697,6 +714,7 @@ export function useFolderWorkspace(options: Options) {
   }
 
   const selectDocumentPath = useCallback((path: FolderPath | null) => {
+    activeOpenIntent.current = path
     setActivePath(path)
     const current = folderRef.current
     if (current) {

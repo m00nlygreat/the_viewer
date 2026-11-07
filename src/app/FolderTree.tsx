@@ -20,6 +20,12 @@ export interface FolderTreeProps {
 
 type VisibleNode = FolderEntry & { depth: number; missing?: boolean }
 
+function getFileBadgeText(name: string, format: string | null): string {
+  if (format) return format.toUpperCase()
+  const extension = name.match(/\.([^.]+)$/u)?.[1]
+  return (extension ?? name).slice(0, 4).toUpperCase() || 'FILE'
+}
+
 export function FolderTree({ folder, entriesByPath, loadingPaths, errorsByPath, activePath, dirtyPaths, openPaths, onToggleDirectory, onOpenPath, onRefresh, onCloseFolder, compact = false }: FolderTreeProps) {
   const [focusedPath, setFocusedPath] = useState('')
   const buttons = useRef(new Map<string, HTMLButtonElement>())
@@ -93,6 +99,7 @@ export function FolderTree({ folder, entriesByPath, loadingPaths, errorsByPath, 
     const expanded = node.kind === 'directory' && folder.expandedPaths.includes(node.path)
     const children = visible.filter((item) => item.depth === node.depth + 1 && (item.path.includes('/') ? item.path.slice(0, item.path.lastIndexOf('/')) : '') === node.path)
     const format = node.kind === 'file' ? getFormat(node.name) : null
+    const badge = node.kind === 'file' ? getFileBadgeText(node.name, format) : null
     const Icon = node.kind === 'directory' ? (expanded ? FolderOpen : Folder) : null
     return <div className="folder-tree-node" key={node.path}>
       <button
@@ -110,7 +117,7 @@ export function FolderTree({ folder, entriesByPath, loadingPaths, errorsByPath, 
       >
         {node.kind === 'directory' ? expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} /> : <span className="folder-tree-spacer" />}
         {Icon && <Icon size={14} className="folder-tree-icon" />}
-        {format && <span className={`file-badge format-${format}`}>{format.toUpperCase()}</span>}
+        {badge && <span className={`file-badge${format ? ` format-${format}` : ''}`}>{badge}</span>}
         <span className="folder-tree-name">{node.name}</span>
         {dirtyPaths.has(node.path) && <span className="dirty-dot" aria-label="수정됨" />}
       </button>
@@ -136,8 +143,7 @@ export function FolderTree({ folder, entriesByPath, loadingPaths, errorsByPath, 
       <div className="folder-tree-file-rail" role="list" aria-label={`${folder.name} 폴더의 파일`}>
         {rootFiles.map((entry) => {
           const format = getFormat(entry.name)
-          const extension = entry.name.match(/\.([^.]+)$/u)?.[1]
-          const badge = format ? format.toUpperCase() : (extension ?? entry.name).slice(0, 4).toUpperCase() || 'FILE'
+          const badge = getFileBadgeText(entry.name, format)
           return <div role="listitem" key={entry.path}>
             <button type="button" className={`folder-tree-rail-file${format ? ` format-${format}` : ''}${entry.path === activePath ? ' active' : ''}`} aria-label={`${entry.name} 열기`} aria-current={entry.path === activePath ? 'page' : undefined} title={entry.path} onClick={() => onOpenPath(entry.path)}>
               <span className={`file-badge${format ? ` format-${format}` : ''}`}>{badge}</span>
