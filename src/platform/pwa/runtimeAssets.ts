@@ -58,7 +58,7 @@ export function continueWithoutRuntimeAssetGroup(group: RuntimeAssetGroup): void
 async function loadRuntimeAssetGroup(group: RuntimeAssetGroup): Promise<void> {
   const failureContext: { stage: 'manifest' | 'asset' | 'cache'; assetUrl: string | null } = { stage: 'manifest', assetUrl: null }
   try {
-    await waitForServiceWorkerController()
+    await waitForServiceWorkerReady()
     const manifestUrl = new URL(`${appBase}runtime-assets.json`, window.location.href)
     const cache = await caches.open(RUNTIME_ASSET_CACHE_NAME)
     const cachedManifest = await cache.match(manifestUrl) ?? await caches.match(manifestUrl, { ignoreSearch: true })
@@ -165,21 +165,20 @@ async function waitForAssetCache(cache: Cache, request: RequestInfo | URL): Prom
   throw new Error('필요한 파일을 오프라인 저장소에 기록하지 못했습니다.')
 }
 
-async function waitForServiceWorkerController(): Promise<void> {
+async function waitForServiceWorkerReady(): Promise<void> {
   if (!('serviceWorker' in navigator) || !('caches' in window)) throw new Error('오프라인 저장을 지원하지 않는 브라우저입니다.')
-  await navigator.serviceWorker.ready
-  if (navigator.serviceWorker.controller) return
-  await new Promise<void>((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
-      navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
-      reject(new Error('오프라인 저장 기능을 시작하지 못했습니다.'))
-    }, 10_000)
-    const onControllerChange = () => {
-      window.clearTimeout(timeout)
-      resolve()
-    }
-    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange, { once: true })
-  })
+  let timeout: number | undefined
+  try {
+    const registration = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<never>((_, reject) => {
+        timeout = window.setTimeout(() => reject(new Error('오프라인 저장 기능을 시작하지 못했습니다.')), 10_000)
+      })
+    ])
+    if (!registration.active) throw new Error('오프라인 저장 기능을 시작하지 못했습니다.')
+  } finally {
+    if (timeout !== undefined) window.clearTimeout(timeout)
+  }
 }
 
 function parseRuntimeAssetManifest(value: unknown): RuntimeAssetManifest {
