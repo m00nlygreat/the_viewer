@@ -1,9 +1,0 @@
-
-body{margin:0;background:#FFFFFF}
-button{font:inherit;color:inherit;cursor:pointer}
-input,textarea{font:inherit}
-a{color:#0040FF}a:hover{color:#0030C0}
-button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #111111;outline-offset:2px}
-main:focus{outline:none}
-.rz{background:transparent}
-.rz:hover,.rz:focus-visible,.rz[data-active="true"]{background:linear-gradient(#111111,#111111) center / 2px 100% no-repeat;outline:none}
