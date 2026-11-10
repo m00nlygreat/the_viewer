@@ -16,6 +16,11 @@
   tab-size: 4;
 }
 
+.viewer-zoom-content:has(> .diff-view) {
+  min-height: 0;
+  flex: 1 1 0;
+}
+
 .diff-scroll {
   flex: 1 1 auto;
   min-width: 0;
