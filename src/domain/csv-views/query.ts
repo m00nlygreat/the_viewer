@@ -54,9 +54,9 @@ export function decodeGroupKey(key: string): { state: CsvCellState; value?: stri
 
 export function filterColumns(filter: CsvFilter | null): string[] {
   if (!filter) return []
-  if (filter.op === 'and' || filter.op === 'or') return filter.children.flatMap(filterColumns)
-  if (filter.op === 'not') return filterColumns(filter.child)
-  return [filter.columnId]
+  if ('children' in filter) return filter.children.flatMap(filterColumns)
+  if ('child' in filter) return filterColumns(filter.child)
+  return 'columnId' in filter ? [filter.columnId] : []
 }
 
 export function allowedOperators(type: CsvColumnDefinition['type']): readonly string[] {
@@ -70,7 +70,7 @@ export function allowedOperators(type: CsvColumnDefinition['type']): readonly st
 }
 
 function evaluateTruth(filter: CsvFilter, columns: ReadonlyMap<string, CsvColumnDefinition>, cellOf: (columnId: string) => CsvCell): Truth {
-  if (filter.op === 'and') {
+  if ('children' in filter && filter.op === 'and') {
     let unknown = false
     for (const child of filter.children) {
       const result = evaluateTruth(child, columns, cellOf)
@@ -79,7 +79,7 @@ function evaluateTruth(filter: CsvFilter, columns: ReadonlyMap<string, CsvColumn
     }
     return unknown ? 'unknown' : true
   }
-  if (filter.op === 'or') {
+  if ('children' in filter && filter.op === 'or') {
     let unknown = false
     for (const child of filter.children) {
       const result = evaluateTruth(child, columns, cellOf)
@@ -88,34 +88,36 @@ function evaluateTruth(filter: CsvFilter, columns: ReadonlyMap<string, CsvColumn
     }
     return unknown ? 'unknown' : false
   }
-  if (filter.op === 'not') {
+  if ('child' in filter) {
     const result = evaluateTruth(filter.child, columns, cellOf)
     return result === 'unknown' ? result : !result
   }
+  if (!('columnId' in filter)) return 'unknown'
   const column = columns.get(filter.columnId)
   if (!column) return 'unknown'
   const cell = cellOf(filter.columnId)
-  if (filter.op === 'is' || filter.op === 'isNot') {
+  if ('state' in filter) {
     const matches = cell.state === filter.state
     return filter.op === 'is' ? matches : !matches
   }
   if (cell.state !== 'value') return 'unknown'
-  if (filter.op === 'contains' || filter.op === 'startsWith') {
+  if ('ignoreCase' in filter) {
     if (column.type !== 'text' || typeof cell.value !== 'string') return 'unknown'
     const target = filter.ignoreCase === 'ascii' ? asciiLower(filter.value) : filter.value
     const current = filter.ignoreCase === 'ascii' ? asciiLower(cell.value) : cell.value
     return filter.op === 'contains' ? current.includes(target) : current.startsWith(target)
   }
-  if (filter.op === 'in' || filter.op === 'notIn') {
+  if ('optionIds' in filter && (filter.op === 'in' || filter.op === 'notIn')) {
     if (column.type !== 'select' || typeof cell.value !== 'string') return 'unknown'
     const matches = filter.optionIds.includes(cell.value)
     return filter.op === 'in' ? matches : !matches
   }
-  if (filter.op === 'hasAny' || filter.op === 'hasAll') {
+  if ('optionIds' in filter && (filter.op === 'hasAny' || filter.op === 'hasAll')) {
     if (column.type !== 'multiSelect' || !Array.isArray(cell.value)) return 'unknown'
     const unique = new Set(cell.value)
     return filter.op === 'hasAny' ? filter.optionIds.some((id) => unique.has(id)) : filter.optionIds.every((id) => unique.has(id))
   }
+  if (!('value' in filter)) return 'unknown'
   const constant = parseConstant(column, filter.value)
   if (constant.state !== 'value') return 'unknown'
   const compared = compareValues(column, cell.value, constant.value)

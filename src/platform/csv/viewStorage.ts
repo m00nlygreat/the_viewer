@@ -124,11 +124,22 @@ export class IndexedDbCsvViewStorage implements CsvViewStorage {
   async deleteSelection(documentId: string): Promise<void> { await (await getViewerDatabase()).delete('csvViewSelections', documentId) }
 
   async exportBackup(): Promise<CsvViewBackup> {
-    const fileRecords = await (await getViewerDatabase()).getAll('csvFiles')
+    const db = await getViewerDatabase()
+    const tx = db.transaction(['csvFiles', 'csvViews'], 'readonly')
+    const [fileRecords, viewRecords] = await Promise.all([
+      tx.objectStore('csvFiles').getAll(),
+      tx.objectStore('csvViews').getAll()
+    ])
+    await tx.done
+    const viewsByFile = new Map<string, { viewId: string; view: CsvViewDefinition }[]>()
+    for (const storedView of viewRecords) {
+      const fileViews = viewsByFile.get(storedView.fileId) ?? []
+      fileViews.push({ viewId: storedView.viewId, view: storedView.view })
+      viewsByFile.set(storedView.fileId, fileViews)
+    }
     const profiles: CsvViewBackup['profiles'] = []
     for (const record of fileRecords) {
-      const stored = await this.loadProfile(record.fileId)
-      if (!stored) continue
+      const stored = orderStored(record, viewsByFile.get(record.fileId) ?? [])
       const { viewOrder: _order, ...profile } = stored.record.profile
       profiles.push({
         source: { fileName: record.identity.name, headers: profile.columns.map((column) => column.sourceHeader), columnCount: profile.columns.length },

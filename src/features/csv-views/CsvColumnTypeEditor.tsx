@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { createDefaultColumn } from '../../domain/csv-views/typing'
 import { findAffectedViews } from '../../domain/csv-views/validate'
 import { previewColumn } from '../../domain/csv-views/inference'
-import type { CsvColumnDefinition, CsvColumnType, CsvDateFormat, CsvFileProfile, CsvSample, CsvSaveResult, CsvSelectOption, CsvThousandsSeparator, CsvViewDefinition } from '../../domain/csv-views/model'
+import type { CsvColumnDefinition, CsvColumnType, CsvDateFormat, CsvFileProfile, CsvMultiSelectParse, CsvNumberDisplay, CsvSample, CsvSaveResult, CsvSelectOption, CsvSelectParse, CsvThousandsSeparator, CsvViewDefinition } from '../../domain/csv-views/model'
 
 const optionColors = ['gray', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'] as const
 const dateFormats: CsvDateFormat[] = ['YYYY-MM-DD', 'YYYY/MM/DD', 'YYYY.MM.DD', 'YYYYMMDD', 'DD/MM/YYYY', 'MM/DD/YYYY', 'DD.MM.YYYY']
@@ -29,13 +29,30 @@ export function CsvColumnTypeEditor({ column, profile, views, sample, onApply, o
   const columnSample = sample ? { sourceIndex: column.sourceIndex, raws } : null
   const preview = useMemo(() => sample ? previewColumn(sample, draft) : null, [draft, sample])
   const affected = useMemo(() => findAffectedViews(profile, views, draft), [draft, profile, views])
+  const numericDisplay = draft.display as CsvNumberDisplay
+  const updateSelectParse = (patch: Partial<CsvSelectParse>) => setDraft((current) => {
+    if (current.type === 'select') return { ...current, parse: { ...current.parse, ...patch } }
+    if (current.type === 'multiSelect') return { ...current, parse: { ...current.parse, ...patch } }
+    return current
+  })
+  const updateMultiSelectParse = (patch: Partial<CsvMultiSelectParse>) => setDraft((current) => current.type === 'multiSelect' ? { ...current, parse: { ...current.parse, ...patch } } : current)
+  const updateNumericDisplay = (patch: Partial<CsvNumberDisplay>) => setDraft((current) => current.type === 'integer' || current.type === 'decimal' ? { ...current, display: { ...current.display, ...patch } } : current)
+  const updateCurrencyStyle = (patch: Partial<Extract<CsvNumberDisplay['style'], { kind: 'currency' }>>) => setDraft((current) => {
+    if ((current.type === 'integer' || current.type === 'decimal') && current.display.style.kind === 'currency') {
+      return { ...current, display: { ...current.display, style: { ...current.display.style, ...patch } } }
+    }
+    return current
+  })
   const chooseType = (next: CsvColumnType) => {
     setType(next)
     try {
       const base = { id: column.id, sourceIndex: column.sourceIndex, sourceHeader: column.sourceHeader, label: column.label, typeSource: 'user' as const, nullMarkers: [...column.nullMarkers], allowSurroundingSpace: column.allowSurroundingSpace }
-      const result = next === 'multiSelect'
-        ? (() => { const single = createDefaultColumn('select', base, columnSample); return { ...single, type: 'multiSelect' as const, parse: { ...single.parse, separator, duplicates: 'keep' as const } } })()
-        : createDefaultColumn(next, base, columnSample)
+      let result: CsvColumnDefinition
+      if (next === 'multiSelect') {
+        const single = createDefaultColumn('select', base, columnSample)
+        if (single.type !== 'select') throw new Error('선택지 기본 설정을 만들지 못했습니다.')
+        result = { ...single, type: 'multiSelect', parse: { ...single.parse, separator, duplicates: 'keep' } }
+      } else result = createDefaultColumn(next, base, columnSample)
       if (result.type === 'select' && sample) result.parse.options = sampleOptions(sample, column.sourceIndex)
       setDraft(result); setFailure('')
     } catch (error) { setFailure(error instanceof Error ? error.message : '타입 설정을 만들지 못했습니다.') }
@@ -83,24 +100,24 @@ export function CsvColumnTypeEditor({ column, profile, views, sample, onApply, o
         <label className="csv-view-check-row"><input type="checkbox" checked={draft.parse.allowDateOnly} onChange={(event) => setDraft({ ...draft, parse: { ...draft.parse, allowDateOnly: event.currentTarget.checked } })} />날짜만 입력된 값 허용</label>
       </>}
       {(draft.type === 'select' || draft.type === 'multiSelect') && <>
-        {draft.type === 'multiSelect' && <label>목록 구분자<input value={draft.parse.separator} onChange={(event) => { const value = event.currentTarget.value; setSeparator(value); setDraft({ ...draft, parse: { ...draft.parse, separator: value, options: draft.parse.options.length ? draft.parse.options : sampleOptions(sample, column.sourceIndex, value) } }) }} /></label>}
-        <label>선택지 연결<select value={draft.parse.matching} onChange={(event) => setDraft({ ...draft, parse: { ...draft.parse, matching: event.currentTarget.value as 'exact' | 'ascii-case-trim' } })}><option value="exact">정확히 일치</option><option value="ascii-case-trim">ASCII 대소문자·공백 무시</option></select></label>
-        <label className="csv-view-check-row"><input type="checkbox" checked={draft.parse.closed} onChange={(event) => setDraft({ ...draft, parse: { ...draft.parse, closed: event.currentTarget.checked } })} />등록하지 않은 값을 실패로 처리</label>
-        <label>선택지 목록<input value={draft.parse.options.map((option) => `${option.raw}|${option.label}`).join('\n')} onChange={(event) => setDraft({ ...draft, parse: { ...draft.parse, options: parseOptions(event.currentTarget.value, draft.parse.options) } })} placeholder={'todo|할 일\nin_progress|진행 중'} /></label>
+        {draft.type === 'multiSelect' && <label>목록 구분자<input value={draft.parse.separator} onChange={(event) => { const value = event.currentTarget.value; setSeparator(value); setDraft((current) => current.type === 'multiSelect' ? { ...current, parse: { ...current.parse, separator: value, options: current.parse.options.length ? current.parse.options : sampleOptions(sample, column.sourceIndex, value) } } : current) }} /></label>}
+        <label>선택지 연결<select value={draft.parse.matching} onChange={(event) => updateSelectParse({ matching: event.currentTarget.value as 'exact' | 'ascii-case-trim' })}><option value="exact">정확히 일치</option><option value="ascii-case-trim">ASCII 대소문자·공백 무시</option></select></label>
+        <label className="csv-view-check-row"><input type="checkbox" checked={draft.parse.closed} onChange={(event) => updateSelectParse({ closed: event.currentTarget.checked })} />등록하지 않은 값을 실패로 처리</label>
+        <label>선택지 목록<input value={draft.parse.options.map((option) => `${option.raw}|${option.label}`).join('\n')} onChange={(event) => updateSelectParse({ options: parseOptions(event.currentTarget.value, draft.parse.options) })} placeholder={'todo|할 일\nin_progress|진행 중'} /></label>
         <small>한 줄에 원문|표시명. 선택지 ID와 색은 순서대로 유지합니다.</small>
-        {draft.type === 'multiSelect' && <label>중복 항목<select value={draft.parse.duplicates} onChange={(event) => setDraft({ ...draft, parse: { ...draft.parse, duplicates: event.currentTarget.value as 'keep' | 'collapse' } })}><option value="keep">유지</option><option value="collapse">하나로 합치기</option></select></label>}
+        {draft.type === 'multiSelect' && <label>중복 항목<select value={draft.parse.duplicates} onChange={(event) => updateMultiSelectParse({ duplicates: event.currentTarget.value as 'keep' | 'collapse' })}><option value="keep">유지</option><option value="collapse">하나로 합치기</option></select></label>}
       </>}
       <fieldset className="csv-view-column-options"><legend>표시 형식</legend>
         {draft.type === 'text' && <label>텍스트 표시<select value={draft.display.as} onChange={(event) => setDraft({ ...draft, display: { as: event.currentTarget.value as 'plain' | 'link' | 'image' } })}><option value="plain">일반 텍스트</option><option value="link">링크</option><option value="image">이미지</option></select></label>}
         {(draft.type === 'integer' || draft.type === 'decimal') && <>
-          <label className="csv-view-check-row"><input type="checkbox" checked={draft.display.grouping} onChange={(event) => setDraft({ ...draft, display: { ...draft.display, grouping: event.currentTarget.checked } })} />천 단위 구분 표시</label>
-          <label>소수 표시<select value={draft.display.fractionDigits === 'scale' ? 'scale' : String(draft.display.fractionDigits)} onChange={(event) => setDraft({ ...draft, display: { ...draft.display, fractionDigits: event.currentTarget.value === 'scale' ? 'scale' : Math.max(0, Math.min(38, Number(event.currentTarget.value))) } })}><option value="scale">저장된 소수 자릿수</option>{Array.from({ length: 9 }, (_, index) => <option value={index} key={index}>{index}자리</option>)}</select></label>
-          <label>숫자 형식<select value={draft.display.style.kind} onChange={(event) => setDraft({ ...draft, display: { ...draft.display, style: event.currentTarget.value === 'currency' ? { kind: 'currency', symbol: '$', position: 'prefix' } : { kind: event.currentTarget.value as 'plain' | 'percent' } } })}><option value="plain">숫자</option><option value="currency">통화</option><option value="percent">퍼센트 표시</option></select></label>
-          {draft.display.style.kind === 'currency' && <>
-            <label>통화 기호<input value={draft.display.style.symbol} onChange={(event) => setDraft({ ...draft, display: { ...draft.display, style: { ...draft.display.style, symbol: event.currentTarget.value } } })} /></label>
-            <label>기호 위치<select value={draft.display.style.position} onChange={(event) => setDraft({ ...draft, display: { ...draft.display, style: { ...draft.display.style, position: event.currentTarget.value as 'prefix' | 'suffix' } } })}><option value="prefix">앞</option><option value="suffix">뒤</option></select></label>
+          <label className="csv-view-check-row"><input type="checkbox" checked={numericDisplay.grouping} onChange={(event) => updateNumericDisplay({ grouping: event.currentTarget.checked })} />천 단위 구분 표시</label>
+          <label>소수 표시<select value={numericDisplay.fractionDigits === 'scale' ? 'scale' : String(numericDisplay.fractionDigits)} onChange={(event) => updateNumericDisplay({ fractionDigits: event.currentTarget.value === 'scale' ? 'scale' : Math.max(0, Math.min(38, Number(event.currentTarget.value))) })}><option value="scale">저장된 소수 자릿수</option>{Array.from({ length: 9 }, (_, index) => <option value={index} key={index}>{index}자리</option>)}</select></label>
+          <label>숫자 형식<select value={numericDisplay.style.kind} onChange={(event) => updateNumericDisplay({ style: event.currentTarget.value === 'currency' ? { kind: 'currency', symbol: '$', position: 'prefix' } : { kind: event.currentTarget.value as 'plain' | 'percent' } })}><option value="plain">숫자</option><option value="currency">통화</option><option value="percent">퍼센트 표시</option></select></label>
+          {numericDisplay.style.kind === 'currency' && <>
+            <label>통화 기호<input value={numericDisplay.style.symbol} onChange={(event) => updateCurrencyStyle({ symbol: event.currentTarget.value })} /></label>
+            <label>기호 위치<select value={numericDisplay.style.position} onChange={(event) => updateCurrencyStyle({ position: event.currentTarget.value as 'prefix' | 'suffix' })}><option value="prefix">앞</option><option value="suffix">뒤</option></select></label>
           </>}
-          <label>음수 표시<select value={draft.display.negative} onChange={(event) => setDraft({ ...draft, display: { ...draft.display, negative: event.currentTarget.value as 'minus' | 'parentheses' } })}><option value="minus">마이너스 기호</option><option value="parentheses">괄호</option></select></label>
+          <label>음수 표시<select value={numericDisplay.negative} onChange={(event) => updateNumericDisplay({ negative: event.currentTarget.value as 'minus' | 'parentheses' })}><option value="minus">마이너스 기호</option><option value="parentheses">괄호</option></select></label>
         </>}
         {draft.type === 'boolean' && <><label>참/거짓 표시<select value={draft.display.as} onChange={(event) => setDraft({ ...draft, display: { ...draft.display, as: event.currentTarget.value as 'check' | 'text' } })}><option value="check">기호</option><option value="text">텍스트</option></select></label><label>참 표시<input value={draft.display.trueLabel} onChange={(event) => setDraft({ ...draft, display: { ...draft.display, trueLabel: event.currentTarget.value } })} /></label><label>거짓 표시<input value={draft.display.falseLabel} onChange={(event) => setDraft({ ...draft, display: { ...draft.display, falseLabel: event.currentTarget.value } })} /></label></>}
         {draft.type === 'date' && <label>날짜 표시<select value={draft.display.pattern} onChange={(event) => setDraft({ ...draft, display: { pattern: event.currentTarget.value as 'iso' | 'ko-long' | 'ko-short' } })}><option value="iso">YYYY-MM-DD</option><option value="ko-long">한국어 긴 형식</option><option value="ko-short">한국어 짧은 형식</option></select></label>}

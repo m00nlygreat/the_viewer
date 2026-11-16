@@ -1,6 +1,6 @@
 import type { CsvColumnDefinition, CsvQueryPage, CsvQueryRequest, CsvSample } from '../../domain/csv-views/model'
 import { CsvQueryError } from '../../domain/csv-views/model'
-import { parseWorkerResponse, type CsvWorkerRequest, type CsvWorkerRequestMessage, type CsvWorkerResponse, type CsvWorkerResponseMessage } from '../../domain/csv-views/protocol'
+import { parseWorkerResponse, type CsvWorkerRequest, type CsvWorkerRequestMessage, type CsvWorkerResponse } from '../../domain/csv-views/protocol'
 
 interface PendingRequest { resolve(response: CsvWorkerResponse): void; reject(error: Error): void }
 

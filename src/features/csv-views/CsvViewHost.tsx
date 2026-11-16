@@ -18,10 +18,11 @@ export interface CsvViewHostProps {
   controller: Pick<CsvViewController, 'queryScoped' | 'discoverGroups'>
   sample: CsvSample | null
   cacheToken: string | null
+  theme: 'light' | 'dark'
   tabId?: string
 }
 
-export function CsvViewHost({ view, columns, query, onLoadMore, onRetry, onEditView, controller, sample, cacheToken, tabId }: CsvViewHostProps) {
+export function CsvViewHost({ view, columns, query, onLoadMore, onRetry, onEditView, controller, sample, cacheToken, theme, tabId }: CsvViewHostProps) {
   const columnMap = new Map(columns.map((column) => [column.id, column]))
   const scoped = view.layout.kind === 'kanban' || view.layout.kind === 'calendar'
   return <section id="csv-view-panel" className="csv-view-host" role="tabpanel" aria-labelledby={tabId ?? `csv-view-${view.id}-tab`}>
@@ -33,7 +34,7 @@ export function CsvViewHost({ view, columns, query, onLoadMore, onRetry, onEditV
     {!scoped && query.status === 'idle' && <div className="csv-view-state" role="status">조회 조건을 준비하고 있습니다.</div>}
     {!scoped && query.status === 'ready' && query.rows.length === 0 && <div className="csv-view-state" role="status">조건에 맞는 행이 없습니다.</div>}
     {!scoped && query.status === 'ready' && query.rows.length > 0 && <>
-      {view.layout.kind === 'grid' && <CsvQueryTable layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} />}
+      {view.layout.kind === 'grid' && <CsvQueryTable layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} theme={theme} />}
       {view.layout.kind === 'list' && <CsvListView layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} />}
       {view.layout.kind === 'gallery' && <CsvGalleryView layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} />}
     </>}

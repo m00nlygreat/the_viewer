@@ -1459,6 +1459,7 @@ export function App() {
       onModeChange={setMode}
       onError={(message) => notify(message, 'error')}
       onReconnect={() => pickFiles('csv')}
+      theme={resolvedTheme}
     />
     return renderDocument(
       document,
@@ -1509,7 +1510,7 @@ export function App() {
             ? <section className="csv-view-state" role="status"><p>{activeFileBackedCsv.sourceState.status === 'error' ? activeFileBackedCsv.sourceState.message : '원본 CSV 파일을 다시 선택해야 합니다.'}</p><button className="secondary-button" type="button" onClick={() => pickFiles('csv')}>CSV 다시 열기</button></section>
             : activeFileBackedCsv.mode === 'source'
               ? <CsvSourceRangeView file={activeFileBackedSource.file} parser={activeFileBackedSource.stored.record.profile.parser} />
-              : <CsvViewWorkspace document={activeFileBackedCsv} defaultContent={<div />} onModeChange={setMode} onError={(message) => notify(message, 'error')} onReconnect={() => pickFiles('csv')} cacheEnabled={recoveryEnabled} />)
+              : <CsvViewWorkspace document={activeFileBackedCsv} defaultContent={<div />} onModeChange={setMode} onError={(message) => notify(message, 'error')} onReconnect={() => pickFiles('csv')} cacheEnabled={recoveryEnabled} theme={resolvedTheme} />)
             : activeDocument ? (activeDocument.payloadLoaded === false ? <div className="source-diagnostic" role="status"><span>저장 문서 본문을 불러오고 있습니다.</span></div> : <>
               {activeDocument.parseState === 'pending' && !(activeDocument.format === 'md' && activeDocument.mode === 'view') && <div className="source-diagnostic" role="status"><span>최신 원문을 해석하고 있습니다. 편집은 계속할 수 있습니다.</span></div>}
               {activeDocument.parseState === 'error' && <div className="source-diagnostic" role="alert"><span>원문을 해석하지 못했습니다. 마지막 유효 보기는 유지되며 구조 편집은 잠깁니다.</span><small>{activeDocument.diagnostics.find((item) => item.severity === 'error')?.message ?? activeDocument.sourceError}</small></div>}
@@ -1537,7 +1538,7 @@ export function App() {
     {showCommand && <CommandMenu commands={commands} onClose={closeCommandMenu} />}
     {(folderWorkspace.phase === 'confirming' || folderWorkspace.phase === 'saving') && <FolderTransitionDialog phase={folderWorkspace.phase} rows={folderWorkspace.rows} closing={folderWorkspace.isClosing} busyRowId={folderWorkspace.busyRowId} onSaveAll={() => { void folderWorkspace.saveAll() }} onDiscard={() => { void folderWorkspace.discardAndContinue() }} onCancel={folderWorkspace.cancelTransition} onContinue={(row) => { void folderWorkspace.continueSave(row) }} onConfirmDownload={(row) => { void folderWorkspace.confirmDownload(row) }} />}
     {showFolderDrawer && folderWorkspace.folder && drawerTree && <FolderTreeDrawer folder={folderWorkspace.folder} tree={drawerTree} onClose={closeFolderDrawer} />}
-    {showSettings && <SettingsDialog theme={theme} onThemeChange={changeTheme} recoveryEnabled={recoveryEnabled} onRecoveryChange={changeRecoveryFromSettings} onClearData={clearDataFromSettings} onClose={closeSettings} onInstall={installFromSettings} canInstall={Boolean(installPrompt)} fileBackedCsvEnabled={fileBackedCsvEnabled} onFileBackedCsvChange={changeDeveloperCsv} />}
+    {showSettings && <SettingsDialog theme={theme} onThemeChange={changeTheme} recoveryEnabled={recoveryEnabled} onRecoveryChange={changeRecoveryFromSettings} onClearData={clearDataFromSettings} onClose={closeSettings} onInstall={installFromSettings} canInstall={Boolean(installPrompt)} fileBackedCsvEnabled={fileBackedCsvEnabled} onFileBackedCsvChange={changeDeveloperCsv} onExportCsvBackup={() => { void csvViewStorage.exportBackup().then((backup) => downloadLocalBlob('csv-views.backup.json', new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }))).then(() => notify('CSV 보기 설정 백업을 다운로드했습니다.', 'success')).catch((error: unknown) => notify(error instanceof Error ? `CSV 보기 설정 백업 실패: ${error.message}` : 'CSV 보기 설정 백업에 실패했습니다.', 'error')) }} />}
     {showPaste && <PasteDialog text={pasteText} format={pasteFormat} onTextChange={setPasteText} onFormatChange={setPasteFormat} onClose={() => setShowPaste(false)} onOpen={() => { void createFromPaste() }} />}
     {runtimeAssetProgress && <RuntimeAssetDialog progress={runtimeAssetProgress} onRetry={() => { void retryRuntimeAssetGroup(runtimeAssetProgress.group).catch(() => undefined) }} onContinue={() => continueWithoutRuntimeAssetGroup(runtimeAssetProgress.group)} />}
     {relayRoute && relayError && <div className="status-banner relay-error-banner" role="status" aria-live="polite"><span>{relayError}</span><button className="subtle-button" onClick={() => { void runRelay(relayRoute) }}>다시 시도</button></div>}

@@ -1,6 +1,6 @@
 import { CSV_POLICY } from './policy'
 import type {
-  CsvColumnDefinition, CsvDateFormat, CsvDisplayOverride, CsvFileProfile, CsvFilter, CsvLayout,
+  CsvColumnDefinition, CsvDisplayOverride, CsvFileProfile, CsvFilter, CsvLayout,
   CsvValidationIssue, CsvValidationResult, CsvViewBackup, CsvViewBundle, CsvViewDefinition
 } from './model'
 import { isRecord } from './model'
@@ -111,6 +111,8 @@ export function findAffectedViews(profile: CsvFileProfile, views: CsvViewDefinit
   return affected
 }
 
+function checkProfile(input: unknown, path: string, includeOrder: true): Check<CsvFileProfile>
+function checkProfile(input: unknown, path: string, includeOrder: false): Check<Omit<CsvFileProfile, 'viewOrder'>>
 function checkProfile(input: unknown, path: string, includeOrder: boolean): Check<CsvFileProfile | Omit<CsvFileProfile, 'viewOrder'>> {
   const issues: CsvValidationIssue[] = [], filledDefaults: { path: string }[] = []
   if (!isRecord(input)) return { value: null, issues: [issue(path, 'type')], filledDefaults }
@@ -158,7 +160,7 @@ function checkParser(input: unknown, path: string): Check<CsvFileProfile['parser
     ['auto', 'present', 'absent'].includes(String(input.bom)) && typeof input.hasHeader === 'boolean' && typeof input.delimiter === 'string' && input.delimiter.length === 1 &&
     (input.quote === null || input.quote === '"' || input.quote === "'") && ['double-quote', 'backslash'].includes(String(input.escape)) && ['auto', 'lf', 'crlf', 'cr'].includes(String(input.newline))
   if (!valid) issues.push(issue(path, 'type'))
-  return { value: valid ? input as CsvFileProfile['parser'] : null, issues, filledDefaults: [] }
+  return { value: valid ? input as unknown as CsvFileProfile['parser'] : null, issues, filledDefaults: [] }
 }
 
 function checkColumn(input: unknown, path: string): Check<CsvColumnDefinition> {

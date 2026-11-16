@@ -38,7 +38,7 @@ export function CsvImportReviewDialog({ preview, columns, onCancel, onApply }: {
 }
 
 function filterColumnIds(filter: import('../../domain/csv-views/model').CsvFilter): string[] {
-  if (filter.op === 'and' || filter.op === 'or') return filter.children.flatMap(filterColumnIds)
-  if (filter.op === 'not') return filterColumnIds(filter.child)
-  return [filter.columnId]
+  if ('children' in filter) return filter.children.flatMap(filterColumnIds)
+  if ('child' in filter) return filterColumnIds(filter.child)
+  return 'columnId' in filter ? [filter.columnId] : []
 }

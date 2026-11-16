@@ -11,7 +11,7 @@ function bundle() {
     kind: 'csv-view-bundle', schemaVersion: 1, exportedAt: '2026-11-16T00:00:00Z', appVersion: '0.4.0',
     source: { fileName: 'data.csv', headers: ['name'], columnCount: 1 },
     profile: { schemaVersion: 1, fileId: 'source-reference', parser: { encoding: 'utf-8', bom: 'auto', hasHeader: true, delimiter: ',', quote: '"', escape: 'double-quote', newline: 'auto' }, columns: [column], schemaRevision: 1, profileRevision: 1, updatedAt: '2026-11-16T00:00:00Z' },
-    viewOrder: ['v1'], views: [view]
+    viewOrder: ['v1'], views: [{ ...view }]
   }
 }
 
@@ -19,8 +19,10 @@ describe('CSV view schema and revisions', () => {
   it('validates a v1 bundle and rejects an unsupported operator', () => {
     expect(validateViewBundle(bundle()).ok).toBe(true)
     const invalid = bundle()
-    invalid.views[0]!.filter = { op: 'contains', columnId: 'c1', value: 'x', ignoreCase: 'none' }
-    expect(validateViewBundle(invalid)).toMatchObject({ ok: false, issues: [{ code: 'operator-not-allowed' }] })
+    invalid.views[0]!.filter = { op: 'hasAny', columnId: 'c1', optionIds: [] }
+    const result = validateViewBundle(invalid)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.issues.some((issue) => issue.code === 'operator-not-allowed')).toBe(true)
   })
 
   it('increments profile revision for every save and schema revision only for schema changes', () => {

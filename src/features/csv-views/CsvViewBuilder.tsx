@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { allowedOperators } from '../../domain/csv-views/query'
-import type { CsvColumnDefinition, CsvFilter, CsvSaveResult, CsvStoredProfile, CsvViewDefinition, CsvLayout, CsvCellState } from '../../domain/csv-views/model'
+import type { CsvColumnDefinition, CsvFilter, CsvSaveResult, CsvStoredProfile, CsvViewDefinition, CsvLayout, CsvCellState, CsvSort } from '../../domain/csv-views/model'
 import type { CsvQueryState } from '../../app/csvViewController'
 
 export interface CsvViewBuilderProps {
@@ -45,7 +45,7 @@ export function CsvViewBuilder({ profile, initial, preview, onDraftChange, onApp
       {draft.layout.kind === 'calendar' && <label>날짜 컬럼<ColumnSelect columns={available.filter((column) => column.type === 'date' || column.type === 'datetime')} value={draft.layout.dateColumnId} onChange={(value) => change({ ...draft, layout: { kind: 'calendar', dateColumnId: value } })} /></label>}
       <fieldset className="csv-view-column-options"><legend>표시 컬럼</legend>{available.map((column) => <label key={column.id} className="csv-view-check-row"><input type="checkbox" checked={draft.columnIds.includes(column.id)} onChange={(event) => change({ ...draft, columnIds: event.currentTarget.checked ? [...draft.columnIds, column.id] : draft.columnIds.filter((id) => id !== column.id) })} /><span>{column.label}</span><small>{column.type}</small><button type="button" className="subtle-button" onClick={() => onEditColumnType(column.id)}>타입</button></label>)}</fieldset>
       <FilterEditor columns={available} draft={draft} onChange={change} />
-      <label className="csv-view-sort-label">정렬<select value={draft.sort[0]?.columnId ?? ''} onChange={(event) => { const id = event.currentTarget.value; change({ ...draft, sort: id ? [{ columnId: id, direction: draft.sort[0]?.direction ?? 'asc' }] : [] }) }}><option value="">원본 순서</option>{available.filter((column) => column.type !== 'multiSelect').map((column) => <option key={column.id} value={column.id}>{column.label}</option>)}</select><select aria-label="정렬 방향" disabled={!draft.sort.length} value={draft.sort[0]?.direction ?? 'asc'} onChange={(event) => change({ ...draft, sort: draft.sort.map((item) => ({ ...item, direction: event.currentTarget.value as 'asc' | 'desc' })) })}><option value="asc">오름차순</option><option value="desc">내림차순</option></select></label>
+      <SortEditor columns={available} sort={draft.sort} onChange={(sort) => change({ ...draft, sort })} />
       <p className="csv-view-preview-status">{preview.status === 'ready' ? `미리보기 ${preview.rows.length}행${preview.hasMore ? ' 이상' : ''}` : preview.status === 'loading' ? '미리보기 조회 중…' : preview.status === 'error' ? preview.error.message : '조건을 설정하면 미리보기를 확인할 수 있습니다.'}</p>
       {conflict && <div className="csv-view-conflict" role="alert"><strong>다른 탭에서 설정이 바뀌었습니다.</strong><span>초안은 유지했습니다. 현재 저장본 revision {conflict.record.profile.profileRevision}</span><button type="button" className="subtle-button" onClick={() => { void apply() }}>현재 저장본에 다시 적용</button></div>}
     </div>
@@ -58,25 +58,68 @@ function ColumnSelect({ columns, value, allowEmpty = false, onChange }: { column
 }
 
 function FilterEditor({ columns, draft, onChange }: { columns: CsvColumnDefinition[]; draft: CsvViewDefinition; onChange(draft: CsvViewDefinition): void }) {
-  const filter = draft.filter && 'columnId' in draft.filter ? draft.filter : null
-  const column = columns.find((item) => item.id === filter?.columnId)
-  const operators = column ? allowedOperators(column.type) : []
-  const updateOperator = (operator: string) => {
-    if (!column) return
-    onChange({ ...draft, filter: createLeafFilter(column, operator) })
-  }
-  const updateOptionIds = (optionIds: string[]) => {
-    if (filter && 'optionIds' in filter) onChange({ ...draft, filter: { ...filter, optionIds } })
-  }
-  return <fieldset className="csv-view-filter"><legend>필터</legend><div>
-    <select aria-label="필터 컬럼" value={filter?.columnId ?? ''} onChange={(event) => { const selected = columns.find((item) => item.id === event.currentTarget.value); const op = selected ? allowedOperators(selected.type)[0] : undefined; onChange({ ...draft, filter: selected && op ? createLeafFilter(selected, op) : null }) }}><option value="">필터 없음</option>{columns.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
-    {filter && column && <><select aria-label="필터 연산자" value={filter.op} onChange={(event) => updateOperator(event.currentTarget.value)}>{operators.map((operator) => <option key={operator} value={operator}>{operator}</option>)}</select>
-      {(filter.op === 'is' || filter.op === 'isNot') && <select aria-label="셀 상태" value={filter.state} onChange={(event) => onChange({ ...draft, filter: { ...filter, state: event.currentTarget.value as CsvCellState } })}>{(['value', 'empty', 'missing', 'null-marker', 'invalid'] as const).map((state) => <option key={state} value={state}>{state}</option>)}</select>}
-      {['in', 'notIn', 'hasAny', 'hasAll'].includes(filter.op) && (column.type === 'select' || column.type === 'multiSelect') && <select aria-label="필터 선택지" multiple value={'optionIds' in filter ? filter.optionIds : []} onChange={(event) => updateOptionIds(Array.from(event.currentTarget.selectedOptions, (option) => option.value))}>{column.parse.options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select>}
-      {'value' in filter && <><input aria-label="필터 값" value={filter.value} onChange={(event) => onChange({ ...draft, filter: { ...filter, value: event.currentTarget.value } })} />{(filter.op === 'contains' || filter.op === 'startsWith') && <select aria-label="대소문자 구분" value={filter.ignoreCase} onChange={(event) => onChange({ ...draft, filter: { ...filter, ignoreCase: event.currentTarget.value as 'none' | 'ascii' } })}><option value="none">대소문자 구분</option><option value="ascii">ASCII 무시</option></select>}</>}
-      <small>빈 값·실패 셀은 일반 비교에서 제외됩니다.</small></>}
-  </div></fieldset>
+  const filter = draft.filter
+  const setFilter = (next: CsvFilter | null) => onChange({ ...draft, filter: next })
+  const firstFilter = () => columns[0] ? createDefaultFilter(columns[0]) : null
+  const addFilter = () => { const next = firstFilter(); if (next) setFilter(filter ? { op: 'and', children: [filter, next] } : next) }
+  return <fieldset className="csv-view-filter"><legend>필터 조건</legend>
+    {!filter ? <><p>조건을 추가해 원본 전체 행을 필터링합니다.</p><button type="button" className="subtle-button" disabled={!columns.length} onClick={addFilter}>조건 추가</button></> : <>
+      <FilterNodeEditor filter={filter} columns={columns} onChange={setFilter} onRemove={() => setFilter(null)} />
+      <div className="csv-view-filter-actions">
+        <button type="button" className="subtle-button" onClick={() => { const next = firstFilter(); if (next) setFilter({ op: 'and', children: [filter, next] }) }}>AND 그룹으로 묶기</button>
+        <button type="button" className="subtle-button" onClick={() => { const next = firstFilter(); if (next) setFilter({ op: 'or', children: [filter, next] }) }}>OR 그룹으로 묶기</button>
+        <button type="button" className="subtle-button" onClick={() => setFilter('child' in filter ? filter.child : { op: 'not', child: filter })}>{'child' in filter ? 'NOT 해제' : 'NOT 적용'}</button>
+        <button type="button" className="subtle-button" onClick={() => setFilter(null)}>필터 지우기</button>
+      </div>
+      <small>빈 값·실패 셀은 일반 비교에서 제외됩니다.</small>
+    </>}
+  </fieldset>
 }
+
+function FilterNodeEditor({ filter, columns, onChange, onRemove }: { filter: CsvFilter; columns: CsvColumnDefinition[]; onChange(filter: CsvFilter): void; onRemove(): void }) {
+  if ('children' in filter) return <div className="csv-filter-group">
+    <div className="csv-filter-node-heading">
+      <select aria-label="필터 그룹 연산" value={filter.op} onChange={(event) => onChange({ ...filter, op: event.currentTarget.value as 'and' | 'or' })}><option value="and">모두 만족 (AND)</option><option value="or">하나 만족 (OR)</option></select>
+      <button type="button" className="subtle-button" onClick={() => { const child = columns[0] ? createDefaultFilter(columns[0]) : null; if (child) onChange({ ...filter, children: [...filter.children, child] }) }} disabled={!columns.length}>조건 추가</button>
+      <button type="button" className="subtle-button" onClick={() => { const child = columns[0] ? createDefaultFilter(columns[0]) : null; if (child) onChange({ ...filter, children: [...filter.children, { op: 'and', children: [child, child] }] }) }} disabled={!columns.length}>하위 그룹 추가</button>
+      <button type="button" className="icon-button" aria-label="그룹 삭제" onClick={onRemove}>×</button>
+    </div>
+    {filter.children.map((child, index) => <FilterNodeEditor key={index} filter={child} columns={columns} onChange={(next) => onChange({ ...filter, children: filter.children.map((item, childIndex) => childIndex === index ? next : item) })} onRemove={() => {
+      if (filter.children.length <= 2) onChange(filter.children.find((_, childIndex) => childIndex !== index) ?? filter)
+      else onChange({ ...filter, children: filter.children.filter((_, childIndex) => childIndex !== index) })
+    }} />)}
+  </div>
+  if ('child' in filter) return <div className="csv-filter-not"><strong>NOT</strong><FilterNodeEditor filter={filter.child} columns={columns} onChange={(child) => onChange({ op: 'not', child })} onRemove={onRemove} /><button type="button" className="icon-button" aria-label="부정 조건 삭제" onClick={onRemove}>×</button></div>
+  const column = columns.find((item) => item.id === filter.columnId)
+  const operators = column ? allowedOperators(column.type) : []
+  return <div className="csv-filter-leaf">
+    <select aria-label="필터 컬럼" value={filter.columnId} onChange={(event) => { const next = columns.find((item) => item.id === event.currentTarget.value); if (next) onChange(createDefaultFilter(next)) }}>{columns.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
+    {column && <><select aria-label="필터 연산자" value={filter.op} onChange={(event) => { const next = createLeafFilter(column, event.currentTarget.value); if (next) onChange(next) }}>{operators.map((operator) => <option key={operator} value={operator}>{operator}</option>)}</select>
+      {(filter.op === 'is' || filter.op === 'isNot') && <select aria-label="셀 상태" value={filter.state} onChange={(event) => onChange({ ...filter, state: event.currentTarget.value as CsvCellState })}>{(['value', 'empty', 'missing', 'null-marker', 'invalid'] as const).map((state) => <option key={state} value={state}>{state}</option>)}</select>}
+      {['in', 'notIn', 'hasAny', 'hasAll'].includes(filter.op) && (column.type === 'select' || column.type === 'multiSelect') && <select aria-label="필터 선택지" multiple value={'optionIds' in filter ? filter.optionIds : []} onChange={(event) => { if ('optionIds' in filter) onChange({ ...filter, optionIds: Array.from(event.currentTarget.selectedOptions, (option) => option.value) }) }}>{column.parse.options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select>}
+      {'value' in filter && <><input aria-label="필터 값" value={filter.value} onChange={(event) => onChange({ ...filter, value: event.currentTarget.value })} />{(filter.op === 'contains' || filter.op === 'startsWith') && <select aria-label="대소문자 구분" value={filter.ignoreCase} onChange={(event) => onChange({ ...filter, ignoreCase: event.currentTarget.value as 'none' | 'ascii' })}><option value="none">대소문자 구분</option><option value="ascii">ASCII 무시</option></select>}</>}
+    </>}
+    <button type="button" className="icon-button" aria-label="조건 삭제" onClick={onRemove}>×</button>
+  </div>
+}
+
+function SortEditor({ columns, sort, onChange }: { columns: CsvColumnDefinition[]; sort: CsvSort[]; onChange(sort: CsvSort[]): void }) {
+  const sortable = columns.filter((column) => column.type !== 'multiSelect')
+  const add = () => { const next = sortable.find((column) => !sort.some((item) => item.columnId === column.id)); if (next) onChange([...sort, { columnId: next.id, direction: 'asc' }]) }
+  const move = (index: number, offset: -1 | 1) => { const target = index + offset; if (target < 0 || target >= sort.length) return; const next = [...sort]; [next[index], next[target]] = [next[target]!, next[index]!]; onChange(next) }
+  return <fieldset className="csv-view-sort"><legend>정렬 키</legend>
+    {sort.length === 0 && <p>원본 순서를 사용합니다.</p>}
+    {sort.map((item, index) => <div className="csv-view-sort-row" key={`${item.columnId}-${index}`}>
+      <span>{index + 1}.</span><select aria-label={`정렬 컬럼 ${index + 1}`} value={item.columnId} onChange={(event) => onChange(sort.map((current, currentIndex) => currentIndex === index ? { ...current, columnId: event.currentTarget.value } : current))}>{sortable.filter((column) => column.id === item.columnId || !sort.some((other, otherIndex) => otherIndex !== index && other.columnId === column.id)).map((column) => <option key={column.id} value={column.id}>{column.label}</option>)}</select>
+      <select aria-label={`정렬 방향 ${index + 1}`} value={item.direction} onChange={(event) => onChange(sort.map((current, currentIndex) => currentIndex === index ? { ...current, direction: event.currentTarget.value as 'asc' | 'desc' } : current))}><option value="asc">오름차순</option><option value="desc">내림차순</option></select>
+      <button type="button" className="subtle-button" disabled={index === 0} onClick={() => move(index, -1)} aria-label={`정렬 키 ${index + 1} 위로`}>↑</button><button type="button" className="subtle-button" disabled={index === sort.length - 1} onClick={() => move(index, 1)} aria-label={`정렬 키 ${index + 1} 아래로`}>↓</button>
+      <button type="button" className="icon-button" aria-label={`정렬 키 ${index + 1} 삭제`} onClick={() => onChange(sort.filter((_, currentIndex) => currentIndex !== index))}>×</button>
+    </div>)}
+    <button type="button" className="subtle-button" disabled={sort.length >= sortable.length} onClick={add}>정렬 키 추가</button>
+  </fieldset>
+}
+
+function createDefaultFilter(column: CsvColumnDefinition): CsvFilter { return { op: 'is', columnId: column.id, state: 'value' } }
 
 function createLeafFilter(column: CsvColumnDefinition, operator: string): CsvFilter | null {
   if (operator === 'is' || operator === 'isNot') return { op: operator, columnId: column.id, state: 'value' }

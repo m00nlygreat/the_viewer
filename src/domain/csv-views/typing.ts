@@ -215,16 +215,16 @@ function parseDateTime(rule: Extract<CsvColumnDefinition, { type: 'datetime' }>[
   const date = parseDate(match[1]!, ['YYYY-MM-DD'])
   if (!date) return { ok: false, code: 'date' }
   const hasTime = match[2] !== undefined
+  let suffix = match[6] ?? ''
   if (!hasTime) {
     if (!rule.allowDateOnly) return { ok: false, code: 'date' }
     if (rule.offset.kind !== 'assume') return { ok: false, code: 'offset-required' }
-    match[2] = '00'; match[3] = '00'; match[4] = '00'; match[5] = ''; match[6] = undefined
+    match[2] = '00'; match[3] = '00'; match[4] = '00'; match[5] = ''; suffix = ''
   }
   const hour = Number(match[2]), minute = Number(match[3]), second = Number(match[4] ?? '0')
   const millisecond = Number((match[5] ?? '').padEnd(3, '0').slice(0, 3))
   if (hour > 23 || minute > 59 || second > 59) return { ok: false, code: 'date' }
   const local = { year: Number(date.slice(0, 4)), month: Number(date.slice(5, 7)), day: Number(date.slice(8, 10)), hour, minute, second, millisecond }
-  const suffix = match[6]
   if (suffix) {
     const offset = parseOffset(suffix)
     if (offset === null) return { ok: false, code: 'date' }

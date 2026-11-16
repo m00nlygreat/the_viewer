@@ -112,8 +112,8 @@ export class DefaultCsvViewController implements CsvViewController {
 
   async initialize(): Promise<void> {
     const stored = this.getStored()
-    const selection = await this.storage.loadSelection(this.state.documentId).catch(() => null)
-    if (selection?.fileId === stored.record.fileId) this.state = { ...this.state, selection: validSelection(selection.selection, stored.views) ? selection.selection : { kind: 'builtin', mode: 'view' } }
+    const savedSelection = await this.storage.loadSelection(this.state.documentId).catch(() => null)
+    if (savedSelection?.fileId === stored.record.fileId) this.state = { ...this.state, selection: validSelection(savedSelection.selection, stored.views) ? savedSelection.selection : { kind: 'builtin', mode: 'view' } }
     await this.replaceSnapshot()
     if (this.source.sample) {
       this.state = { ...this.state, sample: { status: 'loading' } }; this.emit()
@@ -121,16 +121,19 @@ export class DefaultCsvViewController implements CsvViewController {
       catch (error) { this.state = { ...this.state, sample: { status: 'error', error: asQueryError(error) } } }
     }
     this.emit()
-    const selection = this.state.selection
-    if (selection.kind === 'custom' && !usesScopedQueries(this.activeView())) this.startQuery()
-    else if (this.defaultViewQuery && selection.kind === 'builtin' && selection.mode === 'view') this.startQuery(this.defaultView())
+    const activeSelection = this.state.selection
+    if (activeSelection.kind === 'custom' && !usesScopedQueries(this.activeView())) this.startQuery()
+    else if (this.defaultViewQuery && activeSelection.kind === 'builtin' && activeSelection.mode === 'view') this.startQuery(this.defaultView())
   }
 
   getState = (): CsvViewControllerState => this.state
   subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener) }
 
   select(selection: CsvViewSelection): void {
-    if (selection.kind === 'custom' && !this.getStored().views.some((view) => view.id === selection.viewId)) selection = { kind: 'builtin', mode: 'view' }
+    if (selection.kind === 'custom') {
+      const viewId = selection.viewId
+      if (!this.getStored().views.some((view) => view.id === viewId)) selection = { kind: 'builtin', mode: 'view' }
+    }
     this.state = { ...this.state, selection }
     this.saveSelection(selection)
     this.cancelCurrent()
