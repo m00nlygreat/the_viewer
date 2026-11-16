@@ -1,0 +1,186 @@
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type { ReactNode } from 'react'
+import type { FileBackedCsvDocument, ViewerDocument } from '../../domain/types'
+import { CSV_POLICY } from '../../domain/csv-views/policy'
+import { defaultView, type CsvImportPreview, type CsvSaveResult, type CsvViewDefinition } from '../../domain/csv-views/model'
+import { resolveMemoryCsvProfile } from '../../app/csvViewBootstrap'
+import { DefaultCsvViewController, type CsvViewController, type CsvViewControllerState } from '../../app/csvViewController'
+import { csvViewStorage } from '../../platform/csv/viewStorage'
+import { MemoryCsvDataSource } from '../../platform/csv/MemoryCsvDataSource'
+import { DuckDbCsvDataSource } from '../../platform/csv/DuckDbCsvDataSource'
+import { getCsvFileSource } from '../../platform/csv/fileRegistry'
+import { CsvColumnTypeEditor } from './CsvColumnTypeEditor'
+import { CsvImportReviewDialog } from './CsvImportReviewDialog'
+import { CsvViewBuilder } from './CsvViewBuilder'
+import { CsvViewHost } from './CsvViewHost'
+import { CsvViewManager } from './CsvViewManager'
+import { CsvViewTabs } from './CsvViewTabs'
+import type { CsvViewSelection as Selection } from '../../domain/csv-views/model'
+
+type CsvDocument = Extract<ViewerDocument, { format: 'csv' }> | FileBackedCsvDocument
+interface Props { document: CsvDocument; defaultContent: ReactNode; onModeChange(mode: 'view' | 'source'): void; onError(message: string): void; onReconnect(): void; cacheEnabled?: boolean }
+
+export function CsvViewWorkspace({ document, defaultContent, onModeChange, onError, onReconnect, cacheEnabled = false }: Props) {
+  const [controller, setController] = useState<CsvViewController | null>(null)
+  const [resolution, setResolution] = useState<Awaited<ReturnType<typeof resolveMemoryCsvProfile>> | null>(null)
+  const [starting, setStarting] = useState(true)
+  const [startupError, setStartupError] = useState('')
+  const [builder, setBuilder] = useState<CsvViewDefinition | null>(null)
+  const [manager, setManager] = useState(false)
+  const [typeColumnId, setTypeColumnId] = useState<string | null>(null)
+  const [importPreview, setImportPreview] = useState<CsvImportPreview | null>(null)
+  const [importMessage, setImportMessage] = useState('')
+  const documentRef = useRef(document)
+  documentRef.current = document
+
+  useEffect(() => {
+    let cancelled = false
+    let activeController: CsvViewController | null = null
+    setController(null); setResolution(null); setStartupError(''); setStarting(true)
+    const start = async () => {
+      let dataSource: MemoryCsvDataSource | DuckDbCsvDataSource
+      let stored
+      let header: (string | null)[]
+      let records: string[][]
+      let sourceRevision: string
+      let sourceName = document.name
+      const fileBacked = 'storageKind' in document && document.storageKind === 'file-csv'
+      if ('storageKind' in document && document.storageKind === 'file-csv') {
+        const entry = getCsvFileSource(document.id)
+        if (!entry) { setStartupError('원본 파일 연결이 필요합니다. 파일을 다시 선택해 주세요.'); return }
+        stored = await csvViewStorage.loadProfile(document.fileId)
+        if (!stored) throw new Error('저장된 CSV 설정을 찾을 수 없습니다.')
+        header = entry.sample.header; records = entry.sample.records; sourceRevision = document.sourceRevision
+        dataSource = new DuckDbCsvDataSource(entry.file, entry.handle, entry.sample, stored.record.profile, document.id, document.fileId, document.sourceRevision, cacheEnabled)
+      } else {
+        const memoryDocument = document
+        const linked = await resolveMemoryCsvProfile(memoryDocument)
+        if (cancelled) return
+        if (linked.status === 'choose') { setResolution(linked); return }
+        stored = linked.stored
+        const model = memoryDocument.model
+        const width = Math.max(model.headers.length, ...model.rows.map((row) => row.length), 0)
+        header = model.hasHeader ? model.headers : Array.from({ length: width }, () => null)
+        records = model.rows
+        sourceRevision = `${memoryDocument.id}:${memoryDocument.revision}`
+        dataSource = new MemoryCsvDataSource()
+      }
+      activeController = new DefaultCsvViewController({
+        documentId: document.id, sourceRevision, stored, header, records, dataSource, storage: csvViewStorage, sourceName,
+        defaultViewQuery: fileBacked
+      })
+      await activeController.initialize()
+      if (cancelled) { activeController.dispose(); return }
+      const selection = activeController.getState().selection
+      if (document.mode === 'view' && selection.kind === 'builtin' && selection.mode === 'source') activeController.select({ kind: 'builtin', mode: 'view' })
+      setController(activeController); setStarting(false)
+    }
+    void start().catch((error: unknown) => {
+      if (cancelled) return
+      setStartupError(error instanceof Error ? error.message : 'CSV 보기를 준비하지 못했습니다.')
+      setStarting(false)
+    })
+    return () => { cancelled = true; activeController?.dispose() }
+  }, [cacheEnabled, document.id])
+
+  useEffect(() => {
+    if (!controller || !('model' in document) || document.format !== 'csv') return
+    if (document.parseState !== 'ready' || document.modelRevision !== document.revision) return
+    const header = document.model.hasHeader ? document.model.headers : Array.from({ length: Math.max(document.model.headers.length, ...document.model.rows.map((row) => row.length), 0) }, () => null)
+    void controller.updateSnapshot(`${document.id}:${document.revision}`, header, document.model.rows).catch((error: unknown) => onError(error instanceof Error ? error.message : 'CSV 작업본을 갱신하지 못했습니다.'))
+  }, [controller, document, onError])
+
+  const subscribe = useCallback((listener: () => void) => controller?.subscribe(listener) ?? (() => undefined), [controller])
+  const getSnapshot = useCallback((): CsvViewControllerState | null => controller?.getState() ?? null, [controller])
+  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+  const stored = state?.profile.status === 'ready' ? state.profile.stored : null
+  const sample = state?.sample.status === 'ready' ? state.sample.sample : null
+  const views = useMemo(() => stored?.views.map((view) => ({ id: view.id, name: view.name, layout: view.layout.kind })) ?? [], [stored])
+
+  const chooseIdentity = async (fileId: string | 'new') => {
+    if (!('model' in document) || document.format !== 'csv') return
+    try {
+      const linked = await resolveMemoryCsvProfile(document, fileId)
+      setResolution(null)
+      if (linked.status !== 'linked') return
+      const source = new MemoryCsvDataSource()
+      const model = documentRef.current
+      if (!('model' in model) || model.format !== 'csv') return
+      const width = Math.max(model.model.headers.length, ...model.model.rows.map((row) => row.length), 0)
+      const header = model.model.hasHeader ? model.model.headers : Array.from({ length: width }, () => null)
+      const next = new DefaultCsvViewController({ documentId: model.id, sourceRevision: `${model.id}:${model.revision}`, stored: linked.stored, header, records: model.model.rows, dataSource: source, storage: csvViewStorage, sourceName: model.name })
+      await next.initialize(); setController(next); setStarting(false)
+    } catch (error) { setStartupError(error instanceof Error ? error.message : 'CSV 설정을 연결하지 못했습니다.') }
+  }
+
+  const select = (selection: Selection) => {
+    if (!controller) return
+    controller.select(selection)
+    if (selection.kind === 'builtin') onModeChange(selection.mode)
+    else onModeChange('view')
+  }
+  const addView = () => {
+    if (!stored) return
+    setBuilder(defaultView(crypto.randomUUID(), '새 보기', stored.record.profile.columns.map((column) => column.id)))
+  }
+  const applyView = async (draft: CsvViewDefinition): Promise<CsvSaveResult> => {
+    if (!controller) return { ok: false, reason: 'storage', error: { code: 'unavailable', message: 'CSV controller가 준비되지 않았습니다.' } }
+    const result = await controller.saveView(draft)
+    if (result.ok) { setBuilder(null); controller.select({ kind: 'custom', viewId: draft.id }) }
+    return result
+  }
+  const downloadBundle = (ids: string[] | 'all') => {
+    if (!controller) return
+    const bundle = controller.exportViews(ids)
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = Object.assign(window.document.createElement('a'), { href: url, download: `${document.name.replace(/\.[^.]+$/u, '')}.views.json` })
+    anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1800)
+  }
+  const readImport = async (file: File) => {
+    if (!controller) return
+    if (file.size > CSV_POLICY.maxImportBytes) { setImportMessage('가져오기 JSON은 5 MiB 이하여야 합니다.'); return }
+    try {
+      const preview = await controller.previewImport(JSON.parse(await file.text()) as unknown)
+      if (!preview.ok) setImportMessage(preview.issues.map((issue) => issue.detail ?? issue.code).join(' · '))
+      else { setImportMessage(''); setImportPreview(preview.value) }
+    } catch (error) { setImportMessage(error instanceof Error ? error.message : 'JSON 파일을 읽지 못했습니다.') }
+  }
+  const applyImport = async (decisions: import('../../domain/csv-views/model').CsvImportDecisions) => {
+    if (!controller || !importPreview) return
+    const result = await controller.applyImport(importPreview, decisions)
+    if (result.ok) setImportPreview(null)
+    else setImportMessage(result.reason === 'storage' ? result.error.message : result.reason === 'invalid' ? result.issues.map((issue) => issue.detail ?? issue.code).join(' · ') : '다른 탭에서 설정이 변경되었습니다.')
+  }
+
+  if (resolution?.status === 'choose') return <div className="csv-view-workspace"><section className="csv-link-choice" role="status"><h2>기존 CSV 설정을 연결할까요?</h2><p>같은 이름과 크기의 파일이 있어 내용을 확인한 뒤 연결해야 합니다.</p>{resolution.candidates.map((candidate) => <button className="secondary-button" type="button" key={candidate.fileId} onClick={() => { void chooseIdentity(candidate.fileId) }}>기존 보기 연결 · {candidate.basis}</button>)}<button className="secondary-button" type="button" onClick={() => { void chooseIdentity('new') }}>새 CSV 설정 만들기</button></section><div id="csv-view-panel" role="tabpanel" aria-label="CSV 보기">{defaultContent}</div></div>
+  if (starting) return 'storageKind' in document && document.storageKind === 'file-csv'
+    ? <div className="csv-view-state" role="status">CSV 보기 설정을 준비하고 있습니다.</div>
+    : <div className="csv-view-workspace"><div className="csv-view-state" role="status">CSV 보기 설정을 준비하고 있습니다.</div><div id="csv-view-panel" role="tabpanel" aria-label="CSV 보기">{defaultContent}</div></div>
+  if (startupError) return 'storageKind' in document && document.storageKind === 'file-csv'
+    ? <section className="csv-view-state" role="alert"><p>{startupError}</p><button className="secondary-button" type="button" onClick={onReconnect}>CSV 다시 열기</button></section>
+    : <div className="csv-view-workspace"><section className="csv-view-state" role="alert"><p>{startupError}</p><p>기존 CSV 보기는 계속 사용할 수 있습니다.</p></section><div id="csv-view-panel" role="tabpanel" aria-label="CSV 보기">{defaultContent}</div></div>
+  if (!controller || !state || !stored) return <div className="csv-view-state" role="status">CSV 보기 설정을 불러오는 중입니다.</div>
+  const selection = state.selection
+  const builtin = selection.kind === 'builtin'
+  const selectedView = selection.kind === 'custom' ? stored.views.find((view) => view.id === selection.viewId) : null
+  const defaultFileView = selection.kind === 'builtin' && 'storageKind' in document && document.storageKind === 'file-csv' && selection.mode === 'view'
+    ? defaultView('csv-default', '표', stored.record.profile.columns.map((column) => column.id)) : null
+  const cacheToken = 'storageKind' in document && document.storageKind === 'file-csv'
+    ? `${document.id}:${document.fileId}:${document.sourceRevision}:${stored.record.profile.schemaRevision}` : null
+  const selectedQuery = state.query
+  const editorSample = sample ?? (document.format === 'csv' && 'model' in document ? { header: document.model.headers, records: document.model.rows.slice(0, CSV_POLICY.sampleRecords), firstRecordNo: 1 as const, reachedEof: document.model.rows.length <= CSV_POLICY.sampleRecords, bytesRead: 0, stoppedBy: document.model.rows.length <= CSV_POLICY.sampleRecords ? 'eof' as const : 'records' as const } : null)
+  return <div className="csv-view-workspace">
+    <CsvViewTabs views={views} selection={state.selection} canAddView={state.link.status === 'linked'} onSelect={select} onAddView={addView} onManageViews={() => setManager(true)} />
+    {selection.kind === 'builtin' && selection.mode === 'view' && !defaultFileView && <div id="csv-view-panel" role="tabpanel" aria-label="CSV 보기">{defaultContent}</div>}
+    {selection.kind === 'builtin' && selection.mode === 'view' && defaultFileView && <CsvViewHost view={defaultFileView} columns={stored.record.profile.columns} query={selectedQuery} onLoadMore={() => controller.loadMore()} onRetry={() => controller.retry()} onEditView={addView} controller={controller} sample={sample} cacheToken={cacheToken} tabId="csv-view-builtin-view-tab" />}
+    {!builtin && selectedView && <CsvViewHost view={selectedView} columns={stored.record.profile.columns} query={state.query} onLoadMore={() => controller.loadMore()} onRetry={() => controller.retry()} onEditView={() => setBuilder(selectedView)} controller={controller} sample={sample} cacheToken={cacheToken} />}
+    {state.link.status === 'choose' && <p className="inline-warning">보기 설정을 연결할 대상을 선택해야 새 사용자 보기를 추가할 수 있습니다.</p>}
+    {state.sample.status === 'error' && <p className="inline-warning" role="status">표본 추천을 준비하지 못했습니다. 기존 설정과 기본 보기는 계속 사용할 수 있습니다.</p>}
+    {builder && <CsvViewBuilder profile={stored.record.profile} initial={builder} preview={state.query} onDraftChange={(draft) => controller.previewDraft(draft)} onApply={applyView} onCancel={() => { setBuilder(null); controller.endPreview() }} onEditColumnType={setTypeColumnId} />}
+    {typeColumnId && <CsvColumnTypeEditor column={stored.record.profile.columns.find((column) => column.id === typeColumnId)!} profile={stored.record.profile} views={stored.views} sample={editorSample} onApply={(draft) => controller.applyColumns(stored.record.profile.columns.map((column) => column.id === draft.id ? draft : column))} onCancel={() => setTypeColumnId(null)} />}
+    {manager && <CsvViewManager views={views} onClose={() => setManager(false)} onRename={async (id, name) => { const view = stored.views.find((item) => item.id === id); return view ? controller.saveView({ ...view, name, updatedAt: new Date().toISOString() }) : { ok: false, reason: 'invalid', issues: [{ path: '/viewId', code: 'required', detail: '보기를 찾을 수 없습니다.' }] } }} onDuplicate={(id) => controller.duplicateView(id)} onDelete={(id) => controller.deleteView(id)} onReorder={(order) => controller.reorderViews(order)} onExport={downloadBundle} onImport={(file) => { void readImport(file) }} />}
+    {importMessage && <p className="csv-view-error" role="alert">{importMessage}<button type="button" className="icon-button" aria-label="가져오기 오류 닫기" onClick={() => setImportMessage('')}>×</button></p>}
+    {importPreview && <CsvImportReviewDialog preview={importPreview} columns={stored.record.profile.columns} onCancel={() => setImportPreview(null)} onApply={(decisions) => { void applyImport(decisions) }} />}
+  </div>
+}
