@@ -7,13 +7,18 @@ import { emptyEnvModel } from '../domain/env/sourcePatch'
 import { isEnvModel } from '../domain/env/validate'
 import { parseDiff } from '../domain/diff/parse'
 import { isDiffModel } from '../domain/diff/validate'
+import type { CsvFileRecord, CsvSessionRecord, CsvViewRecord, CsvViewSelectionRecord } from '../domain/csv-views/model'
 
-interface ViewerDatabase extends DBSchema {
+export interface ViewerDatabase extends DBSchema {
   documents: { key: string; value: PersistedViewerDocument | PersistedViewerDocumentSummary; indexes: { 'by-opened': number } }
   documentPayloads: { key: string; value: PersistedViewerDocumentPayload }
   documentBlobs: { key: string; value: PersistedViewerDocumentBlobs }
   settings: { key: string; value: { key: string; value: unknown } }
   shares: { key: string; value: ShareTicketRecord | SharePayloadRecord | LegacyShareTicketRecord }
+  csvFiles: { key: string; value: CsvFileRecord }
+  csvViews: { key: [string, string]; value: CsvViewRecord; indexes: { 'by-file': string } }
+  csvSessions: { key: string; value: CsvSessionRecord }
+  csvViewSelections: { key: string; value: CsvViewSelectionRecord }
 }
 
 interface ShareTicketFile { name: string; type: string }
@@ -27,7 +32,7 @@ interface DocumentBlobSignature { savedBytes: ArrayBuffer; initialBytes?: ArrayB
 const documentBlobSignatures = new Map<string, DocumentBlobSignature>()
 function getDatabase(): Promise<IDBPDatabase<ViewerDatabase>> {
   if (!database) {
-    const opening = openDB<ViewerDatabase>(`the-viewer:${__APP_BASE__}`, 3, {
+    const opening = openDB<ViewerDatabase>(`the-viewer:${__APP_BASE__}`, 4, {
       upgrade(db, oldVersion, _newVersion, transaction) {
         if (!db.objectStoreNames.contains('documents')) {
           const documents = db.createObjectStore('documents', { keyPath: 'id' })
@@ -35,6 +40,13 @@ function getDatabase(): Promise<IDBPDatabase<ViewerDatabase>> {
         }
         if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'key' })
         if (!db.objectStoreNames.contains('shares')) db.createObjectStore('shares', { keyPath: 'id' })
+        if (!db.objectStoreNames.contains('csvFiles')) db.createObjectStore('csvFiles', { keyPath: 'fileId' })
+        if (!db.objectStoreNames.contains('csvViews')) {
+          const views = db.createObjectStore('csvViews', { keyPath: ['fileId', 'viewId'] })
+          views.createIndex('by-file', 'fileId')
+        }
+        if (!db.objectStoreNames.contains('csvSessions')) db.createObjectStore('csvSessions', { keyPath: 'documentId' })
+        if (!db.objectStoreNames.contains('csvViewSelections')) db.createObjectStore('csvViewSelections', { keyPath: 'documentId' })
         const payloads = db.objectStoreNames.contains('documentPayloads')
           ? transaction.objectStore('documentPayloads')
           : db.createObjectStore('documentPayloads', { keyPath: 'id' })
@@ -78,6 +90,9 @@ function getDatabase(): Promise<IDBPDatabase<ViewerDatabase>> {
   }
   return database
 }
+
+/** Shared database entry point for CSV settings; all features use the same v4 upgrade owner. */
+export function getViewerDatabase(): Promise<IDBPDatabase<ViewerDatabase>> { return getDatabase() }
 
 export interface PersistedFolderWorkspace {
   schemaVersion: 1
@@ -153,14 +168,18 @@ export async function saveDocumentMode(id: string, mode: 'view' | 'source'): Pro
 
 export async function replaceWorkspace(next: PersistedFolderWorkspace | null, recoveryEnabled: boolean): Promise<void> {
   const db = await getDatabase()
-  const tx = db.transaction(['documents', 'documentPayloads', 'documentBlobs', 'settings'], 'readwrite')
+  const tx = db.transaction(['documents', 'documentPayloads', 'documentBlobs', 'settings', 'csvSessions', 'csvViewSelections'], 'readwrite')
   const documents = tx.objectStore('documents')
   const payloads = tx.objectStore('documentPayloads')
   const blobs = tx.objectStore('documentBlobs')
   const settings = tx.objectStore('settings')
+  const sessions = tx.objectStore('csvSessions')
+  const selections = tx.objectStore('csvViewSelections')
   await documents.clear()
   await payloads.clear()
   await blobs.clear()
+  await sessions.clear()
+  await selections.clear()
   documentBlobSignatures.clear()
   await settings.delete('documentModes')
   if (recoveryEnabled && next) await settings.put({ key: 'workspace', value: next })
@@ -187,7 +206,7 @@ export async function saveDocument(document: ViewerDocument): Promise<void> {
 }
 export async function removeDocument(id: string): Promise<void> {
   const db = await getDatabase()
-  const tx = db.transaction(['documents', 'documentPayloads', 'documentBlobs', 'settings'], 'readwrite')
+  const tx = db.transaction(['documents', 'documentPayloads', 'documentBlobs', 'settings', 'csvSessions', 'csvViewSelections'], 'readwrite')
   const documents = tx.objectStore('documents')
   const payloads = tx.objectStore('documentPayloads')
   const blobs = tx.objectStore('documentBlobs')
@@ -196,22 +215,24 @@ export async function removeDocument(id: string): Promise<void> {
   const modes = isRecord(record?.value) ? { ...record.value } : {}
   delete modes[id]
   documentBlobSignatures.delete(id)
-  await Promise.all([documents.delete(id), payloads.delete(id), blobs.delete(id), settings.put({ key: 'documentModes', value: modes }), tx.done])
+  await Promise.all([documents.delete(id), payloads.delete(id), blobs.delete(id), tx.objectStore('csvSessions').delete(id), tx.objectStore('csvViewSelections').delete(id), settings.put({ key: 'documentModes', value: modes }), tx.done])
 }
 export async function clearDocuments(): Promise<void> {
   const db = await getDatabase()
-  const tx = db.transaction(['documents', 'documentPayloads', 'documentBlobs', 'shares', 'settings'], 'readwrite')
+  const tx = db.transaction(['documents', 'documentPayloads', 'documentBlobs', 'shares', 'settings', 'csvSessions', 'csvViewSelections'], 'readwrite')
   const settings = tx.objectStore('settings')
   documentBlobSignatures.clear()
-  await Promise.all([tx.objectStore('documents').clear(), tx.objectStore('documentPayloads').clear(), tx.objectStore('documentBlobs').clear(), tx.objectStore('shares').clear(), settings.delete('documentModes'), tx.done])
+  await Promise.all([tx.objectStore('documents').clear(), tx.objectStore('documentPayloads').clear(), tx.objectStore('documentBlobs').clear(), tx.objectStore('shares').clear(), tx.objectStore('csvSessions').clear(), tx.objectStore('csvViewSelections').clear(), settings.delete('documentModes'), tx.done])
 }
 export async function clearAllData(): Promise<void> {
   const db = await getDatabase()
-  const tx = db.transaction(['documents', 'documentPayloads', 'documentBlobs', 'settings', 'shares'], 'readwrite')
+  const tx = db.transaction(['documents', 'documentPayloads', 'documentBlobs', 'settings', 'shares', 'csvFiles', 'csvViews', 'csvSessions', 'csvViewSelections'], 'readwrite')
   documentBlobSignatures.clear()
   await Promise.all([
-    tx.objectStore('documents').clear(), tx.objectStore('documentPayloads').clear(), tx.objectStore('documentBlobs').clear(), tx.objectStore('settings').clear(), tx.objectStore('shares').clear(), tx.done
+    tx.objectStore('documents').clear(), tx.objectStore('documentPayloads').clear(), tx.objectStore('documentBlobs').clear(), tx.objectStore('settings').clear(), tx.objectStore('shares').clear(),
+    tx.objectStore('csvFiles').clear(), tx.objectStore('csvViews').clear(), tx.objectStore('csvSessions').clear(), tx.objectStore('csvViewSelections').clear(), tx.done
   ])
+  await import('./csv/opfsCache').then(({ clearAllCsvCache }) => clearAllCsvCache())
 }
 export async function readSetting<T>(key: string, fallback: T): Promise<T> {
   const record = await (await getDatabase()).get('settings', key)
