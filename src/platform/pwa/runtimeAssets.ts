@@ -1,4 +1,4 @@
-export type RuntimeAssetGroup = 'fonts' | 'monaco'
+export type RuntimeAssetGroup = 'fonts' | 'monaco' | 'csvQuery'
 
 export interface RuntimeAssetProgress {
   group: RuntimeAssetGroup
@@ -11,7 +11,7 @@ export interface RuntimeAssetProgress {
 }
 
 interface RuntimeAsset { url: string; size: number }
-interface RuntimeAssetManifest { fonts: RuntimeAsset[]; monaco: RuntimeAsset[] }
+interface RuntimeAssetManifest { fonts: RuntimeAsset[]; monaco: RuntimeAsset[]; csvQuery: RuntimeAsset[] }
 
 const appBase = typeof __APP_BASE__ === 'string' ? __APP_BASE__ : '/'
 const appVersion = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev'
@@ -182,10 +182,10 @@ async function waitForServiceWorkerReady(): Promise<void> {
 }
 
 function parseRuntimeAssetManifest(value: unknown): RuntimeAssetManifest {
-  if (!isRecord(value) || !isRuntimeAssetArray(value.fonts) || !isRuntimeAssetArray(value.monaco)) {
+  if (!isRecord(value) || !isRuntimeAssetArray(value.fonts) || !isRuntimeAssetArray(value.monaco) || !isRuntimeAssetArray(value.csvQuery)) {
     throw new Error('필요한 파일 목록 형식이 올바르지 않습니다.')
   }
-  return { fonts: value.fonts, monaco: value.monaco }
+  return { fonts: value.fonts, monaco: value.monaco, csvQuery: value.csvQuery }
 }
 
 function isRuntimeAssetArray(value: unknown): value is RuntimeAsset[] {

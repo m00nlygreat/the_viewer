@@ -11,7 +11,7 @@ interface Props {
 export function RuntimeAssetDialog({ progress, onRetry, onContinue }: Props) {
   const dialog = useFocusTrap<HTMLElement>()
   const percent = progress.totalBytes > 0 ? Math.min(100, Math.floor(progress.loadedBytes / progress.totalBytes * 100)) : null
-  const label = progress.group === 'fonts' ? '글꼴' : '편집기'
+  const label = progress.group === 'fonts' ? '글꼴' : progress.group === 'monaco' ? '편집기' : 'CSV 조회 엔진'
   useEffect(() => { dialog.current?.focus() }, [dialog, progress.group])
 
   return <div className="overlay runtime-asset-overlay">
@@ -20,7 +20,7 @@ export function RuntimeAssetDialog({ progress, onRetry, onContinue }: Props) {
         <h2 id="runtime-asset-title">{progress.status === 'loading' ? `${label} 준비 중` : '파일을 준비하지 못했습니다'}</h2>
         <p id="runtime-asset-description">
           {progress.status === 'loading'
-            ? progress.group === 'fonts' ? '글꼴을 오프라인에서도 사용할 수 있도록 기기에 저장합니다.' : '편집기를 열기 위해 필요한 파일을 기기에 저장합니다.'
+            ? progress.group === 'fonts' ? '글꼴을 오프라인에서도 사용할 수 있도록 기기에 저장합니다.' : progress.group === 'monaco' ? '편집기를 열기 위해 필요한 파일을 기기에 저장합니다.' : '대용량 CSV 조회에 필요한 파일을 같은 출처에 저장합니다.'
             : progress.error}
         </p>
         <progress className="runtime-asset-progress" max={progress.totalBytes || 1} value={progress.status === 'loading' && progress.totalBytes > 0 ? Math.min(progress.loadedBytes, progress.totalBytes) : undefined} aria-label={`${label} 다운로드 진행률`} />

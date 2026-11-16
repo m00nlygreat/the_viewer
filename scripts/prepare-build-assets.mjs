@@ -52,6 +52,11 @@ for (const name of ['workbox-precaching', 'workbox-routing']) {
 }
 
 const notices = []
+const csvQueryDir = path.join(outputDir, 'csv-query')
+await mkdir(csvQueryDir, { recursive: true })
+for (const name of ['duckdb-browser-mvp.worker.js', 'duckdb-mvp.wasm']) {
+  await copyFile(path.join(root, 'node_modules', '@duckdb', 'duckdb-wasm', 'dist', name), path.join(csvQueryDir, name))
+}
 for (const location of [...includedPackages].sort((left, right) => left.localeCompare(right))) {
   const entry = packages[location]
   if (!entry || typeof entry !== 'object') continue

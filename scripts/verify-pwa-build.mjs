@@ -34,7 +34,7 @@ for (const icon of manifest.icons ?? []) {
 const runtimeAssetsPath = path.join(output, 'runtime-assets.json')
 assert.ok(existsSync(runtimeAssetsPath), 'Missing on-demand runtime asset manifest')
 const runtimeAssets = JSON.parse(readFileSync(runtimeAssetsPath, 'utf8'))
-for (const group of ['fonts', 'monaco']) {
+for (const group of ['fonts', 'monaco', 'csvQuery']) {
   assert.ok(Array.isArray(runtimeAssets[group]) && runtimeAssets[group].length > 0, `Missing on-demand ${group} assets`)
   for (const asset of runtimeAssets[group]) {
     assert.ok(typeof asset.url === 'string' && Number.isSafeInteger(asset.size) && asset.size >= 0, `Invalid on-demand ${group} asset entry`)
@@ -47,7 +47,7 @@ for (const group of ['fonts', 'monaco']) {
 const worker = readFileSync(path.join(output, 'sw.js'), 'utf8')
 assert.match(worker, /"url":"[^"]*runtime-assets\.json"/u, 'Runtime asset manifest must be available offline from the install-time precache')
 const basePath = new URL(base, 'https://viewer.invalid').pathname
-for (const group of ['fonts', 'monaco']) {
+for (const group of ['fonts', 'monaco', 'csvQuery']) {
   for (const asset of runtimeAssets[group]) {
     const precachePath = new URL(asset.url, new URL(base, 'https://viewer.invalid')).pathname.slice(basePath.length)
     assert.ok(!worker.includes(`"url":"${precachePath}"`), `${group} asset is still in the install-time precache: ${asset.url}`)
@@ -55,4 +55,4 @@ for (const group of ['fonts', 'monaco']) {
 }
 assert.ok(worker.includes(`\`${base}\``) && worker.includes('index.html'), 'PWA navigation fallback does not use the configured base path')
 const assetBytes = (group) => runtimeAssets[group].reduce((total, asset) => total + asset.size, 0)
-console.log(`Verified PWA output for base ${base}; ${runtimeAssets.fonts.length} font files (${assetBytes('fonts')} bytes), ${runtimeAssets.monaco.length} Monaco files (${assetBytes('monaco')} bytes) load on demand`)
+console.log(`Verified PWA output for base ${base}; fonts ${assetBytes('fonts')} bytes, Monaco ${assetBytes('monaco')} bytes, CSV query ${assetBytes('csvQuery')} bytes load on demand`)

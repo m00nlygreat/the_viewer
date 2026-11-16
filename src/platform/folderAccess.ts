@@ -1,4 +1,3 @@
-import { assertInputFileSize } from '../domain/inputPolicy'
 import { isFolderPath, joinFolderPath, type FolderEntry, type FolderPath, type FolderWorkspace } from '../domain/workspace'
 
 export type FolderSource =
@@ -75,7 +74,6 @@ export async function readFolderFile(source: FolderSource, path: FolderPath, sig
   if (source.kind === 'input') {
     const file = source.files.get(path)
     if (!file) throw new Error(`“${path}” 파일을 찾을 수 없습니다. 폴더를 새로고침하세요.`)
-    assertInputFileSize(file.name, file.size, navigator.userAgent)
     throwIfAborted(signal)
     return { file }
   }
@@ -87,7 +85,6 @@ export async function readFolderFile(source: FolderSource, path: FolderPath, sig
     const handle = await parent.getFileHandle(filename)
     throwIfAborted(signal)
     const file = await handle.getFile()
-    assertInputFileSize(file.name, file.size, navigator.userAgent)
     throwIfAborted(signal)
     return { file, fileHandle: handle }
   } catch (error) { throw normalizeFolderError(error, path) }

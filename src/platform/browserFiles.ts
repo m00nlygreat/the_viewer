@@ -110,6 +110,20 @@ export function downloadLocalFile(name: string, mime: string, bytes: Uint8Array)
   window.setTimeout(() => URL.revokeObjectURL(url), 1800)
 }
 
+/** Downloads an already-open file reference without copying it into an ArrayBuffer. */
+export function downloadLocalBlob(name: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob)
+  const anchor = Object.assign(document.createElement('a'), { href: url, download: name })
+  anchor.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1800)
+}
+
+export async function shareLocalBlob(name: string, blob: Blob): Promise<void> {
+  if (!navigator.share) throw new Error('이 브라우저에서는 시스템 공유를 사용할 수 없습니다.')
+  const file = blob instanceof File ? blob : new File([blob], name, { type: blob.type || 'text/csv' })
+  await navigator.share({ files: [file], title: name })
+}
+
 export async function readClipboardText(): Promise<string> {
   if (!navigator.clipboard?.readText) throw new Error('현재 브라우저에서 클립보드 읽기를 지원하지 않습니다.')
   return navigator.clipboard.readText()
@@ -125,8 +139,14 @@ export async function readDroppedFiles(files: FileList | File[]): Promise<Picked
 }
 
 export async function readPickedFileBytes(file: PickedFile): Promise<Uint8Array> {
-  if ('bytes' in file && file.bytes) return file.bytes
-  if ('file' in file && file.file) return new Uint8Array(await file.file.arrayBuffer())
+  if ('bytes' in file && file.bytes) {
+    assertInputFileSize(file.name, file.bytes.byteLength, navigator.userAgent)
+    return file.bytes
+  }
+  if ('file' in file && file.file) {
+    assertInputFileSize(file.name, file.file.size, navigator.userAgent)
+    return new Uint8Array(await file.file.arrayBuffer())
+  }
   throw new Error('선택한 파일을 읽을 수 없습니다.')
 }
 
@@ -189,7 +209,8 @@ async function readFileHandle(fileHandle: FileSystemFileHandle): Promise<PickedF
 }
 
 function readFileReference(file: File, fileHandle?: FileSystemFileHandle): PickedFile {
-  assertInputFileSize(file.name, file.size, navigator.userAgent)
+  // Keep references available for the explicit file-backed CSV route. Consumers
+  // that create an in-memory document enforce the existing cap in readPickedFileBytes.
   return { name: file.name, type: file.type, file, fileHandle }
 }
 

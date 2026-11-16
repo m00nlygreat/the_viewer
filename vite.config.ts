@@ -73,11 +73,16 @@ function runtimeAssetManifest(base: string): Plugin {
         const monacoOutput = /(?:monacosourceeditor|codeblockeditor|monacojsonlanguage|editor\.worker).*\.(?:js|css)$/iu.test(normalizedFileName)
         if (monacoOutput) monaco.push({ url: `${base}${output.fileName}`, size })
       }
-      if (!fonts.length || !monaco.length) throw new Error('Runtime font or Monaco assets were not found in the PWA build.')
+      const csvQueryDir = resolve('dist/build-assets/csv-query')
+      const csvQuery = ['duckdb-browser-mvp.worker.js', 'duckdb-mvp.wasm'].map((name) => ({
+        url: `${base}csv-query/${name}`,
+        size: readFileSync(resolve(csvQueryDir, name)).byteLength
+      }))
+      if (!fonts.length || !monaco.length || csvQuery.length !== 2) throw new Error('Runtime font, Monaco, or CSV query assets were not found in the PWA build.')
       this.emitFile({
         type: 'asset',
         fileName: 'runtime-assets.json',
-        source: JSON.stringify({ fonts, monaco })
+        source: JSON.stringify({ fonts, monaco, csvQuery })
       })
     }
   }
@@ -103,7 +108,7 @@ export default defineConfig(({ mode }) => {
         registerType: 'prompt',
         injectManifest: {
           globPatterns: ['**/*.{html,js,css,svg,png,woff,woff2,ttf,json}'],
-          globIgnores: ['**/*.woff', '**/*.woff2', '**/*.ttf', '**/*monaco*.js', '**/*monaco*.css', '**/*MonacoSourceEditor*.js', '**/*CodeBlockEditor*.js', '**/*editor.worker*.js'],
+          globIgnores: ['**/*.woff', '**/*.woff2', '**/*.ttf', '**/*monaco*.js', '**/*monaco*.css', '**/*MonacoSourceEditor*.js', '**/*CodeBlockEditor*.js', '**/*editor.worker*.js', '**/csv-query/**'],
           maximumFileSizeToCacheInBytes: 15 * 1024 * 1024
         },
         manifest: {

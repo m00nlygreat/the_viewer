@@ -129,6 +129,8 @@ interface ViewerDocumentFields {
   sourceError?: string
   openedAt: number
   lastEditedAt: number
+  /** Original local file's modification time, when it was available at selection. */
+  sourceLastModified?: number
   parentId?: string
   /** Membership in the currently selected folder, independent of email attachment ownership. */
   folderRef?: FolderDocumentRef
@@ -163,6 +165,35 @@ export type ViewerDocument = (SupportedViewerDocument | PlainTextViewerDocument 
   /** False while a document list entry has not loaded its recoverable payload. */
   payloadLoaded?: boolean
 }
+
+/** A read-only CSV document whose source bytes stay in an external runtime registry. */
+export interface FileBackedCsvDocument {
+  id: string
+  name: string
+  format: 'csv'
+  mimeType: string
+  size: number
+  storageKind: 'file-csv'
+  fileId: string
+  sourceRevision: string
+  mode: EditorMode
+  openedAt: number
+  lastEditedAt: number
+  folderRef?: FolderDocumentRef
+  isDirty: false
+  capabilities: {
+    canView: boolean
+    canSource: boolean
+    canDownloadOriginal: boolean
+    canShare: boolean
+    canEditData: false
+    canOverwriteOriginal: false
+    canUndo: false
+  }
+  sourceState: { status: 'ready' } | { status: 'needs-file' } | { status: 'error'; message: string }
+}
+
+export type WorkspaceDocument = ViewerDocument | FileBackedCsvDocument
 
 type PersistedDocumentFor<K extends Format> = ViewerDocumentFields & {
   schemaVersion: 3
