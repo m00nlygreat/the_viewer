@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { CsvColumnDefinition, CsvViewDefinition } from '../../domain/csv-views/model'
 import type { CsvQueryState } from '../../app/csvViewController'
 import { CsvGalleryView } from './CsvGalleryView'
@@ -7,6 +8,7 @@ import { CsvKanbanView } from './CsvKanbanView'
 import { CsvCalendarView } from './CsvCalendarView'
 import type { CsvSample } from '../../domain/csv-views/model'
 import type { CsvViewController } from '../../app/csvViewController'
+import { ArrowDownUp, Copy, Download, Filter, MoreHorizontal, Plus, Settings2, Trash2, Type, Upload } from 'lucide-react'
 
 export interface CsvViewHostProps {
   view: CsvViewDefinition
@@ -15,6 +17,13 @@ export interface CsvViewHostProps {
   onLoadMore(): void
   onRetry(): void
   onEditView(): void
+  onEditColumnType(columnId: string): void
+  onManageViews(): void
+  onChangeView(view: CsvViewDefinition): void
+  onDuplicateView(): void
+  onDeleteView(): void
+  onExportView(): void
+  editable: boolean
   controller: Pick<CsvViewController, 'queryScoped' | 'discoverGroups'>
   sample: CsvSample | null
   cacheToken: string | null
@@ -22,11 +31,35 @@ export interface CsvViewHostProps {
   tabId?: string
 }
 
-export function CsvViewHost({ view, columns, query, onLoadMore, onRetry, onEditView, controller, sample, cacheToken, theme, tabId }: CsvViewHostProps) {
+export function CsvViewHost({ view, columns, query, onLoadMore, onRetry, onEditView, onEditColumnType, onManageViews, onChangeView, onDuplicateView, onDeleteView, onExportView, editable, controller, sample, cacheToken, theme, tabId }: CsvViewHostProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
   const columnMap = new Map(columns.map((column) => [column.id, column]))
   const scoped = view.layout.kind === 'kanban' || view.layout.kind === 'calendar'
   return <section id="csv-view-panel" className="csv-view-host" role="tabpanel" aria-labelledby={tabId ?? `csv-view-${view.id}-tab`}>
-    <div className="csv-view-heading"><div><h1>{view.name}</h1><p>{view.layout.kind === 'grid' ? '표' : view.layout.kind === 'list' ? '리스트' : view.layout.kind === 'gallery' ? '갤러리' : view.layout.kind === 'kanban' ? '칸반' : '캘린더'} 보기</p></div><button type="button" className="subtle-button" onClick={onEditView}>보기 편집</button></div>
+    <div className="csv-view-toolbar" aria-label={`${view.name} 도구 모음`}>
+      <div className="csv-view-toolbar-chips">
+        {layoutSummary(view, columnMap) && <span className="csv-view-chip summary" title={layoutSummary(view, columnMap)}><span className="csv-view-chip-text">{layoutSummary(view, columnMap)}</span></span>}
+        {view.filter && <span className="csv-view-chip summary" title={filterSummary(view.filter, columnMap)}><Filter size={13} aria-hidden="true" /><span className="csv-view-chip-text">{filterSummary(view.filter, columnMap)}</span>{editable && <button type="button" className="csv-view-chip-remove" aria-label="필터 지우기" onClick={() => onChangeView({ ...view, filter: null, updatedAt: new Date().toISOString() })}>×</button>}</span>}
+        {view.sort.map((sort) => <span className="csv-view-chip summary" key={sort.columnId} title={`${columnMap.get(sort.columnId)?.label ?? sort.columnId} ${sort.direction === 'asc' ? '오름차순' : '내림차순'}`}><ArrowDownUp size={13} aria-hidden="true" /><span className="csv-view-chip-text">{columnMap.get(sort.columnId)?.label ?? sort.columnId} {sort.direction === 'asc' ? '↑' : '↓'}</span>{editable && <button type="button" className="csv-view-chip-remove" aria-label={`${columnMap.get(sort.columnId)?.label ?? sort.columnId} 정렬 지우기`} onClick={() => onChangeView({ ...view, sort: view.sort.filter((item) => item.columnId !== sort.columnId), updatedAt: new Date().toISOString() })}>×</button>}</span>)}
+        <button type="button" className="csv-view-chip ghost" onClick={onEditView}><Plus size={13} aria-hidden="true" />필터</button>
+      </div>
+      <div className="csv-view-toolbar-spacer" />
+      <button type="button" className="csv-view-tool-button" onClick={() => { const columnId = view.columnIds[0] ?? columns[0]?.id; if (columnId) onEditColumnType(columnId) }} disabled={!columns.length}><Type size={15} aria-hidden="true" /><span>컬럼 타입</span></button>
+      <button type="button" className="csv-view-tool-button" onClick={onEditView}><Settings2 size={15} aria-hidden="true" /><span>뷰 설정</span></button>
+      <div className="csv-view-menu-wrap">
+        <button type="button" className="csv-view-tool-button icon-only" aria-label="뷰 메뉴" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}><MoreHorizontal size={17} aria-hidden="true" /></button>
+        {menuOpen && <div className="csv-view-menu" role="menu">
+          <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onEditView() }}><Settings2 size={14} aria-hidden="true" />뷰 설정 편집</button>
+          {editable && <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onDuplicateView() }}><Copy size={14} aria-hidden="true" />복제</button>}
+          {editable && <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onExportView() }}><Download size={14} aria-hidden="true" />뷰 다운로드 <small>.json</small></button>}
+          <hr />
+          <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onManageViews() }}><Settings2 size={14} aria-hidden="true" />보기 관리</button>
+          <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onManageViews() }}><Upload size={14} aria-hidden="true" />뷰 가져오기</button>
+          {editable && <><hr /><button type="button" role="menuitem" className="danger" onClick={() => { setMenuOpen(false); onDeleteView() }}><Trash2 size={14} aria-hidden="true" />뷰 삭제</button></>}
+          <p>뷰 설정은 브라우저에 따로 저장됩니다. CSV 수정 상태와 무관합니다.</p>
+        </div>}
+      </div>
+    </div>
     {view.layout.kind === 'kanban' && <CsvKanbanView view={view as CsvViewDefinition & { layout: Extract<CsvViewDefinition['layout'], { kind: 'kanban' }> }} columns={columns} sample={sample} controller={controller} />}
     {view.layout.kind === 'calendar' && <CsvCalendarView view={view as CsvViewDefinition & { layout: Extract<CsvViewDefinition['layout'], { kind: 'calendar' }> }} columns={columns} controller={controller} cacheToken={cacheToken} />}
     {!scoped && query.status === 'loading' && <div className="csv-view-state" role="status">조회 중…</div>}
@@ -39,4 +72,29 @@ export function CsvViewHost({ view, columns, query, onLoadMore, onRetry, onEditV
       {view.layout.kind === 'gallery' && <CsvGalleryView layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} />}
     </>}
   </section>
+}
+
+function layoutSummary(view: CsvViewDefinition, columns: ReadonlyMap<string, CsvColumnDefinition>): string {
+  if (view.layout.kind === 'list' && view.layout.groupColumnId) return `묶음 · ${columns.get(view.layout.groupColumnId)?.label ?? view.layout.groupColumnId}`
+  if (view.layout.kind === 'kanban') return `그룹 · ${columns.get(view.layout.groupColumnId)?.label ?? view.layout.groupColumnId}`
+  if (view.layout.kind === 'calendar') return `날짜 · ${columns.get(view.layout.dateColumnId)?.label ?? view.layout.dateColumnId}`
+  return ''
+}
+
+function filterSummary(filter: NonNullable<CsvViewDefinition['filter']>, columns: ReadonlyMap<string, CsvColumnDefinition>): string {
+  if ('children' in filter) return filter.children.map((child) => filterSummary(child, columns)).join(filter.op === 'and' ? ' 그리고 ' : ' 또는 ')
+  if ('child' in filter) return `아님 (${filterSummary(filter.child, columns)})`
+  const label = columns.get(filter.columnId)?.label ?? filter.columnId
+  if ('state' in filter) {
+    const state = { value: '값 있음', empty: '빈 값', missing: '원본 컬럼 없음', 'null-marker': 'null 표식', invalid: '해석 실패' }[filter.state]
+    return `${label} ${filter.op === 'is' ? '상태' : '상태 아님'} ${state}`
+  }
+  if ('optionIds' in filter) {
+    const column = columns.get(filter.columnId)
+    const values = column && (column.type === 'select' || column.type === 'multiSelect') ? filter.optionIds.map((id) => column.parse.options.find((option) => option.id === id)?.label ?? id).join(', ') : filter.optionIds.join(', ')
+    const operation = { in: '다음 중', notIn: '다음 아님', hasAny: '하나 포함', hasAll: '모두 포함' }[filter.op]
+    return `${label} ${operation} ${values}`
+  }
+  const operation: Record<string, string> = { eq: '같음', neq: '다름', lt: '<', lte: '≤', gt: '>', gte: '≥', contains: '포함', startsWith: '접두어' }
+  return `${label} ${operation[filter.op] ?? filter.op} ${filter.value}`
 }

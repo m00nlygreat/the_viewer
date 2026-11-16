@@ -28,6 +28,7 @@ export function CsvViewWorkspace({ document, defaultContent, onModeChange, onErr
   const [starting, setStarting] = useState(true)
   const [startupError, setStartupError] = useState('')
   const [builder, setBuilder] = useState<CsvViewDefinition | null>(null)
+  const [builderMode, setBuilderMode] = useState<'create' | 'edit'>('create')
   const [manager, setManager] = useState(false)
   const [typeColumnId, setTypeColumnId] = useState<string | null>(null)
   const [importPreview, setImportPreview] = useState<CsvImportPreview | null>(null)
@@ -127,6 +128,7 @@ export function CsvViewWorkspace({ document, defaultContent, onModeChange, onErr
   }
   const addView = () => {
     if (!stored) return
+    setBuilderMode('create')
     setBuilder(defaultView(crypto.randomUUID(), '새 보기', stored.record.profile.columns.map((column) => column.id)))
   }
   const applyView = async (draft: CsvViewDefinition): Promise<CsvSaveResult> => {
@@ -202,13 +204,13 @@ export function CsvViewWorkspace({ document, defaultContent, onModeChange, onErr
   const selectedQuery = state.query
   const editorSample = sample ?? (document.format === 'csv' && 'model' in document ? { header: document.model.headers, records: document.model.rows.slice(0, CSV_POLICY.sampleRecords), firstRecordNo: 1 as const, reachedEof: document.model.rows.length <= CSV_POLICY.sampleRecords, bytesRead: 0, stoppedBy: document.model.rows.length <= CSV_POLICY.sampleRecords ? 'eof' as const : 'records' as const } : null)
   return <div className="csv-view-workspace">
-    <CsvViewTabs views={views} selection={state.selection} canAddView={state.link.status === 'linked'} onSelect={select} onAddView={addView} onManageViews={() => setManager(true)} />
+    <CsvViewTabs views={views} selection={state.selection} canAddView={state.link.status === 'linked'} onSelect={select} onAddView={addView} />
     {selection.kind === 'builtin' && selection.mode === 'view' && !defaultFileView && <div id="csv-view-panel" role="tabpanel" aria-label="CSV 보기">{defaultContent}</div>}
-    {selection.kind === 'builtin' && selection.mode === 'view' && defaultFileView && <CsvViewHost view={defaultFileView} columns={stored.record.profile.columns} query={selectedQuery} onLoadMore={() => controller.loadMore()} onRetry={() => controller.retry()} onEditView={addView} controller={controller} sample={sample} cacheToken={cacheToken} theme={theme} tabId="csv-view-builtin-view-tab" />}
-    {!builtin && selectedView && <CsvViewHost view={selectedView} columns={stored.record.profile.columns} query={state.query} onLoadMore={() => controller.loadMore()} onRetry={() => controller.retry()} onEditView={() => setBuilder(selectedView)} controller={controller} sample={sample} cacheToken={cacheToken} theme={theme} />}
+    {selection.kind === 'builtin' && selection.mode === 'view' && defaultFileView && <CsvViewHost view={defaultFileView} columns={stored.record.profile.columns} query={selectedQuery} onLoadMore={() => controller.loadMore()} onRetry={() => controller.retry()} onEditView={addView} onEditColumnType={setTypeColumnId} onManageViews={() => setManager(true)} onChangeView={() => undefined} onDuplicateView={() => undefined} onDeleteView={() => undefined} onExportView={() => undefined} editable={false} controller={controller} sample={sample} cacheToken={cacheToken} theme={theme} tabId="csv-view-builtin-view-tab" />}
+    {!builtin && selectedView && <CsvViewHost view={selectedView} columns={stored.record.profile.columns} query={state.query} onLoadMore={() => controller.loadMore()} onRetry={() => controller.retry()} onEditView={() => { setBuilderMode('edit'); setBuilder(selectedView) }} onEditColumnType={setTypeColumnId} onManageViews={() => setManager(true)} onChangeView={(draft) => { void controller.saveView(draft) }} onDuplicateView={() => { void controller.duplicateView(selectedView.id) }} onDeleteView={() => { if (window.confirm(`“${selectedView.name}” 보기를 삭제할까요?`)) void controller.deleteView(selectedView.id) }} onExportView={() => downloadBundle([selectedView.id])} editable controller={controller} sample={sample} cacheToken={cacheToken} theme={theme} />}
     {state.link.status === 'choose' && <p className="inline-warning">보기 설정을 연결할 대상을 선택해야 새 사용자 보기를 추가할 수 있습니다.</p>}
     {state.sample.status === 'error' && <p className="inline-warning" role="status">표본 추천을 준비하지 못했습니다. 기존 설정과 기본 보기는 계속 사용할 수 있습니다.</p>}
-    {builder && <CsvViewBuilder profile={stored.record.profile} initial={builder} preview={state.query} onDraftChange={(draft) => controller.previewDraft(draft)} onApply={applyView} onCancel={() => { setBuilder(null); controller.endPreview() }} onEditColumnType={setTypeColumnId} />}
+    {builder && <CsvViewBuilder profile={stored.record.profile} sourceName={document.name} initial={builder} mode={builderMode} preview={state.query} onDraftChange={(draft) => controller.previewDraft(draft)} onApply={applyView} onCancel={() => { setBuilder(null); controller.endPreview() }} onEditColumnType={setTypeColumnId} />}
     {typeColumnId && <CsvColumnTypeEditor column={stored.record.profile.columns.find((column) => column.id === typeColumnId)!} profile={stored.record.profile} views={stored.views} sample={editorSample} onApply={(draft) => controller.applyColumns(stored.record.profile.columns.map((column) => column.id === draft.id ? draft : column))} onCancel={() => setTypeColumnId(null)} />}
     {manager && <CsvViewManager views={views} onClose={() => setManager(false)} onRename={async (id, name) => { const view = stored.views.find((item) => item.id === id); return view ? controller.saveView({ ...view, name, updatedAt: new Date().toISOString() }) : { ok: false, reason: 'invalid', issues: [{ path: '/viewId', code: 'required', detail: '보기를 찾을 수 없습니다.' }] } }} onDuplicate={(id) => controller.duplicateView(id)} onDelete={(id) => controller.deleteView(id)} onReorder={(order) => controller.reorderViews(order)} onExport={downloadBundle} onImport={(file) => { void readImport(file) }} />}
     {backupImport && <CsvBackupProfileDialog profiles={backupImport.profiles} onSelect={selectBackupProfile} onCancel={() => setBackupImport(null)} />}
