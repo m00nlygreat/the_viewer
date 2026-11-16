@@ -46,7 +46,7 @@ export async function matchIdentity(
   return weakCandidates.length ? { kind: 'ambiguous', candidates: weakCandidates.map(({ fileId }) => ({ fileId, basis: 'name-size' })) } : { kind: 'new' }
 }
 
-function isCsvFileIdentity(value: unknown): value is CsvFileIdentity {
+export function isCsvFileIdentity(value: unknown): value is CsvFileIdentity {
   if (typeof value !== 'object' || value === null) return false
   const identity = value as Partial<CsvFileIdentity>
   return typeof identity.name === 'string' && Number.isFinite(identity.size) && Number.isFinite(identity.lastModified) &&

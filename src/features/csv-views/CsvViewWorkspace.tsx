@@ -59,7 +59,7 @@ export function CsvViewWorkspace({ document, defaultContent, onModeChange, onErr
         const memoryDocument = document as Extract<ViewerDocument, { format: 'csv' }>
         const linked = await resolveMemoryCsvProfile(memoryDocument)
         if (cancelled) return
-        if (linked.status === 'choose') { setResolution(linked); return }
+        if (linked.status === 'choose' || linked.status === 'recover') { setResolution(linked); return }
         stored = linked.stored
         const model = memoryDocument.model
         const width = Math.max(model.headers.length, ...model.rows.map((row) => row.length), 0)
@@ -116,7 +116,7 @@ export function CsvViewWorkspace({ document, defaultContent, onModeChange, onErr
       const header = model.model.hasHeader ? model.model.headers : Array.from({ length: width }, () => null)
       const next = new DefaultCsvViewController({ documentId: model.id, sourceRevision: `${model.id}:${model.revision}`, stored: linked.stored, header, records: model.model.rows, dataSource: source, storage: csvViewStorage, sourceName: model.name })
       await next.initialize(); setController(next); setStarting(false)
-    } catch (error) { setStartupError(error instanceof Error ? error.message : 'CSV 설정을 연결하지 못했습니다.') }
+    } catch (error) { setStartupError(error instanceof Error ? error.message : 'CSV 설정을 연결하지 못했습니다.'); setStarting(false) }
   }
 
   const select = (selection: Selection) => {
@@ -184,6 +184,7 @@ export function CsvViewWorkspace({ document, defaultContent, onModeChange, onErr
   }
 
   if (resolution?.status === 'choose') return <div className="csv-view-workspace"><section className="csv-link-choice" role="status"><h2>기존 CSV 설정을 연결할까요?</h2><p>같은 이름과 크기의 파일이 있어 내용을 확인한 뒤 연결해야 합니다.</p>{resolution.candidates.map((candidate) => <button className="secondary-button" type="button" key={candidate.fileId} onClick={() => { void chooseIdentity(candidate.fileId) }}>기존 보기 연결 · {candidate.basis}</button>)}<button className="secondary-button" type="button" onClick={() => { void chooseIdentity('new') }}>새 CSV 설정 만들기</button></section><div id="csv-view-panel" role="tabpanel" aria-label="CSV 보기">{defaultContent}</div></div>
+  if (resolution?.status === 'recover') return <div className="csv-view-workspace"><section className="csv-link-choice" role="status"><h2>기존 CSV 설정 연결을 복구할까요?</h2><p>저장된 프로필의 원본 지문이 없습니다. 머리글이 같은 프로필을 확인한 뒤 연결하면 원본 지문을 다시 저장합니다.</p>{resolution.candidates.map((candidate) => <button className="secondary-button csv-recovery-candidate" type="button" key={candidate.fileId} onClick={() => { void chooseIdentity(candidate.fileId) }}><strong>기존 설정 연결</strong><small>{candidate.headers.map((header) => header ?? '(빈 머리글)').join(' · ')}</small></button>)}<button className="secondary-button" type="button" onClick={() => { void chooseIdentity('new') }}>새 CSV 설정 만들기</button></section><div id="csv-view-panel" role="tabpanel" aria-label="CSV 보기">{defaultContent}</div></div>
   if (starting) return 'storageKind' in document && document.storageKind === 'file-csv'
     ? <div className="csv-view-state" role="status">CSV 보기 설정을 준비하고 있습니다.</div>
     : <div className="csv-view-workspace"><div className="csv-view-state" role="status">CSV 보기 설정을 준비하고 있습니다.</div><div id="csv-view-panel" role="tabpanel" aria-label="CSV 보기">{defaultContent}</div></div>

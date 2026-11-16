@@ -8,6 +8,7 @@ import type { ViewerDocument } from '../domain/types'
 export type CsvProfileResolution =
   | { status: 'linked'; stored: CsvStoredProfile; identity: CsvFileIdentity }
   | { status: 'choose'; candidates: Extract<CsvIdentityMatch, { kind: 'ambiguous' }>['candidates']; identity: CsvFileIdentity; sample: CsvSample }
+  | { status: 'recover'; candidates: { fileId: string; headers: (string | null)[] }[]; identity: CsvFileIdentity; sample: CsvSample }
 
 export async function resolveMemoryCsvProfile(document: ViewerDocument, fileIdChoice?: string | 'new'): Promise<CsvProfileResolution> {
   if (document.format !== 'csv') throw new Error('CSV 문서가 아닙니다.')
@@ -30,6 +31,14 @@ export async function resolveMemoryCsvProfile(document: ViewerDocument, fileIdCh
       return { status: 'linked', stored, identity }
     }
     throw new Error('선택한 CSV 설정을 찾을 수 없습니다.')
+  }
+
+  if (fileIdChoice === undefined && match.kind === 'new' && model.hasHeader) {
+    const recoveryCandidates = (await csvViewStorage.listProfilesWithoutIdentity()).filter(({ profile }) =>
+      profile.parser.hasHeader && profile.parser.delimiter === model.delimiter && profile.columns.length === sample.header.length &&
+      profile.columns.every((column, index) => column.sourceIndex === index && column.sourceHeader === sample.header[index])
+    ).map(({ fileId, profile }) => ({ fileId, headers: profile.columns.map((column) => column.sourceHeader) }))
+    if (recoveryCandidates.length) return { status: 'recover', candidates: recoveryCandidates, identity, sample }
   }
 
   const columns: CsvColumnDefinition[] = recommendColumns(sample, null).map((item) => item.selected)

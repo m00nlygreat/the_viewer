@@ -5,10 +5,12 @@ import type {
 import { nextRevisions } from '../../domain/csv-views/model'
 import { validateProfile, validateViewDefinition } from '../../domain/csv-views/validate'
 import { getViewerDatabase } from '../storage'
+import { isCsvFileIdentity } from './fileIdentity'
 
 export interface CsvViewStorage {
   loadProfile(fileId: string): Promise<CsvStoredProfile | null>
   listIdentities(): Promise<{ fileId: string; identity: CsvFileIdentity; handle: FileSystemFileHandle | null }[]>
+  listProfilesWithoutIdentity(): Promise<{ fileId: string; profile: CsvFileRecord['profile'] }[]>
   createProfile(record: CsvFileRecord, views: CsvViewDefinition[]): Promise<CsvSaveResult>
   commit(fileId: string, expectedProfileRevision: number, change: CsvProfileChange): Promise<CsvSaveResult>
   touch(fileId: string, identity: CsvFileIdentity, handle: FileSystemFileHandle | null): Promise<void>
@@ -42,6 +44,15 @@ export class IndexedDbCsvViewStorage implements CsvViewStorage {
   async listIdentities(): Promise<{ fileId: string; identity: CsvFileIdentity; handle: FileSystemFileHandle | null }[]> {
     const records = await (await getViewerDatabase()).getAll('csvFiles')
     return records.map(({ fileId, identity, handle }) => ({ fileId, identity, handle }))
+  }
+
+  async listProfilesWithoutIdentity(): Promise<{ fileId: string; profile: CsvFileRecord['profile'] }[]> {
+    const records = await (await getViewerDatabase()).getAll('csvFiles')
+    return records.flatMap((record) => {
+      if (!record || typeof record.fileId !== 'string' || isCsvFileIdentity(record.identity)) return []
+      const checked = validateProfile(record.profile)
+      return checked.ok ? [{ fileId: record.fileId, profile: checked.value }] : []
+    })
   }
 
   async createProfile(record: CsvFileRecord, views: CsvViewDefinition[]): Promise<CsvSaveResult> {
