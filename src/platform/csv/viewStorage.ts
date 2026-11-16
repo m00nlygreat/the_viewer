@@ -142,7 +142,7 @@ export class IndexedDbCsvViewStorage implements CsvViewStorage {
       const stored = orderStored(record, viewsByFile.get(record.fileId) ?? [])
       const { viewOrder: _order, ...profile } = stored.record.profile
       profiles.push({
-        source: { fileName: record.identity.name, headers: profile.columns.map((column) => column.sourceHeader), columnCount: profile.columns.length },
+        source: { fileName: typeof record.identity?.name === 'string' ? record.identity.name : record.fileId, headers: profile.columns.map((column) => column.sourceHeader), columnCount: profile.columns.length },
         profile, viewOrder: [...stored.record.profile.viewOrder], views: stored.views
       })
     }

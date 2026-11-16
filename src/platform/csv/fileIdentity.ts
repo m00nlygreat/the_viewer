@@ -30,20 +30,29 @@ export async function matchIdentity(
       catch { /* Permission and browser-specific handle errors fall back to fingerprints. */ }
     }
   }
-  const folderCandidates = known.filter((candidate) => target.folder && candidate.identity.folder &&
+  const folderCandidates = known.filter((candidate) => isCsvFileIdentity(candidate.identity) && target.folder && candidate.identity.folder &&
     target.folder.rootId === candidate.identity.folder.rootId && target.folder.relativePath === candidate.identity.folder.relativePath &&
     target.size === candidate.identity.size && target.lastModified === candidate.identity.lastModified)
   if (folderCandidates.length === 1) return { kind: 'same', fileId: folderCandidates[0]!.fileId, basis: 'folder-path' }
 
-  const digestCandidates = known.filter((candidate) => target.headerDigest !== null && target.sampleDigest !== null &&
+  const digestCandidates = known.filter((candidate) => isCsvFileIdentity(candidate.identity) && target.headerDigest !== null && target.sampleDigest !== null &&
     target.headerDigest === candidate.identity.headerDigest && target.sampleDigest.algorithm === candidate.identity.sampleDigest?.algorithm &&
     target.sampleDigest.offset === candidate.identity.sampleDigest.offset && target.sampleDigest.length === candidate.identity.sampleDigest.length &&
     target.sampleDigest.digest === candidate.identity.sampleDigest.digest && target.size === candidate.identity.size)
   if (digestCandidates.length === 1) return { kind: 'same', fileId: digestCandidates[0]!.fileId, basis: 'digest' }
   if (digestCandidates.length > 1) return { kind: 'ambiguous', candidates: digestCandidates.map(({ fileId }) => ({ fileId, basis: 'digest' })) }
 
-  const weakCandidates = known.filter((candidate) => candidate.identity.name === target.name && candidate.identity.size === target.size)
+  const weakCandidates = known.filter((candidate) => isCsvFileIdentity(candidate.identity) && candidate.identity.name === target.name && candidate.identity.size === target.size)
   return weakCandidates.length ? { kind: 'ambiguous', candidates: weakCandidates.map(({ fileId }) => ({ fileId, basis: 'name-size' })) } : { kind: 'new' }
+}
+
+function isCsvFileIdentity(value: unknown): value is CsvFileIdentity {
+  if (typeof value !== 'object' || value === null) return false
+  const identity = value as Partial<CsvFileIdentity>
+  return typeof identity.name === 'string' && Number.isFinite(identity.size) && Number.isFinite(identity.lastModified) &&
+    (identity.headerDigest === null || typeof identity.headerDigest === 'string') &&
+    (identity.sampleDigest === null || typeof identity.sampleDigest === 'object') &&
+    (identity.folder === null || typeof identity.folder === 'object')
 }
 
 async function sha256(input: ArrayBuffer | Uint8Array): Promise<string> {
