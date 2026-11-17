@@ -4,6 +4,7 @@ import { safeDisplayFileName } from './displayName'
 
 interface HeaderProps {
   document: ViewerDocument | FileBackedCsvDocument | null
+  csvWorkspace?: boolean
   theme: 'light' | 'dark'
   canShare: boolean
   saveLabel: '저장' | '다운로드'
@@ -21,21 +22,24 @@ interface HeaderProps {
 }
 
 export function DocumentHeader(props: HeaderProps) {
-  const { document, theme, canShare, saveLabel, onModeChange, onThemeChange, onUndo, onRedo, onSave, onShare, onClose, onPickFiles, onOpenCommands, onOpenSettings, onBrowseFolder } = props
+  const { document, csvWorkspace = false, theme, canShare, saveLabel, onModeChange, onThemeChange, onUndo, onRedo, onSave, onShare, onClose, onPickFiles, onOpenCommands, onOpenSettings, onBrowseFolder } = props
   const unsupported = document && 'contentKind' in document && document.contentKind === 'unsupported'
   const plainText = document && 'contentKind' in document && document.contentKind === 'plain-text'
   const badge = plainText ? 'TXT' : unsupported ? '?' : document?.format.toUpperCase()
   const canUndo = document ? ('capabilities' in document ? document.capabilities.canUndo : !unsupported) : false
-  return <header className="topbar">
+  const readOnlyCsv = Boolean(document && 'storageKind' in document && document.storageKind === 'file-csv')
+  return <>
+  <header className="topbar">
     <button className="mobile-menu icon-button" aria-label="열린 파일" onClick={onOpenCommands}><span className="visually-hidden">열린 파일</span><Command size={17} /></button>
     <div className="topbar-document"><span className="topbar-file-icon">{document ? <span className={`file-badge format-${document.format}`}>{badge}</span> : <FileText size={16} />}</span><span className="topbar-name">{document ? safeDisplayFileName(document.name) : '작업 공간'}</span>{document?.isDirty && <span className="modified-pill">수정됨</span>}{document && 'parentId' in document && document.parentId && <span className="parent-tag">첨부에서 열림</span>}</div>
     <div className="topbar-actions">
       {document ? <>
         <button className="mobile-folder-browse icon-button" aria-label="폴더 탐색" title="폴더 탐색" onClick={onBrowseFolder}><FolderOpen size={16} /></button>
-        {canUndo && <button className="icon-button desktop-only" aria-label="실행 취소" title="실행 취소" onClick={onUndo}><Undo2 size={15} /></button>}
-        {canUndo && <button className="icon-button desktop-only" aria-label="다시 실행" title="다시 실행" onClick={onRedo}><Redo2 size={15} /></button>}
-        {canUndo && <div className="topbar-divider desktop-only" />}
-        {!unsupported && !plainText && <DocumentModeTabs document={document} placement="desktop" onModeChange={onModeChange} />}
+        {(canUndo || readOnlyCsv) && <button className="icon-button desktop-only" aria-label="실행 취소" title={readOnlyCsv ? '파일 기반 CSV는 실행 취소를 지원하지 않습니다' : '실행 취소'} disabled={!canUndo} onClick={onUndo}><Undo2 size={15} /></button>}
+        {(canUndo || readOnlyCsv) && <button className="icon-button desktop-only" aria-label="다시 실행" title={readOnlyCsv ? '파일 기반 CSV는 다시 실행을 지원하지 않습니다' : '다시 실행'} disabled={!canUndo} onClick={onRedo}><Redo2 size={15} /></button>}
+        {(canUndo || readOnlyCsv) && <div className="topbar-divider desktop-only" />}
+        {csvWorkspace ? <div id="csv-view-tabs-desktop-slot" className="topbar-csv-tabs-slot" /> : !unsupported && !plainText && <DocumentModeTabs document={document} placement="desktop" onModeChange={onModeChange} />}
+        {readOnlyCsv && <span className="csv-readonly-pill" title="파일 기반 CSV는 조회 전용이며 데이터 수정·Undo·원본 덮어쓰기를 지원하지 않습니다">읽기 전용 · {formatBytes(document.size)}</span>}
         <button className="icon-button theme-toggle" aria-label={`현재 ${theme === 'dark' ? '다크' : '라이트'} 테마; 테마 변경`} title="테마 전환" onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}</button>
         {!unsupported && <button className="primary-button export-button" onClick={onSave}>{saveLabel === '저장' ? <Save size={14} /> : <Download size={14} />}<span>{saveLabel}</span><ChevronDown size={12} /></button>}
         {canShare && !unsupported && <button className="icon-button desktop-only" aria-label="시스템 공유" title="시스템 공유" onClick={onShare}><Share2 size={15} /></button>}
@@ -48,17 +52,27 @@ export function DocumentHeader(props: HeaderProps) {
       </>}
     </div>
   </header>
+  {csvWorkspace && <div id="csv-view-tabs-mobile-slot" className="mobile-csv-tabs-slot" />}
+  </>
 }
 
 export function DocumentActionBar({ document, saveLabel, onModeChange, onUndo, onRedo, onSave }: Pick<HeaderProps, 'document' | 'saveLabel' | 'onModeChange' | 'onUndo' | 'onRedo' | 'onSave'>) {
   if (!document || ('contentKind' in document && document.contentKind === 'unsupported')) return null
   const canUndo = 'capabilities' in document ? document.capabilities.canUndo : true
+  const readOnlyCsv = 'storageKind' in document && document.storageKind === 'file-csv'
   return <nav className="mobile-action-bar" aria-label="문서 동작">
-    {(!('contentKind' in document) || document.contentKind !== 'plain-text') && <DocumentModeTabs document={document} placement="mobile" onModeChange={onModeChange} />}
-    {canUndo && <button className="secondary-button mobile-history" aria-label="실행 취소" onClick={onUndo}><Undo2 size={17} /></button>}
-    {canUndo && <button className="secondary-button mobile-history" aria-label="다시 실행" onClick={onRedo}><Redo2 size={17} /></button>}
+    {document.format !== 'csv' && (!('contentKind' in document) || document.contentKind !== 'plain-text') && <DocumentModeTabs document={document} placement="mobile" onModeChange={onModeChange} />}
+    {(canUndo || readOnlyCsv) && <button className="secondary-button mobile-history" aria-label="실행 취소" title={readOnlyCsv ? '파일 기반 CSV는 실행 취소를 지원하지 않습니다' : undefined} disabled={!canUndo} onClick={onUndo}><Undo2 size={17} /></button>}
+    {(canUndo || readOnlyCsv) && <button className="secondary-button mobile-history" aria-label="다시 실행" title={readOnlyCsv ? '파일 기반 CSV는 다시 실행을 지원하지 않습니다' : undefined} disabled={!canUndo} onClick={onRedo}><Redo2 size={17} /></button>}
     <button className="primary-button mobile-export" onClick={onSave}>{saveLabel === '저장' ? <Save size={15} /> : <Download size={15} />} {saveLabel}</button>
   </nav>
+}
+
+function formatBytes(value: number): string {
+  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(2)} GB`
+  if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(1)} MiB`
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} KiB`
+  return `${value} B`
 }
 
 function DocumentModeTabs({ document, placement, onModeChange }: { document: Pick<ViewerDocument, 'id' | 'mode'> | Pick<FileBackedCsvDocument, 'id' | 'mode'>; placement: 'desktop' | 'mobile'; onModeChange: HeaderProps['onModeChange'] }) {

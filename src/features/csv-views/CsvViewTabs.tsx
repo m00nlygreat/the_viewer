@@ -6,11 +6,12 @@ export interface CsvViewTabsProps {
   views: { id: string; name: string; layout: CsvLayout['kind'] }[]
   selection: CsvViewSelection
   canAddView: boolean
+  placement: 'desktop' | 'mobile'
   onSelect(selection: CsvViewSelection): void
   onAddView(): void
 }
 
-export function CsvViewTabs({ views, selection, canAddView, onSelect, onAddView }: CsvViewTabsProps) {
+export function CsvViewTabs({ views, selection, canAddView, placement, onSelect, onAddView }: CsvViewTabsProps) {
   const selectedView = selection.kind === 'custom' ? selection.viewId : null
   const handleKey = (event: KeyboardEvent<HTMLDivElement>, ids: string[], current: string, select: (id: string) => void) => {
     const index = ids.indexOf(current)
@@ -23,7 +24,7 @@ export function CsvViewTabs({ views, selection, canAddView, onSelect, onAddView 
   }
   const customIds = views.map((view) => view.id)
   const builtinIds = ['view', 'source']
-  return <div className="csv-view-tab-row">
+  return <div className={`csv-view-tab-row csv-view-tab-row-${placement}`}>
     <div className="csv-view-tab-list" role="tablist" aria-label="사용자 CSV 보기" onKeyDown={(event) => handleKey(event, customIds, selectedView ?? customIds[0] ?? '', (id) => onSelect({ kind: 'custom', viewId: id }))}>
       {views.map((view) => {
         const Icon = view.layout === 'grid' ? Table2 : view.layout === 'list' ? List : view.layout === 'gallery' ? LayoutGrid : view.layout === 'kanban' ? Columns3 : CalendarDays

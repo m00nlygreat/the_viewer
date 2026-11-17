@@ -1,11 +1,16 @@
 import { useMemo, useState } from 'react'
 import { createDefaultColumn } from '../../domain/csv-views/typing'
 import { findAffectedViews } from '../../domain/csv-views/validate'
-import { previewColumn } from '../../domain/csv-views/inference'
+import { previewColumn, recommendColumns } from '../../domain/csv-views/inference'
+import { formatCell } from '../../domain/csv-views/format'
+import { filterColumns } from '../../domain/csv-views/query'
+import { CSV_POLICY } from '../../domain/csv-views/policy'
 import type { CsvColumnDefinition, CsvColumnType, CsvDateFormat, CsvFileProfile, CsvMultiSelectParse, CsvNumberDisplay, CsvSample, CsvSaveResult, CsvSelectOption, CsvSelectParse, CsvThousandsSeparator, CsvViewDefinition } from '../../domain/csv-views/model'
 
 const optionColors = ['gray', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'] as const
 const dateFormats: CsvDateFormat[] = ['YYYY-MM-DD', 'YYYY/MM/DD', 'YYYY.MM.DD', 'YYYYMMDD', 'DD/MM/YYYY', 'MM/DD/YYYY', 'DD.MM.YYYY']
+const typeLabels: Record<CsvColumnType, string> = { text: '텍스트', integer: '정수', decimal: '소수', boolean: '참/거짓', date: '날짜', datetime: '날짜·시간', select: '단일 선택', multiSelect: '다중 선택' }
+const typeMarks: Record<CsvColumnType, string> = { text: 'T', integer: '#', decimal: '1.2', boolean: '✓', date: '◷', datetime: '◷', select: '▾', multiSelect: '≡' }
 const thousandsOptions: { value: CsvThousandsSeparator | null; label: string }[] = [
   { value: null, label: '없음' }, { value: ',', label: '쉼표' }, { value: '.', label: '마침표' }, { value: ' ', label: '공백' }, { value: "'", label: '작은따옴표' }
 ]
@@ -20,15 +25,19 @@ export interface CsvColumnTypeEditorProps {
 }
 
 export function CsvColumnTypeEditor({ column, profile, views, sample, onApply, onCancel }: CsvColumnTypeEditorProps) {
-  const [type, setType] = useState<CsvColumnType>(column.type)
+  const [activeColumnId, setActiveColumnId] = useState(column.id)
   const [draft, setDraft] = useState<CsvColumnDefinition>(column)
   const [separator, setSeparator] = useState(';')
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState('')
-  const raws = sample?.records.map((record) => record[column.sourceIndex]) ?? []
-  const columnSample = sample ? { sourceIndex: column.sourceIndex, raws } : null
+  const activeColumn = profile.columns.find((item) => item.id === activeColumnId) ?? column
+  const types: CsvColumnType[] = ['text', 'integer', 'decimal', 'boolean', 'date', 'datetime', 'select', 'multiSelect']
+  const raws = sample?.records.map((record) => record[activeColumn.sourceIndex]) ?? []
+  const columnSample = sample ? { sourceIndex: activeColumn.sourceIndex, raws } : null
   const preview = useMemo(() => sample ? previewColumn(sample, draft) : null, [draft, sample])
   const affected = useMemo(() => findAffectedViews(profile, views, draft), [draft, profile, views])
+  const recommendation = useMemo(() => sample ? recommendColumns(sample, profile.columns).find((item) => item.sourceIndex === activeColumn.sourceIndex)?.selected.type ?? null : null, [activeColumn.sourceIndex, profile.columns, sample])
+  const referencingViews = useMemo(() => views.filter((view) => viewReferencesColumn(view, activeColumn.id)), [activeColumn.id, views])
   const numericDisplay = draft.display as CsvNumberDisplay
   const updateSelectParse = (patch: Partial<CsvSelectParse>) => setDraft((current) => {
     if (current.type === 'select') return { ...current, parse: { ...current.parse, ...patch } }
@@ -44,16 +53,15 @@ export function CsvColumnTypeEditor({ column, profile, views, sample, onApply, o
     return current
   })
   const chooseType = (next: CsvColumnType) => {
-    setType(next)
     try {
-      const base = { id: column.id, sourceIndex: column.sourceIndex, sourceHeader: column.sourceHeader, label: column.label, typeSource: 'user' as const, nullMarkers: [...column.nullMarkers], allowSurroundingSpace: column.allowSurroundingSpace }
+      const base = { id: activeColumn.id, sourceIndex: activeColumn.sourceIndex, sourceHeader: activeColumn.sourceHeader, label: activeColumn.label, typeSource: 'user' as const, nullMarkers: [...activeColumn.nullMarkers], allowSurroundingSpace: activeColumn.allowSurroundingSpace }
       let result: CsvColumnDefinition
       if (next === 'multiSelect') {
         const single = createDefaultColumn('select', base, columnSample)
         if (single.type !== 'select') throw new Error('선택지 기본 설정을 만들지 못했습니다.')
         result = { ...single, type: 'multiSelect', parse: { ...single.parse, separator, duplicates: 'keep' } }
       } else result = createDefaultColumn(next, base, columnSample)
-      if (result.type === 'select' && sample) result.parse.options = sampleOptions(sample, column.sourceIndex)
+      if (result.type === 'select' && sample) result.parse.options = sampleOptions(sample, activeColumn.sourceIndex)
       setDraft(result); setFailure('')
     } catch (error) { setFailure(error instanceof Error ? error.message : '타입 설정을 만들지 못했습니다.') }
   }
@@ -66,11 +74,35 @@ export function CsvColumnTypeEditor({ column, profile, views, sample, onApply, o
     } catch (error) { setFailure(error instanceof Error ? error.message : '컬럼 설정을 저장하지 못했습니다.') }
     finally { setSaving(false) }
   }
+  const selectColumn = (next: CsvColumnDefinition) => {
+    if (next.id === activeColumn.id) return
+    if (JSON.stringify(draft) !== JSON.stringify(activeColumn) && !window.confirm('현재 컬럼의 변경을 버리고 다른 컬럼을 편집할까요?')) return
+    setActiveColumnId(next.id); setDraft(next); setSeparator(next.type === 'multiSelect' ? next.parse.separator : ';'); setFailure('')
+  }
+  const matchedCount = preview?.counts.value ?? 0
+  const sampleCount = sample?.records.length ?? 0
+  const affectedIds = new Set(affected.map((item) => item.viewId))
+  const previewStatus = (state: string) => ({ value: '해석', empty: '빈 값', missing: '누락', 'null-marker': '결측 표식', invalid: '해석 실패' })[state] ?? state
+  const draftChanged = JSON.stringify(draft) !== JSON.stringify(activeColumn)
 
   return <div className="csv-view-editor-overlay"><section className="csv-view-editor csv-column-type-editor" role="dialog" aria-modal="true" aria-labelledby="csv-column-type-title">
-    <header><div><h2 id="csv-column-type-title">컬럼 타입 설정</h2><p>{column.label} · {column.sourceHeader ?? `열 ${column.sourceIndex + 1}`}</p></div><button type="button" className="icon-button" aria-label="타입 편집 닫기" onClick={onCancel}>×</button></header>
-    <div className="csv-view-editor-body">
-      <label>타입<select value={type} onChange={(event) => chooseType(event.currentTarget.value as CsvColumnType)}>{(['text', 'integer', 'decimal', 'boolean', 'date', 'datetime', 'select', 'multiSelect'] as const).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+    <header><div><h2 id="csv-column-type-title">컬럼 타입</h2><p>파일 공통 설정 · 모든 뷰에 적용</p></div><button type="button" className="icon-button" aria-label="타입 편집 닫기" onClick={onCancel}>×</button></header>
+    <div className="csv-column-type-body">
+      <aside className="csv-type-columns" aria-label="CSV 컬럼 목록">{profile.columns.map((item) => {
+        const selected = item.id === activeColumn.id
+        const currentType = selected ? draft.type : item.type
+        return <button type="button" key={item.id} className={`csv-type-column${selected ? ' active' : ''}`} aria-current={selected ? 'true' : undefined} onClick={() => selectColumn(item)}><span className="csv-column-type-mark">{typeMarks[currentType]}</span><span className="csv-type-column-copy"><strong>{item.label}</strong><small>{typeLabels[currentType]}</small></span><span className={`csv-type-source${item.typeSource === 'user' ? ' user' : ''}`}>{item.typeSource === 'user' ? '지정' : '추천'}</span></button>
+      })}</aside>
+      <div className="csv-column-type-main">
+      <div className="csv-type-column-heading"><strong>{activeColumn.label}</strong><small>원래 위치 {activeColumn.sourceIndex} · 헤더 {activeColumn.sourceHeader === null ? '(없음)' : `“${activeColumn.sourceHeader}”`}</small></div>
+      <div className="csv-type-segment" role="group" aria-label="컬럼 타입">{types.map((item) => <button type="button" key={item} className={draft.type === item ? 'active' : ''} aria-pressed={draft.type === item} onClick={() => chooseType(item)}><span className="csv-column-type-mark">{typeMarks[item]}</span>{typeLabels[item]}{recommendation === item && activeColumn.typeSource === 'inferred' && <small>추천</small>}</button>)}</div>
+      <div className="csv-type-evidence"><span>표본 <b>{sampleCount}</b>행 중 <b>{matchedCount}</b>개 일치 <i aria-hidden="true"><i style={{ width: sampleCount ? `${matchedCount / sampleCount * 100}%` : '0%' }} /></i></span><span>파일 끝 {sample?.reachedEof ? '확인' : <strong className="csv-type-unreached">미도달</strong>}</span><small>처음 {CSV_POLICY.sampleRecords}개 레코드 · 최대 {CSV_POLICY.sampleBytes / (1024 * 1024)} MiB 표본. 전체 검증 아님</small></div>
+      {preview?.leadingZeroLoss ? <div className="csv-type-note" role="status">앞자리 0 손실이 예상되는 표본 행 {preview.leadingZeroLoss}개가 있습니다.</div> : null}
+      <div className="csv-type-section-title">입력 규칙</div>
+      <div className="csv-type-rules">
+      {draft.type === 'text' && <p className="csv-type-rule-note">원문 그대로 보존합니다. 앞뒤 공백과 대소문자를 바꾸지 않습니다.</p>}
+      {draft.type === 'integer' && <p className="csv-type-rule-note">정수 범위를 벗어나거나 지정한 입력 규칙에 맞지 않는 값은 해석 실패로 표시합니다.</p>}
+      {(draft.type === 'decimal' || draft.type === 'date' || draft.type === 'datetime' || draft.type === 'boolean') && <p className="csv-type-rule-note">지정한 형식에 맞지 않는 값은 변환하지 않고 해석 실패로 표시합니다.</p>}
       {draft.type === 'integer' && <>
         <label className="csv-view-check-row"><input type="checkbox" checked={draft.parse.allowPlusSign} onChange={(event) => setDraft({ ...draft, parse: { ...draft.parse, allowPlusSign: event.currentTarget.checked } })} />+ 부호 허용</label>
         <label>천 단위 구분자<ThousandsSelect value={draft.parse.thousandsSeparator} onChange={(value) => setDraft({ ...draft, parse: { ...draft.parse, thousandsSeparator: value } })} /></label>
@@ -100,7 +132,7 @@ export function CsvColumnTypeEditor({ column, profile, views, sample, onApply, o
         <label className="csv-view-check-row"><input type="checkbox" checked={draft.parse.allowDateOnly} onChange={(event) => setDraft({ ...draft, parse: { ...draft.parse, allowDateOnly: event.currentTarget.checked } })} />날짜만 입력된 값 허용</label>
       </>}
       {(draft.type === 'select' || draft.type === 'multiSelect') && <>
-        {draft.type === 'multiSelect' && <label>목록 구분자<input value={draft.parse.separator} onChange={(event) => { const value = event.currentTarget.value; setSeparator(value); setDraft((current) => current.type === 'multiSelect' ? { ...current, parse: { ...current.parse, separator: value, options: current.parse.options.length ? current.parse.options : sampleOptions(sample, column.sourceIndex, value) } } : current) }} /></label>}
+        {draft.type === 'multiSelect' && <label>목록 구분자<input value={draft.parse.separator} onChange={(event) => { const value = event.currentTarget.value; setSeparator(value); setDraft((current) => current.type === 'multiSelect' ? { ...current, parse: { ...current.parse, separator: value, options: current.parse.options.length ? current.parse.options : sampleOptions(sample, activeColumn.sourceIndex, value) } } : current) }} /></label>}
         <label>선택지 연결<select value={draft.parse.matching} onChange={(event) => updateSelectParse({ matching: event.currentTarget.value as 'exact' | 'ascii-case-trim' })}><option value="exact">정확히 일치</option><option value="ascii-case-trim">ASCII 대소문자·공백 무시</option></select></label>
         <label className="csv-view-check-row"><input type="checkbox" checked={draft.parse.closed} onChange={(event) => updateSelectParse({ closed: event.currentTarget.checked })} />등록하지 않은 값을 실패로 처리</label>
         <label>선택지 목록<input value={draft.parse.options.map((option) => `${option.raw}|${option.label}`).join('\n')} onChange={(event) => updateSelectParse({ options: parseOptions(event.currentTarget.value, draft.parse.options) })} placeholder={'todo|할 일\nin_progress|진행 중'} /></label>
@@ -126,12 +158,29 @@ export function CsvColumnTypeEditor({ column, profile, views, sample, onApply, o
       </fieldset>
       <label className="csv-view-check-row"><input type="checkbox" checked={draft.allowSurroundingSpace} onChange={(event) => setDraft({ ...draft, allowSurroundingSpace: event.currentTarget.checked })} />앞뒤 ASCII 공백 허용</label>
       <label>결측 표식<input value={draft.nullMarkers.join(', ')} onChange={(event) => setDraft({ ...draft, nullMarkers: event.currentTarget.value ? event.currentTarget.value.split(',').map((value) => value.trim()).filter(Boolean) : [] })} placeholder="예: N/A, NULL" /></label>
-      {preview && <section className="csv-type-preview"><h3>표본 미리보기</h3><p>표본 {sample?.records.length ?? 0}행 · 값 {preview.counts.value} · 빈 값 {preview.counts.empty} · 누락 {preview.counts.missing} · 실패 {preview.counts.invalid}</p>{preview.leadingZeroLoss > 0 && <p className="inline-warning">앞자리 0이 사라지는 행 {preview.leadingZeroLoss}개</p>}<div>{preview.rows.slice(0, 12).map((row) => <div className="csv-type-preview-row" key={row.recordNo}><code>{row.raw ?? '누락'}</code><span>{row.cell.state === 'value' ? String(row.cell.value) : row.cell.state === 'invalid' ? `${row.cell.raw} · ${row.cell.code}` : row.cell.state}</span></div>)}</div></section>}
-      {affected.length > 0 && <div className="csv-view-conflict"><strong>이 컬럼을 참조하는 보기 {affected.length}개에 영향이 있습니다.</strong><span>저장할 수 없는 연결은 검증 오류로 표시됩니다.</span></div>}
+      </div>
+      <div className="csv-type-section-title">원문 → 해석값 미리보기</div>
+      {preview ? <div className="csv-type-preview-scroll"><table className="csv-type-preview-table"><thead><tr><th>원문</th><th>해석값</th><th>상태</th></tr></thead><tbody>{preview.rows.slice(0, 12).map((row) => {
+        const formatted = formatCell(draft, draft.display, row.cell, {})
+        return <tr key={row.recordNo}><td><code>{row.raw === undefined ? '누락' : row.raw === '' ? '""' : row.raw}</code></td><td className={formatted.tone}>{formatted.text}</td><td className={formatted.tone}>{previewStatus(row.cell.state)}{row.cell.state === 'invalid' ? ` · ${row.cell.code}` : ''}</td></tr>
+      })}{preview.rows.length === 0 && <tr><td colSpan={3} className="csv-type-preview-empty">표본 예시 없음</td></tr>}</tbody></table></div> : null}
+      {!preview && <div className="csv-type-preview-unavailable">표본 미리보기를 사용할 수 없습니다.</div>}
+      {draftChanged && referencingViews.length > 0 && <div className="csv-view-conflict"><strong>적용하면 영향을 받는 보기 {referencingViews.length}개</strong>{referencingViews.map((view) => <span key={view.id}>· {view.name}{affectedIds.has(view.id) ? ' — 저장 후 검증 필요' : ''}</span>)}<span>CSV 원문과 수정 상태는 바뀌지 않습니다.</span></div>}
       {failure && <p className="csv-view-error" role="alert">{failure}</p>}
     </div>
-    <footer><button type="button" className="secondary-button" onClick={onCancel}>취소</button><button type="button" className="primary-button" onClick={() => { void apply() }} disabled={saving || (draft.type === 'multiSelect' && !draft.parse.separator)}>{saving ? '저장 중…' : '적용'}</button></footer>
+    </div>
+    <footer><span className="csv-type-editor-note">표본 밖 예외는 타입을 바꾸지 않고 <strong>해석 실패</strong>로 표시합니다.</span><button type="button" className="secondary-button" onClick={onCancel}>취소</button><button type="button" className="primary-button" onClick={() => { void apply() }} disabled={saving || (draft.type === 'multiSelect' && !draft.parse.separator)}>{saving ? '저장 중…' : '적용'}</button></footer>
   </section></div>
+}
+
+function viewReferencesColumn(view: CsvViewDefinition, columnId: string): boolean {
+  if (view.columnIds.includes(columnId) || view.sort.some((item) => item.columnId === columnId) || filterColumns(view.filter).includes(columnId) || Object.hasOwn(view.displayOverrides, columnId)) return true
+  const layout = view.layout
+  if (layout.kind === 'list') return [layout.titleColumnId, layout.subtitleColumnId, layout.trailingColumnId, layout.colorColumnId, layout.groupColumnId].includes(columnId)
+  if (layout.kind === 'gallery') return layout.titleColumnId === columnId || layout.coverColumnId === columnId
+  if (layout.kind === 'kanban') return layout.groupColumnId === columnId
+  if (layout.kind === 'calendar') return layout.dateColumnId === columnId
+  return false
 }
 
 function ThousandsSelect({ value, onChange }: { value: CsvThousandsSeparator | null; onChange(value: CsvThousandsSeparator | null): void }) {

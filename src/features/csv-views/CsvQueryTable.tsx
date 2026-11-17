@@ -25,9 +25,14 @@ export interface CsvResultViewProps<L> {
 }
 
 type GridProps = CsvResultViewProps<{ kind: 'grid' }> & { theme: 'light' | 'dark' }
+const typeMarks = { text: 'T', integer: '#', decimal: '1.2', boolean: '✓', date: '◷', datetime: '◷', select: '▾', multiSelect: '≡' } as const
 
-export function CsvQueryTable({ columns, columnIds, displayOverrides, rows, hasMore, loadingMore, loadMoreError, onLoadMore, onRetryLoadMore, theme }: GridProps) {
-  const gridColumns = useMemo<GridColumn[]>(() => columnIds.map((id) => ({ title: displayOverrides[id]?.label ?? columns.get(id)?.label ?? id, width: 180 })), [columnIds, columns, displayOverrides])
+export function CsvQueryTable({ columns, columnIds, displayOverrides, rows, hasMore, loadingMore, loadMoreError, onLoadMore, onRetryLoadMore, theme, onEditColumnType }: GridProps & { onEditColumnType(columnId: string): void }) {
+  const gridColumns = useMemo<GridColumn[]>(() => columnIds.map((id) => {
+    const column = columns.get(id)
+    const label = displayOverrides[id]?.label ?? column?.label ?? id
+    return { title: `${column ? typeMarks[column.type] : '·'} ${label}`, width: 180 }
+  }), [columnIds, columns, displayOverrides])
   const gridTheme = useMemo(() => createGridTheme(theme), [theme])
   const getCellContent = useCallback(([columnIndex, rowIndex]: Item): GridCell => {
     const id = columnIds[columnIndex]
@@ -55,6 +60,7 @@ export function CsvQueryTable({ columns, columnIds, displayOverrides, rows, hasM
         width="100%"
         height="100%"
         theme={gridTheme}
+        onHeaderClicked={(columnIndex) => { const id = columnIds[columnIndex]; if (id) onEditColumnType(id) }}
       />
     </div>
     {hasMore && <div className="csv-query-more">{loadMoreError ? <><span role="alert">추가 행을 불러오지 못했습니다.</span><button type="button" className="subtle-button" onClick={onRetryLoadMore}>다시 시도</button></> : <button type="button" className="subtle-button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? '불러오는 중…' : '더 보기'}</button>}</div>}

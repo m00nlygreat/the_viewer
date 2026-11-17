@@ -19,30 +19,35 @@ export async function readIdentity(
 }
 
 export async function matchIdentity(
-  target: CsvFileIdentity,
+  target: CsvFileIdentity | null | undefined,
   targetHandle: FileSystemFileHandle | null,
   known: { fileId: string; identity: CsvFileIdentity; handle: FileSystemFileHandle | null }[]
 ): Promise<CsvIdentityMatch> {
+  const validKnown = known.flatMap((candidate) => candidate && isCsvFileIdentity(candidate.identity) ? [candidate] : [])
   if (targetHandle) {
-    for (const candidate of known) {
+    for (const candidate of validKnown) {
       if (!candidate.handle?.isSameEntry) continue
       try { if (await targetHandle.isSameEntry(candidate.handle)) return { kind: 'same', fileId: candidate.fileId, basis: 'handle' } }
       catch { /* Permission and browser-specific handle errors fall back to fingerprints. */ }
     }
   }
-  const folderCandidates = known.filter((candidate) => isCsvFileIdentity(candidate.identity) && target.folder && candidate.identity.folder &&
+  if (!isCsvFileIdentity(target)) return { kind: 'new' }
+  const folderCandidates = validKnown.filter((candidate) => target.folder && candidate.identity.folder &&
     target.folder.rootId === candidate.identity.folder.rootId && target.folder.relativePath === candidate.identity.folder.relativePath &&
     target.size === candidate.identity.size && target.lastModified === candidate.identity.lastModified)
   if (folderCandidates.length === 1) return { kind: 'same', fileId: folderCandidates[0]!.fileId, basis: 'folder-path' }
 
-  const digestCandidates = known.filter((candidate) => isCsvFileIdentity(candidate.identity) && target.headerDigest !== null && target.sampleDigest !== null &&
-    target.headerDigest === candidate.identity.headerDigest && target.sampleDigest.algorithm === candidate.identity.sampleDigest?.algorithm &&
-    target.sampleDigest.offset === candidate.identity.sampleDigest.offset && target.sampleDigest.length === candidate.identity.sampleDigest.length &&
-    target.sampleDigest.digest === candidate.identity.sampleDigest.digest && target.size === candidate.identity.size)
+  const digestCandidates = validKnown.filter((candidate) => {
+    const identity = candidate.identity
+    return target.headerDigest !== null && target.sampleDigest !== null &&
+      target.headerDigest === identity.headerDigest && target.sampleDigest.algorithm === identity.sampleDigest?.algorithm &&
+      target.sampleDigest.offset === identity.sampleDigest.offset && target.sampleDigest.length === identity.sampleDigest.length &&
+      target.sampleDigest.digest === identity.sampleDigest.digest && target.size === identity.size
+  })
   if (digestCandidates.length === 1) return { kind: 'same', fileId: digestCandidates[0]!.fileId, basis: 'digest' }
   if (digestCandidates.length > 1) return { kind: 'ambiguous', candidates: digestCandidates.map(({ fileId }) => ({ fileId, basis: 'digest' })) }
 
-  const weakCandidates = known.filter((candidate) => isCsvFileIdentity(candidate.identity) && candidate.identity.name === target.name && candidate.identity.size === target.size)
+  const weakCandidates = validKnown.filter((candidate) => candidate.identity.name === target.name && candidate.identity.size === target.size)
   return weakCandidates.length ? { kind: 'ambiguous', candidates: weakCandidates.map(({ fileId }) => ({ fileId, basis: 'name-size' })) } : { kind: 'new' }
 }
 

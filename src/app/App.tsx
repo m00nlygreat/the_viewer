@@ -1453,14 +1453,6 @@ export function App() {
     }).catch((error: unknown) => notify(error instanceof Error ? error.message : '놓은 항목을 읽지 못했습니다.', 'error'))
   }, [openFiles, notify])
   const renderActiveDocument = (document: ViewerDocument) => {
-    if (document.format === 'csv' && document.mode === 'view') return <CsvViewWorkspace
-      document={document}
-      defaultContent={<CsvEditor document={document} model={document.model} onChange={(model, group) => changeModel(document.id, documentStore.get(document.id)?.revision ?? document.revision, model, group)} theme={resolvedTheme} />}
-      onModeChange={setMode}
-      onError={(message) => notify(message, 'error')}
-      onReconnect={() => pickFiles('csv')}
-      theme={resolvedTheme}
-    />
     return renderDocument(
       document,
       (model, group) => changeModel(document.id, documentStore.get(document.id)?.revision ?? document.revision, model, group),
@@ -1485,13 +1477,16 @@ export function App() {
   const activeFolderErrorPath = folderWorkspace.activePath
   const activeFolderError = activeFolderErrorPath ? folderWorkspace.errorsByPath.get(activeFolderErrorPath) : undefined
   const activeFileBackedSource = activeFileBackedCsv ? getCsvFileSource(activeFileBackedCsv.id) : null
+  const activeCsvWorkspace = Boolean(activeFileBackedCsv
+    ? activeFileBackedCsv.sourceState.status === 'ready' && activeFileBackedSource
+    : activeDocument?.format === 'csv' && activeDocument.parseState === 'ready' && activeDocument.modelRevision === activeDocument.revision)
   return <div className="app-shell" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <FilePicker ref={inputRef} onFiles={(files, format) => { void openFiles(files, format) }} onError={notify} />
     <FolderPicker ref={folderInputRef} onFolder={(picked) => { void folderWorkspace.acceptPickedFolder(picked) }} onCancel={() => { if (folderWorkspace.phase === 'picking') folderWorkspace.cancelTransition(); else folderWorkspace.cancelReconnect() }} onError={(message) => { if (folderWorkspace.phase === 'picking') folderWorkspace.cancelTransition(); else folderWorkspace.cancelReconnect(); notify(message, 'error') }} />
     <WorkspaceSidebar documents={workspaceDocuments} activeId={activeId} collapsed={sidebarCollapsed} onToggleCollapsed={toggleSidebar} onPickFiles={pickFiles} onOpenCommands={openSidebarCommands} onSelectDocument={switchTab} onCloseDocument={closeSidebarDocument} onOpenSettings={openSidebarSettings} folder={folderWorkspace.folder} folderTree={folderTreeProps} folderPickingAvailable={folderPickingAvailable} onOpenFolder={openFolderPicker} onCloseFolder={closeFolderWorkspace} />
 
     <main className="main-column">
-      <DocumentHeader document={activeWorkspaceDocument} theme={resolvedTheme} canShare={'share' in navigator && (activeFileBackedCsv ? activeFileBackedCsv.capabilities.canShare : activeDocument?.contentKind !== 'unsupported')} saveLabel={saveLabel} onModeChange={setMode} onThemeChange={changeTheme} onUndo={() => undo()} onRedo={() => undo(true)} onSave={() => { void saveCurrent() }} onShare={() => { void shareCurrent() }} onClose={() => { if (activeWorkspaceDocument) void closeDocument(activeWorkspaceDocument.id) }} onPickFiles={() => pickFiles()} onOpenCommands={() => { if (!workspaceOperations.current.locked) setShowCommand(true) }} onOpenSettings={() => { if (!workspaceOperations.current.locked) setShowSettings(true) }} onBrowseFolder={() => { if (!folderPickingAvailable) return; if (folderWorkspace.folder) setShowFolderDrawer(true); else openFolderPicker() }} />
+      <DocumentHeader document={activeWorkspaceDocument} csvWorkspace={activeCsvWorkspace} theme={resolvedTheme} canShare={'share' in navigator && (activeFileBackedCsv ? activeFileBackedCsv.capabilities.canShare : activeDocument?.contentKind !== 'unsupported')} saveLabel={saveLabel} onModeChange={setMode} onThemeChange={changeTheme} onUndo={() => undo()} onRedo={() => undo(true)} onSave={() => { void saveCurrent() }} onShare={() => { void shareCurrent() }} onClose={() => { if (activeWorkspaceDocument) void closeDocument(activeWorkspaceDocument.id) }} onPickFiles={() => pickFiles()} onOpenCommands={() => { if (!workspaceOperations.current.locked) setShowCommand(true) }} onOpenSettings={() => { if (!workspaceOperations.current.locked) setShowSettings(true) }} onBrowseFolder={() => { if (!folderPickingAvailable) return; if (folderWorkspace.folder) setShowFolderDrawer(true); else openFolderPicker() }} />
 
       {recoveryIssues.length > 0 && <section className="source-diagnostic" role="alert" aria-label="복구하지 못한 저장 문서">
         <strong>복구하지 못한 저장 문서 {recoveryIssues.length}개</strong>
@@ -1507,17 +1502,17 @@ export function App() {
       {activeWorkspaceDocument ? <>
         <div id={`document-panel-${activeWorkspaceDocument.id}`} className="document-workspace" key={activeWorkspaceDocument.id} role="tabpanel" aria-label={`${activeWorkspaceDocument.mode === 'view' ? '보기' : '원본'} · ${activeWorkspaceDocument.name}`} tabIndex={0}>
           {activeFileBackedCsv ? (activeFileBackedCsv.sourceState.status !== 'ready' || !activeFileBackedSource
-            ? <section className="csv-view-state" role="status"><p>{activeFileBackedCsv.sourceState.status === 'error' ? activeFileBackedCsv.sourceState.message : '원본 CSV 파일을 다시 선택해야 합니다.'}</p><button className="secondary-button" type="button" onClick={() => pickFiles('csv')}>CSV 다시 열기</button></section>
-            : activeFileBackedCsv.mode === 'source'
-              ? <CsvSourceRangeView file={activeFileBackedSource.file} parser={activeFileBackedSource.stored.record.profile.parser} />
-              : <CsvViewWorkspace document={activeFileBackedCsv} defaultContent={<div />} onModeChange={setMode} onError={(message) => notify(message, 'error')} onReconnect={() => pickFiles('csv')} cacheEnabled={recoveryEnabled} theme={resolvedTheme} />)
+            ? <section className="csv-view-state" role="alert"><p>{activeFileBackedCsv.sourceState.status === 'error' ? activeFileBackedCsv.sourceState.message : '원본 CSV 파일을 다시 선택해야 합니다.'}</p><button className="secondary-button" type="button" onClick={() => pickFiles('csv')}>CSV 다시 열기</button></section>
+            : <CsvViewWorkspace document={activeFileBackedCsv} defaultContent={<CsvSourceRangeView file={activeFileBackedSource.file} parser={activeFileBackedSource.stored.record.profile.parser} />} onModeChange={setMode} onError={(message) => notify(message, 'error')} onReconnect={() => pickFiles('csv')} cacheEnabled={recoveryEnabled} theme={resolvedTheme} />)
             : activeDocument ? (activeDocument.payloadLoaded === false ? <div className="source-diagnostic" role="status"><span>저장 문서 본문을 불러오고 있습니다.</span></div> : <>
               {activeDocument.parseState === 'pending' && !(activeDocument.format === 'md' && activeDocument.mode === 'view') && <div className="source-diagnostic" role="status"><span>최신 원문을 해석하고 있습니다. 편집은 계속할 수 있습니다.</span></div>}
               {activeDocument.parseState === 'error' && <div className="source-diagnostic" role="alert"><span>원문을 해석하지 못했습니다. 마지막 유효 보기는 유지되며 구조 편집은 잠깁니다.</span><small>{activeDocument.diagnostics.find((item) => item.severity === 'error')?.message ?? activeDocument.sourceError}</small></div>}
               {activeDocument.parseState === 'ready' && activeDocument.diagnostics.some((item) => item.severity === 'warning') && <div className="inline-warning" role="status">진단 {activeDocument.diagnostics.filter((item) => item.severity === 'warning').length}개 · {activeDocument.diagnostics.find((item) => item.severity === 'warning')?.message}</div>}
               <FeatureLoadBoundary key={activeDocument.id} fileName={activeDocument.name} sourceText={activeDocument.text}>
                 <Suspense fallback={null}>
-                  {activeDocument.mode === 'view' && !activeDocument.contentKind && !isBlockEditorFormat(activeDocument.format) ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)}
+                  {activeDocument.format === 'csv' && activeDocument.parseState === 'ready' && activeDocument.modelRevision === activeDocument.revision
+                    ? <CsvViewWorkspace document={activeDocument} defaultContent={activeDocument.mode === 'view' && !activeDocument.contentKind ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)} onModeChange={setMode} onError={(message) => notify(message, 'error')} onReconnect={() => pickFiles('csv')} theme={resolvedTheme} />
+                    : activeDocument.mode === 'view' && !activeDocument.contentKind && !isBlockEditorFormat(activeDocument.format) ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)}
                 </Suspense>
               </FeatureLoadBoundary>
             </>) : null}

@@ -41,8 +41,19 @@ async function handle(request: CsvWorkerRequest): Promise<void> {
       case 'sample': {
         const snapshot = snapshots.get(request.documentId)
         if (!snapshot || snapshot.sourceRevision !== request.sourceRevision) throw queryError('stale-dataset', '표본의 원본 revision이 변경되었습니다.')
-        const records = snapshot.records.slice(0, Math.min(request.maxRecords, CSV_POLICY.sampleRecords))
-        const sample: CsvSample = { header: snapshot.header, records, firstRecordNo: 1, reachedEof: records.length >= snapshot.records.length, bytesRead: estimateRecordsBytes(records), stoppedBy: records.length >= snapshot.records.length ? 'eof' : 'records' }
+        const maxRecords = Math.min(request.maxRecords, CSV_POLICY.sampleRecords)
+        const records: string[][] = []
+        let bytesRead = 0
+        let stoppedBy: CsvSample['stoppedBy'] = 'eof'
+        for (const record of snapshot.records) {
+          if (records.length >= maxRecords) { stoppedBy = 'records'; break }
+          const recordBytes = estimateRecordsBytes([record])
+          if (bytesRead + recordBytes > CSV_POLICY.sampleBytes) { stoppedBy = 'bytes'; break }
+          records.push(record)
+          bytesRead += recordBytes
+        }
+        const reachedEof = records.length >= snapshot.records.length
+        const sample: CsvSample = { header: snapshot.header, records, firstRecordNo: 1, reachedEof, bytesRead, stoppedBy: reachedEof ? 'eof' : stoppedBy }
         reply(request, { type: 'sample', sample })
         break
       }
