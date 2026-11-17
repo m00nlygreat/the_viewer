@@ -1,21 +1,22 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { encodeGroupKey } from '../../domain/csv-views/query'
-import { formatCell, resolveDisplay } from '../../domain/csv-views/format'
-import type { CsvColumnDefinition, CsvDisplayOverride, CsvQueryRow } from '../../domain/csv-views/model'
+import type { CsvColumnDefinition, CsvQueryRow } from '../../domain/csv-views/model'
 import type { CsvResultViewProps } from './CsvQueryTable'
 import { csvQueryNextStep } from '../../domain/csv-views/errorGuidance'
+import { CsvCellDisplay } from './CsvCellDisplay'
 
 type ListLayout = Extract<import('../../domain/csv-views/model').CsvLayout, { kind: 'list' }>
 type ListEntry =
-  | { key: string; kind: 'group'; text: string; count: number; more: boolean }
+  | { key: string; kind: 'group'; text: string; count: number; more: boolean; special: boolean }
   | { key: string; kind: 'row'; row: CsvQueryRow }
+type GroupBucket = { key: string; text: string; rows: CsvQueryRow[]; special: boolean }
 
-const ESTIMATED_ROW_HEIGHT = 112
-const ESTIMATED_GROUP_HEIGHT = 48
+const ESTIMATED_ROW_HEIGHT = 68
+const ESTIMATED_GROUP_HEIGHT = 30
 const LIST_OVERSCAN = 5
 
-export function CsvListView({ layout, columns, columnIds, displayOverrides, rows, hasMore, loadingMore, loadMoreError, onLoadMore, onRetryLoadMore, onAdjustQuery }: CsvResultViewProps<ListLayout>) {
+export function CsvListView({ layout, columns, displayOverrides, rows, hasMore, loadingMore, loadMoreError, onLoadMore, onRetryLoadMore, onAdjustQuery }: CsvResultViewProps<ListLayout>) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const measuredHeights = useRef(new Map<string, number>())
   const firstRowId = rows[0]?.rowId ?? null
@@ -23,22 +24,23 @@ export function CsvListView({ layout, columns, columnIds, displayOverrides, rows
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(560)
   const [measureRevision, setMeasureRevision] = useState(0)
-  const title = columns.get(layout.titleColumnId)
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
   const group = layout.groupColumnId ? columns.get(layout.groupColumnId) : undefined
 
   const entries = useMemo(() => {
     const result: ListEntry[] = []
     if (!group || !layout.groupColumnId) return rows.map((row) => ({ key: `row:${row.rowId}`, kind: 'row' as const, row }))
-    const grouped: Array<{ key: string; text: string; rows: CsvQueryRow[] }> = []
+    const grouped = new Map<string, GroupBucket>()
     for (const row of rows) {
       const cell = row.cells[layout.groupColumnId]
-      const key = cell ? encodeGroupKey(cell) : 'missing'
-      const previous = grouped[grouped.length - 1]
-      if (previous?.key === key) previous.rows.push(row)
-      else grouped.push({ key, text: groupLabel(group, cell), rows: [row] })
+      const key = cell ? listGroupKey(group, cell) : 'missing'
+      const previous = grouped.get(key)
+      if (previous) previous.rows.push(row)
+      else grouped.set(key, { key, text: groupLabel(group, cell), rows: [row], special: isSpecialGroup(group, cell) })
     }
-    grouped.forEach((item, groupIndex) => {
-      result.push({ key: `group:${groupIndex}:${item.key}`, kind: 'group', text: item.text, count: item.rows.length, more: hasMore && groupIndex === grouped.length - 1 })
+    const groups = [...grouped.values()]
+    groups.forEach((item, groupIndex) => {
+      result.push({ key: `group:${groupIndex}:${item.key}`, kind: 'group', text: item.text, count: item.rows.length, more: hasMore && groupIndex === groups.length - 1, special: item.special })
       result.push(...item.rows.map((row) => ({ key: `row:${row.rowId}`, kind: 'row' as const, row })))
     })
     return result
@@ -96,14 +98,14 @@ export function CsvListView({ layout, columns, columnIds, displayOverrides, rows
     <div className="csv-view-list-virtual" role="list" style={{ height: totalHeight + (hasMore ? 68 : 0) }}>
       {entries.slice(start, end).map((entry, relativeIndex) => {
         const index = start + relativeIndex
-        if (entry.kind === 'group') return <div className="csv-view-group-heading csv-view-list-virtual-entry" role="listitem" data-list-entry-key={entry.key} key={entry.key} style={{ top: offsets[index] }}><h3>{entry.text}</h3><span className="csv-view-group-count">{entry.count}{entry.more ? '+' : ''}</span></div>
+        if (entry.kind === 'group') return <div className={`csv-view-group-heading${entry.special ? ' warn' : ''} csv-view-list-virtual-entry`} role="listitem" data-list-entry-key={entry.key} key={entry.key} style={{ top: offsets[index] }}><h3>{entry.text}</h3><span className="csv-view-group-count">{entry.count}{entry.more ? '+' : ''}</span></div>
         const rowStyle = colorStyle(layout.colorColumnId, entry.row, columns)
-        return <article className="csv-view-list-item csv-view-list-virtual-entry" role="listitem" data-list-entry-key={entry.key} key={entry.key} style={{ top: offsets[index], ...rowStyle }}>
-          <div className="csv-view-list-main"><strong>{format(title, displayOverrides[layout.titleColumnId], entry.row.cells[layout.titleColumnId])}</strong>
-            {layout.subtitleColumnId && <span className="csv-view-subtitle">{format(columns.get(layout.subtitleColumnId), displayOverrides[layout.subtitleColumnId], entry.row.cells[layout.subtitleColumnId])}</span>}
-            {layout.trailingColumnId && <span className="csv-view-trailing">{format(columns.get(layout.trailingColumnId), displayOverrides[layout.trailingColumnId], entry.row.cells[layout.trailingColumnId])}</span>}
+        return <article className={`csv-view-list-item csv-view-list-virtual-entry${selectedRowId === entry.row.rowId ? ' selected' : ''}`} role="listitem" aria-selected={selectedRowId === entry.row.rowId} tabIndex={0} data-list-entry-key={entry.key} key={entry.key} style={{ top: offsets[index], ...rowStyle }} onClick={() => setSelectedRowId(entry.row.rowId)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedRowId(entry.row.rowId) } }}>
+          {layout.colorColumnId && <span className="csv-view-list-dot" aria-hidden="true" />}
+          <div className="csv-view-list-main"><div className="csv-view-list-title"><b><CsvCellDisplay column={columns.get(layout.titleColumnId)} override={displayOverrides[layout.titleColumnId]} cell={entry.row.cells[layout.titleColumnId]} /></b><span className="csv-view-list-record">#{entry.row.recordNo}</span></div>
+            {(layout.subtitleColumnId || (layout.badgeColumnIds?.length ?? 0) > 0) && <div className="csv-view-list-sub">{layout.subtitleColumnId && <CsvCellDisplay column={columns.get(layout.subtitleColumnId)} override={displayOverrides[layout.subtitleColumnId]} cell={entry.row.cells[layout.subtitleColumnId]} />}{(layout.badgeColumnIds ?? []).map((id) => <span className="csv-view-list-badge" key={id}><CsvCellDisplay column={columns.get(id)} override={displayOverrides[id]} cell={entry.row.cells[id]} /></span>)}</div>}
           </div>
-          <div className="csv-view-list-values">{columnIds.filter((id) => ![layout.titleColumnId, layout.subtitleColumnId, layout.trailingColumnId].includes(id)).map((id) => <span key={id}><small>{displayOverrides[id]?.label ?? columns.get(id)?.label ?? id}</small><CellDisplay column={columns.get(id)} override={displayOverrides[id]} cell={entry.row.cells[id]} /></span>)}</div>
+          {layout.trailingColumnId && <div className="csv-view-list-side"><span className="csv-view-list-amount"><CsvCellDisplay column={columns.get(layout.trailingColumnId)} override={displayOverrides[layout.trailingColumnId]} cell={entry.row.cells[layout.trailingColumnId]} /></span></div>}
         </article>
       })}
       {hasMore && <div className="csv-query-more csv-view-list-more" style={{ top: totalHeight }}>{loadMoreError ? <><span role="alert">{loadMoreError.message} {csvQueryNextStep(loadMoreError)}</span><button type="button" className="subtle-button" onClick={onRetryLoadMore}>다시 조회</button><button type="button" className="subtle-button" onClick={onAdjustQuery}>조건 수정</button></> : <button type="button" className="subtle-button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? '불러오는 중…' : '더 보기'}</button>}</div>}
@@ -111,23 +113,26 @@ export function CsvListView({ layout, columns, columnIds, displayOverrides, rows
   </div>
 }
 
-function CellDisplay({ column, override, cell }: { column: CsvColumnDefinition | undefined; override: CsvDisplayOverride | undefined; cell: CsvQueryRow['cells'][string] | undefined }) {
-  if (!column || !cell) return <span className="csv-view-cell missing">누락</span>
-  const formatted = formatCell(column, resolveDisplay(column, override), cell, override?.stateText ?? {})
-  if (!formatted.chips) return <span className={`csv-view-cell ${formatted.tone}`}>{formatted.text}</span>
-  return <span className={`csv-view-cell ${formatted.tone}`}>{formatted.chips.map((chip, index) => <span key={`${chip.text}-${index}`} className={`csv-view-chip${chip.unmatched ? ' unmatched' : ''}`} data-color={chip.color ?? undefined}>{chip.text}</span>)}</span>
-}
-
-function format(column: CsvColumnDefinition | undefined, override: CsvDisplayOverride | undefined, cell: CsvQueryRow['cells'][string] | undefined): string {
-  if (!column || !cell) return '누락'
-  return formatCell(column, resolveDisplay(column, override), cell, override?.stateText ?? {}).text
-}
-
 function groupLabel(column: CsvColumnDefinition, cell: CsvQueryRow['cells'][string] | undefined): string {
   if (!cell || cell.state !== 'value') return cell ? { empty: '빈 값', missing: '누락', 'null-marker': '결측 표식', invalid: '해석 실패' }[cell.state] ?? '' : '누락'
-  if (column.type === 'select' && typeof cell.value === 'string') return column.parse.options.find((option) => option.id === cell.value)?.label ?? cell.value
+  if (column.type === 'select' && typeof cell.value === 'string') return column.parse.options.find((option) => option.id === cell.value)?.label ?? `선택지 밖 값 · ${cell.value}`
   if (column.type === 'boolean' && typeof cell.value === 'boolean') return cell.value ? column.display.trueLabel : column.display.falseLabel
+  if ((column.type === 'date' || column.type === 'datetime') && typeof cell.value === 'string') {
+    const day = cell.value.slice(0, 10)
+    const date = new Date(`${day}T00:00:00Z`)
+    if (!Number.isNaN(date.getTime())) return `${Number(day.slice(5, 7))}월 ${Number(day.slice(8, 10))}일 (${['일', '월', '화', '수', '목', '금', '토'][date.getUTCDay()]})${day === new Date().toISOString().slice(0, 10) ? ' · 오늘' : ''}`
+  }
   return String(cell.value)
+}
+
+function listGroupKey(column: CsvColumnDefinition, cell: CsvQueryRow['cells'][string]): string {
+  if (cell.state === 'value' && (column.type === 'date' || column.type === 'datetime') && typeof cell.value === 'string') return encodeGroupKey({ ...cell, value: cell.value.slice(0, 10) })
+  return encodeGroupKey(cell)
+}
+
+function isSpecialGroup(column: CsvColumnDefinition, cell: CsvQueryRow['cells'][string] | undefined): boolean {
+  if (!cell || cell.state !== 'value') return true
+  return column.type === 'select' && typeof cell.value === 'string' && !column.parse.options.some((option) => option.id === cell.value)
 }
 
 function colorStyle(columnId: string | null, row: CsvQueryRow, columns: ReadonlyMap<string, CsvColumnDefinition>): CSSProperties {

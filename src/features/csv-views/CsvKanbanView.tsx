@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { decodeGroupKey } from '../../domain/csv-views/query'
-import { formatCell, resolveDisplay } from '../../domain/csv-views/format'
 import { CSV_POLICY } from '../../domain/csv-views/policy'
 import { csvQueryNextStep } from '../../domain/csv-views/errorGuidance'
 import { CsvQueryError } from '../../domain/csv-views/model'
 import type { CsvColumnDefinition, CsvQueryRow, CsvSample, CsvViewDefinition } from '../../domain/csv-views/model'
 import type { CsvViewController } from '../../app/csvViewController'
+import { CsvCellDisplay } from './CsvCellDisplay'
 
 interface Props {
   view: CsvViewDefinition & { layout: Extract<CsvViewDefinition['layout'], { kind: 'kanban' }> }
@@ -37,9 +37,11 @@ export function CsvKanbanView({ view, columns, controller, onEditView }: Props) 
     return () => abort.abort()
   }, [controller, groupColumn, groupLimit, retry, view])
   const visibleGroups = useMemo(() => (groups ?? []).filter((key) => {
-    if (!view.layout.hiddenGroupKeys.includes(key)) return true
-    return decodeGroupKey(key)?.state !== 'value'
-  }).slice(0, visibleCount), [groups, view.layout.hiddenGroupKeys, visibleCount])
+    const decoded = decodeGroupKey(key)
+    if (decoded?.state !== 'value') return true
+    const registered = groupColumn?.type !== 'select' || typeof decoded.value !== 'string' || groupColumn.parse.options.some((option) => option.id === decoded.value)
+    return !registered || !view.layout.hiddenGroupKeys.includes(key)
+  }).slice(0, visibleCount), [groupColumn, groups, view.layout.hiddenGroupKeys, visibleCount])
   return <div className="csv-kanban-wrap">
     <div className="csv-kanban-status" role="status">
       {groups === null && !error && '그룹 목록을 조회하고 있습니다…'}
@@ -49,9 +51,16 @@ export function CsvKanbanView({ view, columns, controller, onEditView }: Props) 
     {groups?.length === 0 && <p className="csv-view-state">조건에 맞는 그룹이 없습니다.</p>}
     <div className="csv-kanban-columns">
       {groupColumn && visibleGroups.map((key) => <KanbanLane key={key} groupKey={key} label={labelForKey(groupColumn, key)} view={view} columns={columns} controller={controller} onEditView={onEditView} />)}
+      {groups && <section className="csv-kanban-addgroup">
+        <span>{!complete ? '그룹 후보를 모두 확인하지 않았습니다.' : groups.length > visibleCount ? '더 확인된 그룹이 있습니다.' : '그룹 표시를 조정할 수 있습니다.'}</span>
+        <button type="button" className="csv-kanban-link" onClick={() => {
+          if (!complete) {
+            if (window.confirm('현재 조건에 맞는 그룹을 더 확인할까요?')) { setVisibleCount((count) => Math.min(count + CSV_POLICY.maxGroupsPerRequest, CSV_POLICY.maxGroupCount)); setGroupLimit((count) => Math.min(count + CSV_POLICY.maxGroupsPerRequest, CSV_POLICY.maxGroupCount)) }
+          } else if (groups.length > visibleCount) setVisibleCount((count) => Math.min(count + CSV_POLICY.maxGroupsPerRequest, groups.length))
+          else if (window.confirm('보기 설정에서 그룹 컬럼을 바꾸거나 필터 조건을 조정할까요?')) onEditView()
+        }}>{!complete ? '전체 그룹 확인' : groups.length > visibleCount ? '확인한 그룹 더 보기' : '그룹 표시 설정'}</button>
+      </section>}
     </div>
-    {groups && groups.length > visibleCount && <div className="csv-query-more"><button type="button" className="subtle-button" onClick={() => setVisibleCount((count) => Math.min(count + CSV_POLICY.maxGroupsPerRequest, CSV_POLICY.maxGroupCount))}>확인한 그룹 더 보기</button></div>}
-    {groups && !complete && groupLimit < CSV_POLICY.maxGroupCount && <div className="csv-query-more"><button type="button" className="subtle-button" onClick={() => { setVisibleCount((count) => Math.min(count + CSV_POLICY.maxGroupsPerRequest, CSV_POLICY.maxGroupCount)); setGroupLimit((count) => Math.min(count + CSV_POLICY.maxGroupsPerRequest, CSV_POLICY.maxGroupCount)) }}>그룹 {Math.min(CSV_POLICY.maxGroupsPerRequest, CSV_POLICY.maxGroupCount - groupLimit)}개 더 확인</button></div>}
     {groups && !complete && groupLimit >= CSV_POLICY.maxGroupCount && <p className="csv-kanban-status">그룹 후보 {CSV_POLICY.maxGroupCount}개까지만 확인했습니다. 더 찾으려면 그룹 컬럼의 조건을 추가해 범위를 좁히세요.</p>}
   </div>
 }
@@ -88,27 +97,43 @@ function KanbanLane({ groupKey, label, view, columns, controller, onEditView }: 
   }
   useEffect(() => { load(null, false); return () => abortRef.current?.abort() }, [groupKey, view])
   const columnMap = new Map(columns.map((column) => [column.id, column]))
-  return <section className="csv-kanban-column" aria-label={`${label} 그룹`}>
-    <header><strong>{label}</strong><span>{rows.length}{hasMore ? '+' : ''}</span></header>
-    {loading && <p className="csv-view-state">조회 중…</p>}
-    {error && <div className="csv-view-state" role="alert"><p>{error.message}</p><small>{csvQueryNextStep(error)}</small><div><button type="button" className="subtle-button" onClick={() => load(cursor, Boolean(cursor))}>다시 시도</button><button type="button" className="subtle-button" onClick={onEditView}>조건 좁히기</button></div></div>}
-    {!loading && !error && rows.map((row) => <article className="csv-kanban-card" key={row.rowId}>
-      {view.columnIds.map((id) => {
-        const column = columnMap.get(id), cell = row.cells[id]
-        if (!column || !cell) return null
-        const formatted = formatCell(column, resolveDisplay(column, view.displayOverrides[id]), cell, view.displayOverrides[id]?.stateText ?? {})
-        return <div key={id}><small>{view.displayOverrides[id]?.label ?? column.label}</small><span>{formatted.chips?.map((chip) => chip.text).join(' · ') ?? formatted.text}</span></div>
-      })}
-    </article>)}
-    {hasMore && <button type="button" className="subtle-button" disabled={loadingMore} onClick={() => load(cursor, true)}>{loadingMore ? '불러오는 중…' : '더 보기'}</button>}
+  const decoded = decodeGroupKey(groupKey)
+  const groupColumn = columnMap.get(view.layout.groupColumnId)
+  const unregistered = decoded?.state === 'value' && groupColumn?.type === 'select' && typeof decoded.value === 'string' && !groupColumn.parse.options.some((option) => option.id === decoded.value)
+  const isSpecialState = decoded?.state !== 'value' || Boolean(unregistered)
+  const groupColor = groupColumnColor(columnMap.get(view.layout.groupColumnId), decoded?.value)
+  const titleId = view.layout.titleColumnId ?? null
+  const subtitleId = view.layout.subtitleColumnId ?? null
+  const trailingId = view.layout.trailingColumnId ?? null
+  const footerIds = view.layout.footerColumnIds ?? []
+  return <section className={`csv-kanban-column${isSpecialState ? ' special' : ''}`} aria-label={`${label} 그룹`}>
+    <header>{groupColor ? <span className="csv-kanban-group-chip" data-color={groupColor}>{label}</span> : <strong>{label}</strong>}<span className="csv-kanban-count">{rows.length}{hasMore ? '+' : ''}</span></header>
+    <div className="csv-kanban-lane-body">
+      {loading && <p className="csv-view-state">조회 중…</p>}
+      {error && <div className="csv-view-state" role="alert"><p>{error.message}</p><small>{csvQueryNextStep(error)}</small><div><button type="button" className="subtle-button" onClick={() => load(cursor, Boolean(cursor))}>다시 시도</button><button type="button" className="subtle-button" onClick={onEditView}>조건 좁히기</button></div></div>}
+      {!loading && !error && rows.map((row) => <article className="csv-kanban-card" key={row.rowId}>
+        <strong className="csv-kanban-card-title">{titleId ? <CsvCellDisplay column={columnMap.get(titleId)} override={view.displayOverrides[titleId]} cell={row.cells[titleId]} /> : `레코드 ${row.recordNo}`}</strong>
+        {subtitleId && <span className="csv-kanban-card-subtitle"><CsvCellDisplay column={columnMap.get(subtitleId)} override={view.displayOverrides[subtitleId]} cell={row.cells[subtitleId]} /></span>}
+        {(trailingId || view.layout.groupColumnId) && <div className="csv-kanban-card-row"><span className="csv-kanban-record-no">#{row.recordNo}</span>{trailingId && <strong><CsvCellDisplay column={columnMap.get(trailingId)} override={view.displayOverrides[trailingId]} cell={row.cells[trailingId]} /></strong>}</div>}
+        {footerIds.length > 0 && <div className="csv-kanban-card-footer">{footerIds.map((id) => <span key={id}><CsvCellDisplay column={columnMap.get(id)} override={view.displayOverrides[id]} cell={row.cells[id]} /></span>)}</div>}
+      </article>)}
+      {hasMore && <button type="button" className="csv-kanban-more" disabled={loadingMore} onClick={() => load(cursor, true)}>{loadingMore ? '불러오는 중…' : '이 그룹 더 보기'}</button>}
+    </div>
   </section>
+}
+
+function groupColumnColor(column: CsvColumnDefinition | undefined, value: unknown): string | null {
+  if (!column) return null
+  if (column.type === 'select' && typeof value === 'string') return column.parse.options.find((option) => option.id === value)?.color ?? null
+  if (column.type === 'boolean' && typeof value === 'boolean') return value ? 'green' : 'gray'
+  return null
 }
 
 function labelForKey(column: CsvColumnDefinition, key: string): string {
   const group = decodeGroupKey(key)
   if (!group) return '알 수 없는 그룹'
   if (group.state !== 'value') return ({ empty: '빈 값', missing: '누락', 'null-marker': '결측 표식', invalid: '해석 실패' })[group.state]
-  if (column.type === 'select' && typeof group.value === 'string') return column.parse.options.find((option) => option.id === group.value)?.label ?? group.value
+  if (column.type === 'select' && typeof group.value === 'string') return column.parse.options.find((option) => option.id === group.value)?.label ?? `선택지 밖 값 · ${group.value}`
   if (column.type === 'boolean' && typeof group.value === 'boolean') return group.value ? column.display.trueLabel : column.display.falseLabel
   return String(group.value)
 }

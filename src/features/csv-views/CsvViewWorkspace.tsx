@@ -35,7 +35,9 @@ export function CsvViewWorkspace({ document, defaultContent, onModeChange, onErr
   const [importPreview, setImportPreview] = useState<CsvImportPreview | null>(null)
   const [backupImport, setBackupImport] = useState<CsvViewBackup | null>(null)
   const [importMessage, setImportMessage] = useState('')
+  const [calendarTableView, setCalendarTableView] = useState<CsvViewDefinition | null>(null)
   const [tabTargets, setTabTargets] = useState<{ desktop: HTMLElement | null; mobile: HTMLElement | null }>({ desktop: null, mobile: null })
+  const importInput = useRef<HTMLInputElement>(null)
   const documentRef = useRef(document)
   documentRef.current = document
   const sourceSessionKey = isFileBackedCsvDocument(document) ? `${document.sourceRevision}:${document.sourceState.status}` : document.format
@@ -134,6 +136,7 @@ export function CsvViewWorkspace({ document, defaultContent, onModeChange, onErr
 
   const select = (selection: Selection) => {
     if (!controller) return
+    setCalendarTableView(null)
     controller.select(selection)
     if (selection.kind === 'builtin') onModeChange(selection.mode)
     else onModeChange('view')
@@ -196,6 +199,15 @@ export function CsvViewWorkspace({ document, defaultContent, onModeChange, onErr
     if (result.ok) setImportPreview(null)
     else setImportMessage(result.reason === 'storage' ? result.error.message : result.reason === 'invalid' ? result.issues.map((issue) => issue.detail ?? issue.code).join(' · ') : '다른 탭에서 설정이 변경되었습니다.')
   }
+  const showCalendarTable = (view: CsvViewDefinition) => {
+    const tableView: CsvViewDefinition = { ...view, layout: { kind: 'grid' } }
+    setCalendarTableView(view)
+    controller?.previewDraft(tableView)
+  }
+  const returnToCalendar = () => {
+    setCalendarTableView(null)
+    controller?.endPreview()
+  }
 
   if (resolution?.status === 'choose') return <div className="csv-view-workspace"><section className="csv-link-choice" role="status"><h2>기존 CSV 설정을 연결할까요?</h2><p>같은 이름과 크기의 파일이 있어 내용을 확인한 뒤 연결해야 합니다.</p>{resolution.candidates.map((candidate) => <button className="secondary-button" type="button" key={candidate.fileId} onClick={() => { void chooseIdentity(candidate.fileId) }}>기존 보기 연결 · {candidate.basis}</button>)}<button className="secondary-button" type="button" onClick={() => { void chooseIdentity('new') }}>새 CSV 설정 만들기</button></section><div id="csv-view-panel" role="tabpanel" aria-label="CSV 보기">{defaultContent}</div></div>
   if (resolution?.status === 'recover') return <div className="csv-view-workspace"><section className="csv-link-choice" role="status"><h2>기존 CSV 설정 연결을 복구할까요?</h2><p>저장된 프로필의 원본 지문이 없습니다. 머리글이 같은 프로필을 확인한 뒤 연결하면 원본 지문을 다시 저장합니다.</p>{resolution.candidates.map((candidate) => <button className="secondary-button csv-recovery-candidate" type="button" key={candidate.fileId} onClick={() => { void chooseIdentity(candidate.fileId) }}><strong>기존 설정 연결</strong><small>{candidate.headers.map((header) => header ?? '(빈 머리글)').join(' · ')}</small></button>)}<button className="secondary-button" type="button" onClick={() => { void chooseIdentity('new') }}>새 CSV 설정 만들기</button></section><div id="csv-view-panel" role="tabpanel" aria-label="CSV 보기">{defaultContent}</div></div>
@@ -215,16 +227,18 @@ export function CsvViewWorkspace({ document, defaultContent, onModeChange, onErr
     ? `${document.id}:${document.fileId}:${document.sourceRevision}:${stored.record.profile.schemaRevision}` : null
   const selectedQuery = state.query
   const editorSample = sample ?? (document.format === 'csv' && 'model' in document ? memorySample(document) : null)
+  const temporaryTableView = calendarTableView && selectedView?.id === calendarTableView.id ? { ...calendarTableView, layout: { kind: 'grid' as const } } : null
   return <div className="csv-view-workspace">
+    <input ref={importInput} className="visually-hidden" type="file" accept="application/json,.json" aria-label="뷰 설정 파일 선택" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readImport(file); event.currentTarget.value = '' }} />
     {tabTargets.desktop && createPortal(<CsvViewTabs views={views} selection={state.selection} canAddView={state.link.status === 'linked'} placement="desktop" onSelect={select} onAddView={addView} />, tabTargets.desktop)}
     {tabTargets.mobile && createPortal(<CsvViewTabs views={views} selection={state.selection} canAddView={state.link.status === 'linked'} placement="mobile" onSelect={select} onAddView={addView} />, tabTargets.mobile)}
     {selection.kind === 'builtin' && selection.mode === 'view' && !defaultFileView && <div id="csv-view-panel" role="tabpanel" aria-label="CSV 보기">{defaultContent}</div>}
     {selection.kind === 'builtin' && selection.mode === 'source' && !defaultFileView && <div id="csv-view-panel" role="tabpanel" aria-label="CSV 원본">{defaultContent ?? <MissingCsvSource onReconnect={onReconnect} onManageViews={() => setManager(true)} />}</div>}
-    {selection.kind === 'builtin' && selection.mode === 'view' && defaultFileView && <CsvViewHost view={defaultFileView} columns={stored.record.profile.columns} query={selectedQuery} onLoadMore={() => controller.loadMore()} onRetry={() => controller.retry()} onEditView={addView} onEditColumnType={setTypeColumnId} onManageViews={() => setManager(true)} onReconnect={onReconnect} onShowTable={() => select({ kind: 'builtin', mode: 'view' })} onChangeView={() => undefined} onDuplicateView={() => undefined} onDeleteView={() => undefined} onExportView={() => undefined} editable={false} fileBacked sourceAvailable={Boolean(getCsvFileSource(document.id))} controller={controller} sample={sample} cacheToken={cacheToken} tabId="csv-view-builtin-view-tab" />}
-    {!builtin && selectedView && <CsvViewHost view={selectedView} columns={stored.record.profile.columns} query={state.query} onLoadMore={() => controller.loadMore()} onRetry={() => controller.retry()} onEditView={() => { setBuilderMode('edit'); setBuilder(selectedView) }} onEditColumnType={setTypeColumnId} onManageViews={() => setManager(true)} onReconnect={onReconnect} onShowTable={() => select({ kind: 'builtin', mode: 'view' })} onChangeView={(draft) => { void controller.saveView(draft) }} onDuplicateView={() => { void controller.duplicateView(selectedView.id) }} onDeleteView={() => { if (window.confirm(`“${selectedView.name}” 보기를 삭제할까요?`)) void controller.deleteView(selectedView.id) }} onExportView={() => downloadBundle([selectedView.id])} editable fileBacked={isFileBackedCsvDocument(document)} sourceAvailable={!isFileBackedCsvDocument(document) || Boolean(getCsvFileSource(document.id))} controller={controller} sample={sample} cacheToken={cacheToken} />}
+    {selection.kind === 'builtin' && selection.mode === 'view' && defaultFileView && <CsvViewHost view={defaultFileView} columns={stored.record.profile.columns} query={selectedQuery} onLoadMore={() => controller.loadMore()} onRetry={() => controller.retry()} onEditView={addView} onEditColumnType={setTypeColumnId} onManageViews={() => setManager(true)} onImportViews={() => importInput.current?.click()} onReconnect={onReconnect} onShowTable={() => undefined} onChangeView={() => undefined} onDuplicateView={() => undefined} onDeleteView={() => undefined} onExportView={() => undefined} editable={false} fileBacked fileDefaultView sourceAvailable={Boolean(getCsvFileSource(document.id))} controller={controller} sample={sample} cacheToken={cacheToken} tabId="csv-view-builtin-view-tab" />}
+    {!builtin && selectedView && <CsvViewHost view={temporaryTableView ?? selectedView} columns={stored.record.profile.columns} query={state.query} onLoadMore={() => controller.loadMore()} onRetry={() => controller.retry()} onEditView={() => { if (temporaryTableView) return; setBuilderMode('edit'); setBuilder(selectedView) }} onEditColumnType={setTypeColumnId} onManageViews={() => setManager(true)} onImportViews={() => importInput.current?.click()} onReconnect={onReconnect} onShowTable={() => showCalendarTable(selectedView)} onReturnCalendar={returnToCalendar} temporaryCalendarTable={Boolean(temporaryTableView)} onChangeView={(draft) => { if (!temporaryTableView) void controller.saveView(draft) }} onDuplicateView={() => { void controller.duplicateView(selectedView.id) }} onDeleteView={() => { if (window.confirm(`“${selectedView.name}” 보기를 삭제할까요?`)) void controller.deleteView(selectedView.id) }} onExportView={() => downloadBundle([selectedView.id])} editable={!temporaryTableView} fileBacked={isFileBackedCsvDocument(document)} sourceAvailable={!isFileBackedCsvDocument(document) || Boolean(getCsvFileSource(document.id))} controller={controller} sample={sample} cacheToken={cacheToken} />}
     {state.link.status === 'choose' && <p className="inline-warning">보기 설정을 연결할 대상을 선택해야 새 사용자 보기를 추가할 수 있습니다.</p>}
     {state.sample.status === 'error' && <p className="inline-warning" role="status">표본 추천을 준비하지 못했습니다. 기존 설정과 기본 보기는 계속 사용할 수 있습니다.</p>}
-    {builder && <CsvViewBuilder profile={stored.record.profile} sourceName={document.name} initial={builder} mode={builderMode} preview={state.query} sourceAvailable={!isFileBackedCsvDocument(document) || Boolean(getCsvFileSource(document.id))} onDraftChange={(draft) => controller.previewDraft(draft)} onApply={applyView} onCancel={() => { setBuilder(null); controller.endPreview() }} onEditColumnType={setTypeColumnId} />}
+    {builder && <CsvViewBuilder profile={stored.record.profile} sourceName={document.name} initial={builder} mode={builderMode} preview={state.query} sourceAvailable={!isFileBackedCsvDocument(document) || Boolean(getCsvFileSource(document.id))} fileBacked={isFileBackedCsvDocument(document)} onDraftChange={(draft) => controller.previewDraft(draft)} onApply={applyView} onCancel={() => { setBuilder(null); controller.endPreview() }} onEditColumnType={setTypeColumnId} />}
     {typeColumnId && <CsvColumnTypeEditor column={stored.record.profile.columns.find((column) => column.id === typeColumnId)!} profile={stored.record.profile} views={stored.views} sample={editorSample} onApply={(draft) => controller.applyColumns(stored.record.profile.columns.map((column) => column.id === draft.id ? draft : column))} onCancel={() => setTypeColumnId(null)} />}
     {manager && <CsvViewManager fileName={document.name} views={stored.views} activeViewId={selection.kind === 'custom' ? selection.viewId : null} onAdd={() => { setManager(false); addView() }} onClose={() => setManager(false)} onRename={async (id, name) => { const view = stored.views.find((item) => item.id === id); return view ? controller.saveView({ ...view, name, updatedAt: new Date().toISOString() }) : { ok: false, reason: 'invalid', issues: [{ path: '/viewId', code: 'required', detail: '보기를 찾을 수 없습니다.' }] } }} onDuplicate={(id) => controller.duplicateView(id)} onDelete={(id) => controller.deleteView(id)} onReorder={(order) => controller.reorderViews(order)} onExport={downloadBundle} onImport={(file) => { void readImport(file) }} />}
     {backupImport && <CsvBackupProfileDialog profiles={backupImport.profiles} onSelect={selectBackupProfile} onCancel={() => setBackupImport(null)} />}

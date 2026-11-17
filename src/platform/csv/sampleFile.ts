@@ -6,6 +6,7 @@ import { readIdentity } from './fileIdentity'
 export interface CsvSourceFile extends Blob { name: string; lastModified: number; type: string }
 export interface CsvByteRangePage {
   rows: string[][]
+  rawRecords: { recordNo: number; startByte: number; endByte: number; text: string }[]
   firstRecordNo: number | null
   startByte: number
   endByte: number
@@ -45,6 +46,7 @@ export async function readCsvByteRange(file: CsvSourceFile, settings: CsvParserS
   let recordBufferLength = 0
   let recordByteLength = 0
   const rows: string[][] = []
+  const rawRecords: CsvByteRangePage['rawRecords'] = []
   const decoder = new TextDecoder(settings.encoding, { fatal: true, ignoreBOM: true })
   const quoteByte = settings.quote === null ? null : asciiByte(settings.quote, '인용 부호')
   const delimiterByte = asciiByte(settings.delimiter, '구분자')
@@ -66,6 +68,8 @@ export async function readCsvByteRange(file: CsvSourceFile, settings: CsvParserS
       bytes.set(recordBuffer.subarray(0, recordBufferLength), byteOffset)
       let text = decoder.decode(bytes)
       if (recordOrdinal === 0 && settings.bom !== 'absent' && text.startsWith('\uFEFF')) text = text.slice(1)
+      const recordNo = settings.hasHeader ? recordOrdinal : recordOrdinal + 1
+      if (!(settings.hasHeader && recordOrdinal === 0)) rawRecords.push({ recordNo, startByte: recordStart, endByte: recordStart + recordByteLength, text })
       const parsed = Papa.parse<string[]>(text, {
         delimiter: settings.delimiter, quoteChar: settings.quote ?? undefined,
         escapeChar: settings.escape === 'backslash' ? '\\' : settings.quote ?? undefined,
@@ -133,7 +137,7 @@ export async function readCsvByteRange(file: CsvSourceFile, settings: CsvParserS
     rangeEnd = file.size
   }
   if (startByte < 0) startByte = rangeEnd
-  return { rows, firstRecordNo, startByte, endByte: rangeEnd, nextOffset: rangeEnd, nextRecordOrdinal: recordOrdinal, hasMore: rangeEnd < file.size }
+  return { rows, rawRecords, firstRecordNo, startByte, endByte: rangeEnd, nextOffset: rangeEnd, nextRecordOrdinal: recordOrdinal, hasMore: rangeEnd < file.size }
 }
 
 /** Reads only the bounded prefix required for column setup; the source Blob stays external. */

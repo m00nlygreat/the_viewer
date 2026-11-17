@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { formatCell, resolveDisplay } from '../../domain/csv-views/format'
 import { evaluateFilter } from '../../domain/csv-views/query'
 import { parseCell } from '../../domain/csv-views/typing'
 import { CSV_POLICY } from '../../domain/csv-views/policy'
 import { csvQueryNextStep } from '../../domain/csv-views/errorGuidance'
 import { CsvQueryError } from '../../domain/csv-views/model'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { CsvCellDisplay } from './CsvCellDisplay'
 import type { CsvColumnDefinition, CsvQueryRow, CsvSample, CsvViewDefinition } from '../../domain/csv-views/model'
 import type { CsvViewController } from '../../app/csvViewController'
 
@@ -111,21 +112,23 @@ export function CsvCalendarView({ view, columns, sample, controller, cacheToken,
     if (!dayStarted[day] || (dayCursors[day] && (dayRows[day]?.length ?? 0) < CSV_POLICY.maxCalendarRowsPerDay)) loadDay(day)
   }
   const dayCells = range.days.map((day) => ({ day, key: isoDay(day) }))
+  const firstDateFailure = firstSampleDateFailure(sample, dateColumn)
+  const today = isoDay(new Date())
   return <div className="csv-calendar-wrap">
-    <nav className="csv-calendar-nav" aria-label="캘린더 월 이동"><button type="button" className="subtle-button" onClick={() => setMonth((value) => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() - 1, 1)))}>이전 달</button><strong>{month.getUTCFullYear()}년 {month.getUTCMonth() + 1}월</strong><button type="button" className="subtle-button" onClick={() => setMonth((value) => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 1)))}>다음 달</button></nav>
-    {dateColumn && <div className="csv-calendar-diagnostics" role="status"><span>{sample ? `날짜 해석 실패 ${invalidDateCount}행${sample.reachedEof ? '' : ` · 표본 ${sample.records.length}행 기준`}` : '날짜 해석 실패 건수를 준비하고 있습니다.'}</span><button type="button" className="subtle-button" onClick={onShowTable}>표로 보기</button></div>}
+    <nav className="csv-calendar-nav" aria-label="캘린더 월 이동"><button type="button" className="csv-calendar-icon-button" aria-label="이전 달" onClick={() => setMonth((value) => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() - 1, 1)))}><ChevronLeft size={16} aria-hidden="true" /></button><strong>{month.getUTCFullYear()}년 {month.getUTCMonth() + 1}월</strong><button type="button" className="csv-calendar-icon-button" aria-label="다음 달" onClick={() => setMonth((value) => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 1)))}><ChevronRight size={16} aria-hidden="true" /></button><button type="button" className="secondary-button csv-calendar-today" onClick={() => setMonth(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)))}>오늘</button><span className="csv-calendar-range-label">조회 범위 {range.start} ~ {range.end} (끝 제외) · {dateColumn?.type === 'datetime' ? 'UTC 기준 날짜' : '날짜 전용, 시간대 이동 없음'}</span></nav>
     {loading && <p className="csv-view-state" role="status">기간 조회 중…</p>}
     {error && <div className="csv-view-error" role="alert"><p>{error.message}</p><small>{csvQueryNextStep(error)}</small><div><button type="button" className="subtle-button" onClick={() => setRetryMonth((value) => value + 1)}>다시 조회</button><button type="button" className="subtle-button" onClick={onEditView}>조건 좁히기</button></div></div>}
     {!loading && <div className="csv-calendar-grid" role="grid" aria-label="월간 CSV 캘린더">
-      {['월', '화', '수', '목', '금', '토', '일'].map((label) => <div className="csv-calendar-weekday" role="columnheader" key={label}>{label}</div>)}
-      {dayCells.map(({ day, key }) => <section className={`csv-calendar-day${day.getUTCMonth() === month.getUTCMonth() ? '' : ' outside'}`} role="gridcell" aria-label={key} key={key}>
+      {['일', '월', '화', '수', '목', '금', '토'].map((label) => <div className="csv-calendar-weekday" role="columnheader" key={label}>{label}</div>)}
+      {dayCells.map(({ day, key }) => <section className={`csv-calendar-day${day.getUTCMonth() === month.getUTCMonth() ? '' : ' outside'}${key === today ? ' today' : ''}`} role="gridcell" aria-label={key} key={key}>
         <header><time dateTime={key}>{day.getUTCDate()}</time><span>{byDay.get(key)?.length ?? 0}</span></header>
         {(byDay.get(key) ?? []).slice(0, dayVisibleCounts[key] ?? CSV_POLICY.calendarInitialEventsPerDay).map((row) => <CalendarEvent key={row.rowId} row={row} view={view} columns={columns} />)}
         {dayErrors[key] && <div className="csv-calendar-day-error" role="alert"><span>{dayErrors[key]?.message}</span><button type="button" className="subtle-button" onClick={() => loadDay(key)}>다시 시도</button><button type="button" className="subtle-button" onClick={onEditView}>조건 좁히기</button></div>}
-        {((byDay.get(key)?.length ?? 0) > (dayVisibleCounts[key] ?? CSV_POLICY.calendarInitialEventsPerDay) || !dayStarted[key] || Boolean(dayCursors[key] && (dayRows[key]?.length ?? 0) < CSV_POLICY.maxCalendarRowsPerDay)) && <button type="button" className="subtle-button csv-calendar-day-more" disabled={dayLoading[key]} onClick={() => showMoreForDay(key)}>{dayLoading[key] ? '조회 중…' : (byDay.get(key)?.length ?? 0) > (dayVisibleCounts[key] ?? CSV_POLICY.calendarInitialEventsPerDay) ? `+${(byDay.get(key)?.length ?? 0) - (dayVisibleCounts[key] ?? CSV_POLICY.calendarInitialEventsPerDay)} 더 보기` : dayStarted[key] ? '날짜 더 불러오기' : '날짜 전체 조회'}</button>}
+        {((byDay.get(key)?.length ?? 0) > (dayVisibleCounts[key] ?? CSV_POLICY.calendarInitialEventsPerDay) || Boolean(dayStarted[key] && dayCursors[key] && (dayRows[key]?.length ?? 0) < CSV_POLICY.maxCalendarRowsPerDay)) && <button type="button" className="subtle-button csv-calendar-day-more" disabled={dayLoading[key]} onClick={() => showMoreForDay(key)}>{dayLoading[key] ? '조회 중…' : (byDay.get(key)?.length ?? 0) > (dayVisibleCounts[key] ?? CSV_POLICY.calendarInitialEventsPerDay) ? `+${(byDay.get(key)?.length ?? 0) - (dayVisibleCounts[key] ?? CSV_POLICY.calendarInitialEventsPerDay)} 더 보기` : '날짜 더 불러오기'}</button>}
         {dayStarted[key] && (dayRows[key]?.length ?? 0) >= CSV_POLICY.maxCalendarRowsPerDay && dayCursors[key] && <small>날짜별 {CSV_POLICY.maxCalendarRowsPerDay}행을 표시했습니다. 더 찾으려면 조건을 좁히세요.</small>}
       </section>)}
     </div>}
+    {dateColumn && <div className="csv-calendar-diagnostics" role="status"><span>날짜 해석 실패 {invalidDateCount}행{sample && !sample.reachedEof ? ` · 표본 ${sample.records.length}행 기준` : ''}{firstDateFailure ? ` · 예: #${firstDateFailure.recordNo} ${firstDateFailure.raw}` : ''}</span><button type="button" className="subtle-button" onClick={onShowTable}>표로 보기</button></div>}
     {hasMore && <div className="csv-query-more">{monthMoreError ? <><span role="alert">{monthMoreError.message} {csvQueryNextStep(monthMoreError)}</span><button type="button" className="subtle-button" disabled={loadingMore} onClick={loadMoreMonth}>다시 시도</button><button type="button" className="subtle-button" onClick={onEditView}>조건 좁히기</button></> : <button type="button" className="subtle-button" disabled={loadingMore} onClick={loadMoreMonth}>{loadingMore ? '불러오는 중…' : '기간 결과 더 보기'}</button>}</div>}
   </div>
 }
@@ -143,21 +146,42 @@ function sampleDateFailures(sample: CsvSample | null, dateColumn: CsvColumnDefin
   }, 0)
 }
 
+function firstSampleDateFailure(sample: CsvSample | null, dateColumn: CsvColumnDefinition | undefined): { recordNo: number; raw: string } | null {
+  if (!sample || !dateColumn) return null
+  for (let index = 0; index < sample.records.length; index += 1) {
+    const raw = sample.records[index]?.[dateColumn.sourceIndex]
+    if (parseCell(dateColumn, raw).state === 'invalid') return { recordNo: sample.firstRecordNo + index, raw: raw ?? '' }
+  }
+  return null
+}
+
 function CalendarEvent({ row, view, columns }: { row: CsvQueryRow; view: Props['view']; columns: CsvColumnDefinition[] }) {
-  const ids = view.columnIds.length ? view.columnIds : [view.layout.dateColumnId]
-  return <article className="csv-calendar-event" title={`레코드 ${row.recordNo}`}>{ids.slice(0, 3).map((id) => {
-    const column = columns.find((item) => item.id === id), cell = row.cells[id]
-    if (!column || !cell) return null
-    const formatted = formatCell(column, resolveDisplay(column, view.displayOverrides[id]), cell, view.displayOverrides[id]?.stateText ?? {})
-    return <span key={id}>{formatted.chips?.map((chip) => chip.text).join(' · ') ?? formatted.text}</span>
-  })}</article>
+  const columnMap = new Map(columns.map((column) => [column.id, column]))
+  const titleId = view.layout.titleColumnId ?? view.columnIds.find((id) => id !== view.layout.dateColumnId) ?? null
+  const subtitleId = view.layout.subtitleColumnId ?? null
+  const titleColumn = titleId ? columnMap.get(titleId) : undefined
+  const titleCell = titleId ? row.cells[titleId] : undefined
+  const subtitleColumn = subtitleId ? columnMap.get(subtitleId) : undefined
+  const subtitleCell = subtitleId ? row.cells[subtitleId] : undefined
+  const colorColumn = view.layout.colorColumnId ? columnMap.get(view.layout.colorColumnId) : undefined
+  const colorCell = view.layout.colorColumnId ? row.cells[view.layout.colorColumnId] : undefined
+  const color = colorColumn && colorCell?.state === 'value'
+    ? colorColumn.type === 'select' && typeof colorCell.value === 'string' ? colorColumn.parse.options.find((option) => option.id === colorCell.value)?.color
+      : colorColumn.type === 'boolean' && typeof colorCell.value === 'boolean' ? colorCell.value ? 'green' : 'gray' : undefined
+    : undefined
+  const colorValues: Record<string, string> = { gray: '#858a93', red: '#d86a70', orange: '#dc8b51', yellow: '#ceb64e', green: '#58a77a', teal: '#50aaa5', blue: '#668dd1', purple: '#9876ca', pink: '#d379ad' }
+  const style = color ? { ['--csv-calendar-color' as string]: colorValues[color] ?? colorValues.gray } : undefined
+  return <article className="csv-calendar-event" style={style} title={`레코드 ${row.recordNo}`}>
+    <strong>{titleColumn && titleId ? <CsvCellDisplay column={titleColumn} override={view.displayOverrides[titleId]} cell={titleCell} /> : `레코드 ${row.recordNo}`}</strong>
+    {subtitleColumn && subtitleId && <span><CsvCellDisplay column={subtitleColumn} override={view.displayOverrides[subtitleId]} cell={subtitleCell} /></span>}
+  </article>
 }
 
 function monthRange(month: Date): { start: string; end: string; days: Date[] } {
   const first = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1))
   const last = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0))
-  const start = new Date(first); start.setUTCDate(first.getUTCDate() - ((first.getUTCDay() + 6) % 7))
-  const end = new Date(last); end.setUTCDate(last.getUTCDate() + (7 - ((last.getUTCDay() + 6) % 7)))
+  const start = new Date(first); start.setUTCDate(first.getUTCDate() - first.getUTCDay())
+  const end = new Date(last); end.setUTCDate(last.getUTCDate() + (7 - last.getUTCDay()))
   const days: Date[] = []
   for (const date = new Date(start); date < end; date.setUTCDate(date.getUTCDate() + 1)) days.push(new Date(date))
   return { start: isoDay(start), end: isoDay(end), days }

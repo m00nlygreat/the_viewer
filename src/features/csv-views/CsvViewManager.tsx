@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
-import { CalendarDays, Columns3, Copy, Download, GripVertical, LayoutGrid, List, Pencil, Plus, Table2, Trash2, Upload } from 'lucide-react'
+import { Copy, Download, GripVertical, Pencil, Plus, Trash2, Upload } from 'lucide-react'
 import type { CsvSaveResult, CsvViewDefinition } from '../../domain/csv-views/model'
+import { CsvMockupIcon } from './CsvMockupIcon'
 
 export interface CsvViewManagerProps {
   fileName: string
@@ -16,8 +17,7 @@ export interface CsvViewManagerProps {
   onClose(): void
 }
 
-const layoutLabels: Record<CsvViewDefinition['layout']['kind'], string> = { grid: '표', list: '목록', gallery: '갤러리', kanban: '보드', calendar: '캘린더' }
-const layoutIcons = { grid: Table2, list: List, gallery: LayoutGrid, kanban: Columns3, calendar: CalendarDays } as const
+const layoutLabels: Record<CsvViewDefinition['layout']['kind'], string> = { grid: '표', list: '리스트', gallery: '갤러리', kanban: '칸반', calendar: '캘린더' }
 
 export function CsvViewManager({ fileName, views, activeViewId, onAdd, onRename, onDuplicate, onDelete, onReorder, onExport, onImport, onClose }: CsvViewManagerProps) {
   const input = useRef<HTMLInputElement>(null)
@@ -64,14 +64,13 @@ export function CsvViewManager({ fileName, views, activeViewId, onAdd, onRename,
     <header><div><h2 id="csv-view-manager-title">보기 관리</h2><p>{fileName} · 뷰 {views.length}개</p></div><button type="button" className="icon-button" aria-label="보기 관리 닫기" onClick={onClose}>×</button></header>
     <div className="csv-view-manager-body">
       <div className="csv-view-manager-list">{views.map((view, index) => {
-        const Icon = layoutIcons[view.layout.kind]
         const updated = new Date(view.updatedAt)
         const updatedLabel = Number.isNaN(updated.getTime()) ? '수정일 알 수 없음' : `수정 ${new Intl.DateTimeFormat('ko-KR', { month: 'numeric', day: 'numeric' }).format(updated)}`
         const meta = `${layoutLabels[view.layout.kind]} · 컬럼 ${view.columnIds.length} · 필터 ${view.filter ? 1 : 0} · 정렬 ${view.sort.length} · ${updatedLabel}`
         const busy = busyId === view.id
         return <div className={`csv-view-manager-row${activeViewId === view.id ? ' active' : ''}${draggingId === view.id ? ' dragging' : ''}`} key={view.id} onDragOver={(event) => { if (draggingId) event.preventDefault() }} onDrop={(event) => { event.preventDefault(); dropBefore(view.id) }}>
           <span className="csv-view-manager-grip-handle" draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', view.id); setDraggingId(view.id) }} onDragEnd={() => setDraggingId(null)}><GripVertical className="csv-view-manager-grip" size={16} aria-hidden="true" /></span>
-          <Icon className="csv-view-manager-layout" size={17} aria-hidden="true" />
+          <CsvMockupIcon className="csv-view-manager-layout" name={view.layout.kind} size={15} />
           <div className="csv-view-manager-copy">
             {editingId === view.id ? <div className="csv-view-manager-rename"><input aria-label="보기 이름" maxLength={128} value={name} onChange={(event) => setName(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === 'Enter') void saveRename(); if (event.key === 'Escape') setEditingId(null) }} /><button type="button" className="subtle-button" disabled={busy || !name.trim()} onClick={() => { void saveRename() }}>저장</button></div> : <><strong>{view.name}</strong><small>{meta}</small></>}
           </div>
