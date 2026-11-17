@@ -14,6 +14,8 @@ usage: "중요한 결정, 새 사실, 범위 변경, 설계 방향 변경이 생
 - 칸반의 추가 그룹 확인과 특수 그룹, 캘린더의 날짜별 표시 제한·추가 조회·해석 실패 수·표 복귀, 조회 오류의 조건 축소 안내를 보강했다. `select`는 추천 후보로만 두고 자동 타입 판정은 `text` 기본값을 유지한다.
 - 버전을 `0.7.0`으로 맞췄다. [CSV 구현 지시서](../docs/CSV_DYNAMIC_VIEW_IMPLEMENTATION.md)에 정한 P4 한도와 고정 DuckDB-Wasm·Arrow 버전을 유지했다.
 - `npm run typecheck:app`, `npm run test`(42개 파일·219개 테스트), `npm run build`가 통과했다. UI·쿼리 수명·DB 이행·실브라우저·성능 검증은 수행하지 않았다.
+- CSV 동적 표는 목업처럼 읽기 전용 HTML 표로 렌더링한다. 타입 아이콘 헤더·원본 행 번호·상태 표시를 넣고, 결과 행은 가상화해 표시한다. 버전을 `0.7.1`로 올렸다.
+- 변경 뒤 `npm run typecheck:app`, `npm run test`(42개 파일·219개 테스트), `npm run build`가 통과했다.
 
 ## 2026-11-16
 
