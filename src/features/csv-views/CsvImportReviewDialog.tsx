@@ -57,10 +57,10 @@ function referencedColumnIds(view: CsvViewDefinition): string[] {
     ...view.sort.map((item) => item.columnId),
     ...filterColumnIds(view.filter),
     ...Object.keys(view.displayOverrides),
-    ...(view.layout.kind === 'list' ? [view.layout.titleColumnId, view.layout.subtitleColumnId, view.layout.trailingColumnId, view.layout.colorColumnId, view.layout.groupColumnId].filter((id): id is string => id !== null) : []),
-    ...(view.layout.kind === 'gallery' ? [view.layout.titleColumnId, view.layout.coverColumnId].filter((id): id is string => id !== null) : []),
-    ...(view.layout.kind === 'kanban' ? [view.layout.groupColumnId] : []),
-    ...(view.layout.kind === 'calendar' ? [view.layout.dateColumnId] : [])
+    ...(view.layout.kind === 'list' ? [view.layout.titleColumnId, view.layout.subtitleColumnId, view.layout.trailingColumnId, view.layout.colorColumnId, view.layout.groupColumnId, ...(view.layout.badgeColumnIds ?? [])].filter((id): id is string => id !== null) : []),
+    ...(view.layout.kind === 'gallery' ? [view.layout.titleColumnId, view.layout.coverColumnId, view.layout.subtitleColumnId, ...(view.layout.badgeColumnIds ?? []), ...(view.layout.footerColumnIds ?? [])].filter((id): id is string => id !== null) : []),
+    ...(view.layout.kind === 'kanban' ? [view.layout.groupColumnId, view.layout.titleColumnId, view.layout.subtitleColumnId, view.layout.trailingColumnId, ...(view.layout.footerColumnIds ?? [])].filter((id): id is string => id !== null) : []),
+    ...(view.layout.kind === 'calendar' ? [view.layout.dateColumnId, view.layout.titleColumnId, view.layout.subtitleColumnId, view.layout.colorColumnId].filter((id): id is string => id !== null) : [])
   ])]
 }
 

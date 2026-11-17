@@ -34,6 +34,14 @@ describe('CSV view schema and revisions', () => {
     if (!result.ok) expect(result.issues.some((issue) => issue.code === 'operator-not-allowed')).toBe(true)
   })
 
+  it('continues to read v1 layouts written before card role fields existed', () => {
+    const legacy = bundle()
+    legacy.views[0] = { ...view, layout: { kind: 'gallery', titleColumnId: 'c1', coverColumnId: null } }
+    const result = validateViewBundle(legacy)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value.views[0]?.layout).toEqual({ kind: 'gallery', titleColumnId: 'c1', coverColumnId: null, subtitleColumnId: null, badgeColumnIds: [], footerColumnIds: [] })
+  })
+
   it('increments profile revision for every save and schema revision only for schema changes', () => {
     expect(nextRevisions(null, { schemaChanged: false })).toEqual({ schemaRevision: 1, profileRevision: 1 })
     expect(nextRevisions({ schemaRevision: 4, profileRevision: 8 }, { schemaChanged: false })).toEqual({ schemaRevision: 4, profileRevision: 9 })

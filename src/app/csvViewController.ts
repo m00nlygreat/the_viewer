@@ -49,6 +49,8 @@ export interface CsvViewController {
   queryScoped(view: CsvViewDefinition, scope: CsvQueryRequest['scope'], cursor: string | null, queryId: string, signal: AbortSignal): Promise<CsvQueryPage>
   discoverGroups(view: CsvViewDefinition, columnId: string, limit: number, signal: AbortSignal): Promise<{ keys: string[]; complete: boolean }>
   retry(): void
+  cancel(): void
+  count(view: CsvViewDefinition): Promise<string>
   previewDraft(draft: CsvViewDefinition): void
   endPreview(): void
   saveView(draft: CsvViewDefinition): Promise<CsvSaveResult>
@@ -89,6 +91,7 @@ export class DefaultCsvViewController implements CsvViewController {
   private readonly queriesEnabled: boolean
   private currentQueryView: CsvViewDefinition | null = null
   private currentQuery: { queryId: string; requestId: string; abort: AbortController } | null = null
+  private countAbort: AbortController | null = null
   private previewTimer: number | null = null
   private preview: CsvViewDefinition | null = null
   private disposed = false
@@ -232,10 +235,49 @@ export class DefaultCsvViewController implements CsvViewController {
 
   retry(): void { if (this.queriesEnabled && this.state.selection.kind === 'custom' && !usesScopedQueries(this.activeView())) this.startQuery() }
 
+  cancel(): void {
+    this.cancelCurrent()
+    this.countAbort?.abort(); this.countAbort = null
+    if (this.state.query.status === 'loading') this.state = { ...this.state, query: { status: 'idle' } }
+    else if (this.state.query.status === 'ready' && this.state.query.loadingMore) this.state = { ...this.state, query: { ...this.state.query, loadingMore: false, loadMoreError: null } }
+    this.emit()
+  }
+
+  count = async (view: CsvViewDefinition): Promise<string> => {
+    if (!this.queriesEnabled || this.disposed) throw new QueryError('source-unavailable', '원본 CSV를 다시 연결하면 건수를 계산할 수 있습니다.')
+    this.countAbort?.abort()
+    const abort = new AbortController(); this.countAbort = abort
+    const queryId = `count-${crypto.randomUUID()}`
+    let cursor: string | null = null
+    let total = 0n
+    const task = async () => {
+      while (true) {
+        if (abort.signal.aborted) throw new QueryError('cancelled', '건수 계산이 취소되었습니다.')
+        const request = this.requestFor(view, queryId, crypto.randomUUID(), cursor)
+        const firstColumnId = this.getStored().record.profile.columns[0]?.id
+        request.columnIds = firstColumnId ? [firstColumnId] : request.columnIds
+        request.sort = []
+        const page = await this.source.query(request, abort.signal)
+        const stored = this.getStored()
+        if (page.dataset.documentId !== this.state.documentId || page.dataset.fileId !== stored.record.fileId || page.dataset.sourceRevision !== this.sourceRevision || page.dataset.schemaRevision !== stored.record.profile.schemaRevision) throw new QueryError('stale-dataset', '건수 계산 중 CSV 원본이 변경되었습니다.')
+        total += BigInt(page.rows.length)
+        if (!page.hasMore) return total.toString()
+        if (!page.nextCursor) throw new QueryError('internal', '건수 계산을 이어갈 위치를 받지 못했습니다.')
+        cursor = page.nextCursor
+      }
+    }
+    const next = this.scopedQueue.then(task, task)
+    this.scopedQueue = next.then(() => undefined, () => undefined)
+    try { return await next }
+    finally { if (this.countAbort === abort) this.countAbort = null }
+  }
+
   previewDraft(draft: CsvViewDefinition): void {
     if (!this.queriesEnabled) return
     this.preview = draft
     if (this.previewTimer !== null) window.clearTimeout(this.previewTimer)
+    this.cancelCurrent()
+    this.state = { ...this.state, query: { status: 'loading', queryId: `preview-pending-${crypto.randomUUID()}` } }; this.emit()
     this.previewTimer = window.setTimeout(() => { this.previewTimer = null; this.startQuery(draft) }, CSV_POLICY.queryDebounceMs)
   }
 
@@ -350,6 +392,7 @@ export class DefaultCsvViewController implements CsvViewController {
     this.disposed = true
     if (this.previewTimer !== null) window.clearTimeout(this.previewTimer)
     this.cancelCurrent()
+    this.countAbort?.abort(); this.countAbort = null
     void this.source.dispose()
     this.listeners.clear()
   }
@@ -456,15 +499,22 @@ function isCancelled(error: unknown): boolean { return error instanceof QueryErr
 function invalidResult(path: string, detail: string, code: CsvValidationIssue['code'] = 'required'): CsvSaveResult { return { ok: false, reason: 'invalid', issues: [{ path, code, detail }] } }
 function schemaPart(column: CsvColumnDefinition): unknown { return { id: column.id, sourceIndex: column.sourceIndex, sourceHeader: column.sourceHeader, type: column.type, parse: column.parse, nullMarkers: column.nullMarkers, allowSurroundingSpace: column.allowSurroundingSpace } }
 function remapView(view: CsvViewDefinition, mapping: Map<string, string>): CsvViewDefinition | null {
-  const mapId = (id: string | null): string | null => id === null ? null : mapping.get(id) ?? null
+  const mapId = (id: string | null | undefined): string | null => id == null ? null : mapping.get(id) ?? null
+  const mapIds = (ids: string[] | undefined): string[] => (ids ?? []).flatMap((id) => { const mapped = mapping.get(id); return mapped ? [mapped] : [] })
+  const missing = (ids: (string | null | undefined)[]) => ids.some((id) => id != null && !mapping.has(id))
   const columnIds = view.columnIds.map(mapId)
   if (columnIds.some((id) => id === null)) return null
   const layout = view.layout.kind === 'grid' ? view.layout
-    : view.layout.kind === 'list' ? { ...view.layout, titleColumnId: mapId(view.layout.titleColumnId), subtitleColumnId: mapId(view.layout.subtitleColumnId), trailingColumnId: mapId(view.layout.trailingColumnId), colorColumnId: mapId(view.layout.colorColumnId), groupColumnId: mapId(view.layout.groupColumnId) }
-      : view.layout.kind === 'gallery' ? { ...view.layout, titleColumnId: mapId(view.layout.titleColumnId), coverColumnId: mapId(view.layout.coverColumnId) }
-        : view.layout.kind === 'kanban' ? { ...view.layout, groupColumnId: mapId(view.layout.groupColumnId) }
-          : { ...view.layout, dateColumnId: mapId(view.layout.dateColumnId) }
-  if (JSON.stringify(layout).includes('null')) return null
+    : view.layout.kind === 'list' ? { ...view.layout, titleColumnId: mapId(view.layout.titleColumnId)!, subtitleColumnId: mapId(view.layout.subtitleColumnId), trailingColumnId: mapId(view.layout.trailingColumnId), colorColumnId: mapId(view.layout.colorColumnId), groupColumnId: mapId(view.layout.groupColumnId), badgeColumnIds: mapIds(view.layout.badgeColumnIds) }
+      : view.layout.kind === 'gallery' ? { ...view.layout, titleColumnId: mapId(view.layout.titleColumnId)!, coverColumnId: mapId(view.layout.coverColumnId), subtitleColumnId: mapId(view.layout.subtitleColumnId), badgeColumnIds: mapIds(view.layout.badgeColumnIds), footerColumnIds: mapIds(view.layout.footerColumnIds) }
+        : view.layout.kind === 'kanban' ? { ...view.layout, groupColumnId: mapId(view.layout.groupColumnId)!, titleColumnId: mapId(view.layout.titleColumnId), subtitleColumnId: mapId(view.layout.subtitleColumnId), trailingColumnId: mapId(view.layout.trailingColumnId), footerColumnIds: mapIds(view.layout.footerColumnIds) }
+          : { ...view.layout, dateColumnId: mapId(view.layout.dateColumnId)!, titleColumnId: mapId(view.layout.titleColumnId), subtitleColumnId: mapId(view.layout.subtitleColumnId), colorColumnId: mapId(view.layout.colorColumnId) }
+  const missingLayoutReference = view.layout.kind === 'grid' ? false
+    : view.layout.kind === 'list' ? missing([view.layout.titleColumnId, view.layout.subtitleColumnId, view.layout.trailingColumnId, view.layout.colorColumnId, view.layout.groupColumnId, ...(view.layout.badgeColumnIds ?? [])])
+      : view.layout.kind === 'gallery' ? missing([view.layout.titleColumnId, view.layout.coverColumnId, view.layout.subtitleColumnId, ...(view.layout.badgeColumnIds ?? []), ...(view.layout.footerColumnIds ?? [])])
+        : view.layout.kind === 'kanban' ? missing([view.layout.groupColumnId, view.layout.titleColumnId, view.layout.subtitleColumnId, view.layout.trailingColumnId, ...(view.layout.footerColumnIds ?? [])])
+          : missing([view.layout.dateColumnId, view.layout.titleColumnId, view.layout.subtitleColumnId, view.layout.colorColumnId])
+  if (missingLayoutReference) return null
   const filter = remapFilter(view.filter, mapping)
   if (view.filter && !filter) return null
   const sort = view.sort.map((item) => ({ ...item, columnId: mapping.get(item.columnId) ?? '' }))

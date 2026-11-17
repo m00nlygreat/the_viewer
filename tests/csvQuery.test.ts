@@ -30,6 +30,11 @@ describe('CSV query semantics', () => {
     expect(projectColumns(view)).toEqual(['t', 'n'])
   })
 
+  it('projects explicit card roles without guessing from column labels', () => {
+    const view: CsvViewDefinition = { id: 'v', name: 'gallery', layout: { kind: 'gallery', titleColumnId: 't', coverColumnId: null, subtitleColumnId: 'n', badgeColumnIds: ['t'], footerColumnIds: ['n'] }, columnIds: [], filter: null, sort: [], displayOverrides: {}, updatedAt: '2026-11-16T00:00:00Z' }
+    expect(projectColumns(view)).toEqual(['t', 'n'])
+  })
+
   it('round-trips group keys without merging empty and invalid cells', () => {
     const empty = encodeGroupKey({ state: 'empty' })
     const invalid = encodeGroupKey({ state: 'invalid', raw: 'bad', code: 'syntax' })

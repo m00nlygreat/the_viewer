@@ -176,10 +176,10 @@ export function CsvColumnTypeEditor({ column, profile, views, sample, onApply, o
 function viewReferencesColumn(view: CsvViewDefinition, columnId: string): boolean {
   if (view.columnIds.includes(columnId) || view.sort.some((item) => item.columnId === columnId) || filterColumns(view.filter).includes(columnId) || Object.hasOwn(view.displayOverrides, columnId)) return true
   const layout = view.layout
-  if (layout.kind === 'list') return [layout.titleColumnId, layout.subtitleColumnId, layout.trailingColumnId, layout.colorColumnId, layout.groupColumnId].includes(columnId)
-  if (layout.kind === 'gallery') return layout.titleColumnId === columnId || layout.coverColumnId === columnId
-  if (layout.kind === 'kanban') return layout.groupColumnId === columnId
-  if (layout.kind === 'calendar') return layout.dateColumnId === columnId
+  if (layout.kind === 'list') return [layout.titleColumnId, layout.subtitleColumnId, layout.trailingColumnId, layout.colorColumnId, layout.groupColumnId, ...(layout.badgeColumnIds ?? [])].includes(columnId)
+  if (layout.kind === 'gallery') return [layout.titleColumnId, layout.coverColumnId, layout.subtitleColumnId, ...(layout.badgeColumnIds ?? []), ...(layout.footerColumnIds ?? [])].includes(columnId)
+  if (layout.kind === 'kanban') return [layout.groupColumnId, layout.titleColumnId, layout.subtitleColumnId, layout.trailingColumnId, ...(layout.footerColumnIds ?? [])].includes(columnId)
+  if (layout.kind === 'calendar') return [layout.dateColumnId, layout.titleColumnId, layout.subtitleColumnId, layout.colorColumnId].includes(columnId)
   return false
 }
 

@@ -30,10 +30,10 @@ export function projectColumns(view: CsvViewDefinition): string[] {
   for (const columnId of filterColumns(view.filter)) result.add(columnId)
   for (const item of effectiveSort(view)) result.add(item.columnId)
   const layout = view.layout
-  if (layout.kind === 'list') for (const id of [layout.titleColumnId, layout.subtitleColumnId, layout.trailingColumnId, layout.colorColumnId, layout.groupColumnId]) if (id) result.add(id)
-  if (layout.kind === 'gallery') for (const id of [layout.titleColumnId, layout.coverColumnId]) if (id) result.add(id)
-  if (layout.kind === 'kanban') result.add(layout.groupColumnId)
-  if (layout.kind === 'calendar') result.add(layout.dateColumnId)
+  if (layout.kind === 'list') for (const id of [layout.titleColumnId, layout.subtitleColumnId, layout.trailingColumnId, layout.colorColumnId, layout.groupColumnId, ...(layout.badgeColumnIds ?? [])]) if (id) result.add(id)
+  if (layout.kind === 'gallery') for (const id of [layout.titleColumnId, layout.coverColumnId, layout.subtitleColumnId, ...(layout.badgeColumnIds ?? []), ...(layout.footerColumnIds ?? [])]) if (id) result.add(id)
+  if (layout.kind === 'kanban') for (const id of [layout.groupColumnId, layout.titleColumnId, layout.subtitleColumnId, layout.trailingColumnId, ...(layout.footerColumnIds ?? [])]) if (id) result.add(id)
+  if (layout.kind === 'calendar') for (const id of [layout.dateColumnId, layout.titleColumnId, layout.subtitleColumnId, layout.colorColumnId]) if (id) result.add(id)
   return [...result]
 }
 

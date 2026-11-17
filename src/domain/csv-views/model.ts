@@ -68,10 +68,10 @@ export type CsvColumnDefinition = CsvColumnBase & (
 
 export type CsvLayout =
   | { kind: 'grid' }
-  | { kind: 'list'; titleColumnId: string; subtitleColumnId: string | null; trailingColumnId: string | null; colorColumnId: string | null; groupColumnId: string | null }
-  | { kind: 'gallery'; titleColumnId: string; coverColumnId: string | null }
-  | { kind: 'kanban'; groupColumnId: string; hiddenGroupKeys: string[] }
-  | { kind: 'calendar'; dateColumnId: string }
+  | { kind: 'list'; titleColumnId: string; subtitleColumnId: string | null; trailingColumnId: string | null; colorColumnId: string | null; groupColumnId: string | null; badgeColumnIds?: string[] }
+  | { kind: 'gallery'; titleColumnId: string; coverColumnId: string | null; subtitleColumnId?: string | null; badgeColumnIds?: string[]; footerColumnIds?: string[] }
+  | { kind: 'kanban'; groupColumnId: string; hiddenGroupKeys: string[]; titleColumnId?: string | null; subtitleColumnId?: string | null; trailingColumnId?: string | null; footerColumnIds?: string[] }
+  | { kind: 'calendar'; dateColumnId: string; titleColumnId?: string | null; subtitleColumnId?: string | null; colorColumnId?: string | null }
 
 export interface CsvViewDefinition {
   id: string

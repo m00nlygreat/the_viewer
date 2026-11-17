@@ -336,6 +336,18 @@ function checkLayout(input: unknown, columns: ReadonlyMap<string, CsvColumnDefin
     if (typeof id !== 'string' || !columns.has(id)) { issues.push(issue(location, 'unknown-column')); return }
     if (allowedTypes && !allowedTypes.includes(columns.get(id)!.type)) issues.push(issue(location, 'layout-column-type'))
   }
+  const optionalReference = (id: unknown, location: string, allowedTypes?: string[]) => {
+    if (id === undefined || id === null) return null
+    reference(id, location, allowedTypes)
+    return typeof id === 'string' ? id : null
+  }
+  const columnList = (ids: unknown, location: string, allowedTypes?: string[]): string[] => {
+    if (ids === undefined) return []
+    if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string')) { issues.push(issue(location, 'type')); return [] }
+    if (new Set(ids).size !== ids.length) issues.push(issue(location, 'duplicate-id'))
+    ids.forEach((id, index) => reference(id, `${location}/${index}`, allowedTypes))
+    return ids as string[]
+  }
   switch (input.kind) {
     case 'grid': return { kind: 'grid' }
     case 'list':
@@ -345,7 +357,7 @@ function checkLayout(input: unknown, columns: ReadonlyMap<string, CsvColumnDefin
       if (input.trailingColumnId) reference(input.trailingColumnId, `${path}/trailingColumnId`)
       if (input.colorColumnId) reference(input.colorColumnId, `${path}/colorColumnId`, ['select', 'boolean'])
       if (input.groupColumnId) reference(input.groupColumnId, `${path}/groupColumnId`)
-      return { kind: 'list', titleColumnId: input.titleColumnId as string, subtitleColumnId: input.subtitleColumnId as string | null, trailingColumnId: input.trailingColumnId as string | null, colorColumnId: input.colorColumnId as string | null, groupColumnId: input.groupColumnId as string | null }
+      return { kind: 'list', titleColumnId: input.titleColumnId as string, subtitleColumnId: input.subtitleColumnId as string | null, trailingColumnId: input.trailingColumnId as string | null, colorColumnId: input.colorColumnId as string | null, groupColumnId: input.groupColumnId as string | null, badgeColumnIds: columnList(input.badgeColumnIds, `${path}/badgeColumnIds`, ['select', 'boolean']) }
     case 'gallery':
       reference(input.titleColumnId, `${path}/titleColumnId`)
       if (!(input.coverColumnId === null || typeof input.coverColumnId === 'string')) issues.push(issue(`${path}/coverColumnId`, 'type'))
@@ -354,14 +366,14 @@ function checkLayout(input: unknown, columns: ReadonlyMap<string, CsvColumnDefin
         const cover = columns.get(input.coverColumnId as string)
         if (cover && (cover.type !== 'text' || cover.display.as !== 'image')) issues.push(issue(`${path}/coverColumnId`, 'layout-column-type'))
       }
-      return { kind: 'gallery', titleColumnId: input.titleColumnId as string, coverColumnId: input.coverColumnId as string | null }
+      return { kind: 'gallery', titleColumnId: input.titleColumnId as string, coverColumnId: input.coverColumnId as string | null, subtitleColumnId: optionalReference(input.subtitleColumnId, `${path}/subtitleColumnId`), badgeColumnIds: columnList(input.badgeColumnIds, `${path}/badgeColumnIds`, ['select', 'boolean']), footerColumnIds: columnList(input.footerColumnIds, `${path}/footerColumnIds`) }
     case 'kanban':
       reference(input.groupColumnId, `${path}/groupColumnId`, ['select', 'boolean'])
       if (!Array.isArray(input.hiddenGroupKeys) || !input.hiddenGroupKeys.every((key) => typeof key === 'string')) issues.push(issue(`${path}/hiddenGroupKeys`, 'type'))
-      return { kind: 'kanban', groupColumnId: input.groupColumnId as string, hiddenGroupKeys: Array.isArray(input.hiddenGroupKeys) ? input.hiddenGroupKeys as string[] : [] }
+      return { kind: 'kanban', groupColumnId: input.groupColumnId as string, hiddenGroupKeys: Array.isArray(input.hiddenGroupKeys) ? input.hiddenGroupKeys as string[] : [], titleColumnId: optionalReference(input.titleColumnId, `${path}/titleColumnId`), subtitleColumnId: optionalReference(input.subtitleColumnId, `${path}/subtitleColumnId`), trailingColumnId: optionalReference(input.trailingColumnId, `${path}/trailingColumnId`), footerColumnIds: columnList(input.footerColumnIds, `${path}/footerColumnIds`) }
     case 'calendar':
       reference(input.dateColumnId, `${path}/dateColumnId`, ['date', 'datetime'])
-      return { kind: 'calendar', dateColumnId: input.dateColumnId as string }
+      return { kind: 'calendar', dateColumnId: input.dateColumnId as string, titleColumnId: optionalReference(input.titleColumnId, `${path}/titleColumnId`), subtitleColumnId: optionalReference(input.subtitleColumnId, `${path}/subtitleColumnId`), colorColumnId: optionalReference(input.colorColumnId, `${path}/colorColumnId`, ['select', 'boolean']) }
     default: issues.push(issue(`${path}/kind`, 'type')); return null
   }
 }
