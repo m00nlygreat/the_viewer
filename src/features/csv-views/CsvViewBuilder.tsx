@@ -11,6 +11,7 @@ export interface CsvViewBuilderProps {
   initial: CsvViewDefinition
   mode: 'create' | 'edit'
   preview: CsvQueryState
+  sourceAvailable?: boolean
   onDraftChange(draft: CsvViewDefinition): void
   onApply(draft: CsvViewDefinition): Promise<CsvSaveResult>
   onCancel(): void
@@ -25,7 +26,7 @@ const layoutOptions = [
   { kind: 'calendar', label: '캘린더', icon: CalendarDays },
 ] as const
 
-export function CsvViewBuilder({ profile, sourceName, initial, mode, preview, onDraftChange, onApply, onCancel, onEditColumnType }: CsvViewBuilderProps) {
+export function CsvViewBuilder({ profile, sourceName, initial, mode, preview, sourceAvailable = true, onDraftChange, onApply, onCancel, onEditColumnType }: CsvViewBuilderProps) {
   const [draft, setDraft] = useState(initial)
   const [saving, setSaving] = useState(false)
   const [conflict, setConflict] = useState<CsvStoredProfile | null>(null)
@@ -104,20 +105,20 @@ export function CsvViewBuilder({ profile, sourceName, initial, mode, preview, on
         <SortEditor columns={available} sort={draft.sort} onChange={(sort) => change({ ...draft, sort })} />
         {conflict && <div className="csv-view-conflict" role="alert"><strong>다른 탭에서 설정이 바뀌었습니다.</strong><span>초안은 유지했습니다. 현재 저장본 revision {conflict.record.profile.profileRevision}</span><button type="button" className="subtle-button" onClick={() => { void apply() }}>현재 저장본에 다시 적용</button></div>}
       </div>
-      <CsvBuilderPreview draft={draft} preview={preview} columns={available} />
+      <CsvBuilderPreview draft={draft} preview={preview} columns={available} sourceAvailable={sourceAvailable} />
     </div>
     <footer><span className="csv-view-builder-note">저장 전 미리보기는 제한된 행만 표시합니다. CSV 원문과 수정 상태는 바뀌지 않습니다.</span><button type="button" className="secondary-button" onClick={onCancel}>취소</button><button type="button" className="primary-button" onClick={() => { void apply() }} disabled={saving || !draft.name.trim()}>{saving ? '저장 중…' : mode === 'create' ? '추가' : '저장'}</button></footer>
   </section></div>
 }
 
-function CsvBuilderPreview({ draft, preview, columns }: { draft: CsvViewDefinition; preview: CsvQueryState; columns: CsvColumnDefinition[] }) {
+function CsvBuilderPreview({ draft, preview, columns, sourceAvailable }: { draft: CsvViewDefinition; preview: CsvQueryState; columns: CsvColumnDefinition[]; sourceAvailable: boolean }) {
   const columnMap = new Map(columns.map((column) => [column.id, column]))
   const layoutLabel = { grid: '표', list: '리스트', gallery: '갤러리', kanban: '칸반', calendar: '캘린더' }[draft.layout.kind]
   const requiredColumn = draft.layout.kind === 'kanban' ? draft.layout.groupColumnId : draft.layout.kind === 'calendar' ? draft.layout.dateColumnId : null
   const requiredColumnReady = requiredColumn === null || columns.some((column) => column.id === requiredColumn)
   return <div className="csv-view-builder-preview">
-    <div className="csv-view-builder-preview-head"><span><strong>{layoutLabel} 미리보기</strong><small>{preview.status === 'ready' ? `${preview.rows.length}행 확보${preview.hasMore ? ' · 추가 행 있음' : ''}` : preview.status === 'loading' ? '조건에 맞는 행 조회 중' : '현재 작업본에서 처음 200행 기준'}</small></span><span className="csv-view-preview-limit">최대 200행</span><small className="csv-view-preview-limit-note">저장 전 결과는 제한된 미리보기입니다</small></div>
-    {draft.layout.kind !== 'grid' ? <div className="csv-view-preview-state"><span><strong>{layoutLabel} 미리보기</strong><small>{requiredColumnReady ? '연결 컬럼 기준으로 표본을 배치합니다.' : '필수 연결 컬럼을 선택하면 표시됩니다.'}</small></span></div> : preview.status === 'error' ? <div className="csv-view-preview-state" role="alert">{preview.error.message}</div> : preview.status === 'loading' ? <div className="csv-view-preview-state" role="status">미리보기 조회 중…</div> : preview.status === 'ready' && preview.rows.length === 0 ? <div className="csv-view-preview-state">조건에 맞는 행이 없습니다.</div> : preview.status === 'ready' ? <div className="csv-view-preview-table-wrap"><table className="csv-view-preview-table"><thead><tr><th>#</th>{draft.columnIds.map((id) => <th key={id}>{draft.displayOverrides[id]?.label ?? columnMap.get(id)?.label ?? id}</th>)}</tr></thead><tbody>{preview.rows.slice(0, 200).map((row) => <tr key={row.rowId}><td>{row.recordNo}</td>{draft.columnIds.map((id) => {
+    <div className="csv-view-builder-preview-head"><span><strong>{layoutLabel} 미리보기</strong><small>{!sourceAvailable ? '원본을 다시 연결하면 조회할 수 있습니다.' : preview.status === 'ready' ? `${preview.rows.length}행 확보${preview.hasMore ? ' · 추가 행 있음' : ''}` : preview.status === 'loading' ? '조건에 맞는 행 조회 중' : '현재 작업본에서 처음 200행 기준'}</small></span><span className="csv-view-preview-limit">최대 200행</span><small className="csv-view-preview-limit-note">저장 전 결과는 제한된 미리보기입니다</small></div>
+    {!sourceAvailable ? <div className="csv-view-preview-state" role="status">원본 CSV를 다시 연결한 뒤 조건을 미리 볼 수 있습니다. 지금은 뷰 설정을 편집하고 저장할 수 있습니다.</div> : draft.layout.kind !== 'grid' ? <div className="csv-view-preview-state"><span><strong>{layoutLabel} 미리보기</strong><small>{requiredColumnReady ? '연결 컬럼 기준으로 표본을 배치합니다.' : '필수 연결 컬럼을 선택하면 표시됩니다.'}</small></span></div> : preview.status === 'error' ? <div className="csv-view-preview-state" role="alert">{preview.error.message}</div> : preview.status === 'loading' ? <div className="csv-view-preview-state" role="status">미리보기 조회 중…</div> : preview.status === 'ready' && preview.rows.length === 0 ? <div className="csv-view-preview-state">조건에 맞는 행이 없습니다.</div> : preview.status === 'ready' ? <div className="csv-view-preview-table-wrap"><table className="csv-view-preview-table"><thead><tr><th>#</th>{draft.columnIds.map((id) => <th key={id}>{draft.displayOverrides[id]?.label ?? columnMap.get(id)?.label ?? id}</th>)}</tr></thead><tbody>{preview.rows.slice(0, 200).map((row) => <tr key={row.rowId}><td>{row.recordNo}</td>{draft.columnIds.map((id) => {
       const column = columnMap.get(id)
       const cell = row.cells[id]
       if (!column || !cell) return <td key={id} className="missing">누락</td>

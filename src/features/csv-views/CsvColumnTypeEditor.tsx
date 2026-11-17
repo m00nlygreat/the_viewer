@@ -193,7 +193,7 @@ function sampleOptions(sample: CsvSample | null, sourceIndex: number, separator?
     const raw = record[sourceIndex]
     if (raw === undefined || raw === '') return []
     return separator ? raw.split(separator).filter(Boolean) : [raw]
-  }))].slice(0, 100)
+  }))].slice(0, CSV_POLICY.maxSelectOptionCandidates)
   return values.map((raw, index) => ({ id: `csv-option-${sourceIndex + 1}-${index + 1}`, raw, label: raw, color: optionColors[index % optionColors.length]! }))
 }
 function parseOptions(value: string, existing: CsvSelectOption[]): CsvSelectOption[] {

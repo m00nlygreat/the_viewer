@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createDefaultColumn, parseCell } from '../src/domain/csv-views/typing'
+import { recommendColumns } from '../src/domain/csv-views/inference'
 import type { CsvColumnDefinition, CsvColumnType } from '../src/domain/csv-views/model'
 
 function column(type: CsvColumnType, rawSamples: string[] = []): CsvColumnDefinition {
@@ -34,5 +35,21 @@ describe('parseCell', () => {
     expect(parseCell(datetime, '2026-11-16T09:30:00')).toMatchObject({ state: 'invalid', code: 'offset-required' })
     datetime.parse.allowTwelveHour = true
     expect(parseCell(datetime, '2026-11-16 09:30 PM+09:00')).toMatchObject({ state: 'value', value: '2026-11-16T12:30:00.000Z' })
+  })
+})
+
+describe('recommendColumns', () => {
+  it('keeps low-cardinality text as text and offers select only as a candidate', () => {
+    const sample = {
+      header: ['status'],
+      records: Array.from({ length: 24 }, (_, index) => [index % 3 === 0 ? 'new' : index % 3 === 1 ? 'open' : 'closed']),
+      firstRecordNo: 1 as const,
+      reachedEof: true,
+      bytesRead: 100,
+      stoppedBy: 'eof' as const
+    }
+    const [recommendation] = recommendColumns(sample, null)
+    expect(recommendation?.selected.type).toBe('text')
+    expect(recommendation?.candidates.find((candidate) => candidate.column.type === 'select')).toMatchObject({ autoSelectable: false, column: { type: 'select', parse: { options: [{ raw: 'new' }, { raw: 'open' }, { raw: 'closed' }] } } })
   })
 })

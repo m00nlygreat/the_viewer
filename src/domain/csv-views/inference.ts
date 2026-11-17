@@ -55,7 +55,7 @@ function buildCandidates(base: CsvColumnBase, sample: CsvColumnSample, reachedEo
     const candidate = scoreCandidate(column, sample, reachedEof)
     if (candidate.matched > 0 || rawValues.length === 0) result.push(candidate)
   }
-  if (values.length > 0 && values.length <= 20) {
+  if (values.length > 0 && values.length <= CSV_POLICY.maxSelectOptionCandidates) {
     const column = createDefaultColumn('select', base, sample)
     if (column.type === 'select') column.parse.options = values.map((raw, index) => ({ id: `csv-option-${base.sourceIndex + 1}-${index + 1}`, raw, label: raw, color: colors[index % colors.length]! }))
     result.push(scoreCandidate(column, sample, reachedEof))
@@ -89,7 +89,7 @@ function scoreCandidate(column: CsvColumnDefinition, sample: CsvColumnSample, re
   }
   if (column.type === 'date' && values.some((value) => /^\d{1,2}[/.]\d{1,2}[/.]\d{4}$/u.test(value))) warnings.push('ambiguous-date')
   const blocked = warnings.some((warning) => warning !== 'few-samples')
-  return { column, matched, failed, failures, autoSelectable: sufficient && matched === values.length && !blocked && column.type !== 'text', warnings: [...new Set(warnings)] }
+  return { column, matched, failed, failures, autoSelectable: sufficient && matched === values.length && !blocked && column.type !== 'text' && column.type !== 'select', warnings: [...new Set(warnings)] }
 }
 
 function countStates(sample: CsvColumnSample): Record<CsvCellState, number> {

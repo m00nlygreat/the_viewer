@@ -10,6 +10,7 @@ import '@glideapps/glide-data-grid/dist/index.css'
 import { createGridTheme } from '../gridTheme'
 import { formatCell, resolveDisplay } from '../../domain/csv-views/format'
 import type { CsvCell, CsvColumnDefinition, CsvDisplayOverride, CsvQueryError, CsvQueryRow } from '../../domain/csv-views/model'
+import { csvQueryNextStep } from '../../domain/csv-views/errorGuidance'
 
 export interface CsvResultViewProps<L> {
   layout: L
@@ -22,12 +23,13 @@ export interface CsvResultViewProps<L> {
   loadMoreError: CsvQueryError | null
   onLoadMore(): void
   onRetryLoadMore(): void
+  onAdjustQuery(): void
 }
 
 type GridProps = CsvResultViewProps<{ kind: 'grid' }> & { theme: 'light' | 'dark' }
 const typeMarks = { text: 'T', integer: '#', decimal: '1.2', boolean: '✓', date: '◷', datetime: '◷', select: '▾', multiSelect: '≡' } as const
 
-export function CsvQueryTable({ columns, columnIds, displayOverrides, rows, hasMore, loadingMore, loadMoreError, onLoadMore, onRetryLoadMore, theme, onEditColumnType }: GridProps & { onEditColumnType(columnId: string): void }) {
+export function CsvQueryTable({ columns, columnIds, displayOverrides, rows, hasMore, loadingMore, loadMoreError, onLoadMore, onRetryLoadMore, onAdjustQuery, theme, onEditColumnType }: GridProps & { onEditColumnType(columnId: string): void }) {
   const gridColumns = useMemo<GridColumn[]>(() => columnIds.map((id) => {
     const column = columns.get(id)
     const label = displayOverrides[id]?.label ?? column?.label ?? id
@@ -63,7 +65,7 @@ export function CsvQueryTable({ columns, columnIds, displayOverrides, rows, hasM
         onHeaderClicked={(columnIndex) => { const id = columnIds[columnIndex]; if (id) onEditColumnType(id) }}
       />
     </div>
-    {hasMore && <div className="csv-query-more">{loadMoreError ? <><span role="alert">추가 행을 불러오지 못했습니다.</span><button type="button" className="subtle-button" onClick={onRetryLoadMore}>다시 시도</button></> : <button type="button" className="subtle-button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? '불러오는 중…' : '더 보기'}</button>}</div>}
+    {hasMore && <div className="csv-query-more">{loadMoreError ? <><span role="alert">{loadMoreError.message} {csvQueryNextStep(loadMoreError)}</span><button type="button" className="subtle-button" onClick={onRetryLoadMore}>다시 조회</button><button type="button" className="subtle-button" onClick={onAdjustQuery}>조건 수정</button></> : <button type="button" className="subtle-button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? '불러오는 중…' : '더 보기'}</button>}</div>}
   </div>
 }
 

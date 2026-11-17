@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { nextRevisions, type CsvViewDefinition } from '../src/domain/csv-views/model'
 import { validateBackup, validateViewBundle } from '../src/domain/csv-views/validate'
 import { createDefaultColumn } from '../src/domain/csv-views/typing'
+import { isCsvFileIdentity, matchIdentity } from '../src/platform/csv/fileIdentity'
 
 const column = createDefaultColumn('text', { id: 'c1', sourceIndex: 0, sourceHeader: 'name', label: 'name', typeSource: 'inferred', nullMarkers: [], allowSurroundingSpace: false }, null)
 const view: CsvViewDefinition = { id: 'v1', name: '목록', layout: { kind: 'grid' }, columnIds: ['c1'], filter: null, sort: [], displayOverrides: {}, updatedAt: '2026-11-16T00:00:00Z' }
@@ -16,6 +17,14 @@ function bundle() {
 }
 
 describe('CSV view schema and revisions', () => {
+  it('ignores a corrupt or missing header digest without failing identity matching', async () => {
+    const validIdentity = { name: 'data.csv', size: 4, lastModified: 1, headerDigest: 'a'.repeat(64), sampleDigest: null, folder: null }
+    expect(isCsvFileIdentity(validIdentity)).toBe(true)
+    expect(isCsvFileIdentity({ ...validIdentity, headerDigest: 'broken' })).toBe(false)
+    expect(isCsvFileIdentity({ ...validIdentity, headerDigest: undefined })).toBe(false)
+    await expect(matchIdentity({ ...validIdentity, headerDigest: undefined }, null, [])).resolves.toEqual({ kind: 'new' })
+  })
+
   it('validates a v1 bundle and rejects an unsupported operator', () => {
     expect(validateViewBundle(bundle()).ok).toBe(true)
     const invalid = bundle()

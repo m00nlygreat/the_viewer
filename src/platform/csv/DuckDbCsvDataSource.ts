@@ -7,11 +7,12 @@ import { ensureRuntimeAssetGroup } from '../pwa/runtimeAssets'
 import { compileCsvGroupDiscovery, compileCsvQuery } from './sqlCompiler'
 import type { CsvSourceFile } from './sampleFile'
 import { csvCacheKey, getCsvCacheForSource, putCsvCache } from './opfsCache'
+import type { CsvPreparedSource } from './utf8OpfsSource'
 
 export class DuckDbCsvDataSource {
   private readonly fileName = `tv-csv-${crypto.randomUUID()}.csv`
-  private readonly file: CsvSourceFile
-  private readonly handle: FileSystemFileHandle | null
+  private file: CsvSourceFile
+  private handle: FileSystemFileHandle | null
   private readonly sampleResult: CsvSample
   private profile: CsvFileProfile
   private database: AsyncDuckDB | null = null
@@ -23,9 +24,11 @@ export class DuckDbCsvDataSource {
   private readonly documentId: string
   private readonly sourceRevision: string
   private readonly cacheEnabled: boolean
+  private readonly queryFile: Promise<CsvPreparedSource> | null
+  private readonly releaseQueryFile: (() => void) | null
 
-  constructor(file: CsvSourceFile, handle: FileSystemFileHandle | null, sample: CsvSample, profile: CsvFileProfile, documentId: string, fileId: string, sourceRevision: string, cacheEnabled: boolean) {
-    this.file = file; this.handle = handle; this.sampleResult = sample; this.profile = profile; this.documentId = documentId; this.fileId = fileId; this.sourceRevision = sourceRevision; this.cacheEnabled = cacheEnabled
+  constructor(file: CsvSourceFile, handle: FileSystemFileHandle | null, sample: CsvSample, profile: CsvFileProfile, documentId: string, fileId: string, sourceRevision: string, cacheEnabled: boolean, queryFile: Promise<CsvPreparedSource> | null = null, releaseQueryFile: (() => void) | null = null) {
+    this.file = file; this.handle = handle; this.sampleResult = sample; this.profile = profile; this.documentId = documentId; this.fileId = fileId; this.sourceRevision = sourceRevision; this.cacheEnabled = cacheEnabled; this.queryFile = queryFile; this.releaseQueryFile = releaseQueryFile
   }
 
   async sample(_documentId: string, _sourceRevision: string, _maxRecords: number): Promise<CsvSample> { return this.sampleResult }
@@ -154,10 +157,16 @@ export class DuckDbCsvDataSource {
     await this.database?.dropFile(this.fileName).catch(() => undefined)
     await this.database?.terminate().catch(() => undefined)
     this.database = null
+    this.releaseQueryFile?.()
   }
 
   private async initialize(): Promise<void> {
     if (this.connection) return
+    if (this.queryFile) {
+      const prepared = await this.queryFile
+      this.file = prepared.file
+      this.handle = prepared.handle
+    }
     await ensureRuntimeAssetGroup('csvQuery')
     const base = typeof __APP_BASE__ === 'string' ? __APP_BASE__ : '/'
     const workerUrl = new URL(`${base}csv-query/duckdb-browser-mvp.worker.js`, window.location.href)

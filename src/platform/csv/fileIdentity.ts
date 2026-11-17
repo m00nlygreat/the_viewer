@@ -26,8 +26,10 @@ export async function matchIdentity(
   const validKnown = known.flatMap((candidate) => candidate && isCsvFileIdentity(candidate.identity) ? [candidate] : [])
   if (targetHandle) {
     for (const candidate of validKnown) {
-      if (!candidate.handle?.isSameEntry) continue
-      try { if (await targetHandle.isSameEntry(candidate.handle)) return { kind: 'same', fileId: candidate.fileId, basis: 'handle' } }
+      try {
+        if (typeof candidate.handle?.isSameEntry !== 'function') continue
+        if (await targetHandle.isSameEntry(candidate.handle)) return { kind: 'same', fileId: candidate.fileId, basis: 'handle' }
+      }
       catch { /* Permission and browser-specific handle errors fall back to fingerprints. */ }
     }
   }
@@ -54,11 +56,19 @@ export async function matchIdentity(
 export function isCsvFileIdentity(value: unknown): value is CsvFileIdentity {
   if (typeof value !== 'object' || value === null) return false
   const identity = value as Partial<CsvFileIdentity>
-  return typeof identity.name === 'string' && Number.isFinite(identity.size) && Number.isFinite(identity.lastModified) &&
-    (identity.headerDigest === null || typeof identity.headerDigest === 'string') &&
-    (identity.sampleDigest === null || typeof identity.sampleDigest === 'object') &&
-    (identity.folder === null || typeof identity.folder === 'object')
+  if (typeof identity.name !== 'string' || !Number.isSafeInteger(identity.size) || identity.size! < 0 || !Number.isFinite(identity.lastModified)) return false
+  if (identity.headerDigest !== null && !isSha256(identity.headerDigest)) return false
+  if (identity.sampleDigest !== null) {
+    const sample = identity.sampleDigest
+    if (!isRecord(sample) || sample.algorithm !== 'SHA-256' || !Number.isSafeInteger(sample.offset) || sample.offset < 0 ||
+      !Number.isSafeInteger(sample.length) || sample.length <= 0 || sample.offset + sample.length > identity.size! || !isSha256(sample.digest)) return false
+  }
+  if (identity.folder !== null && (!isRecord(identity.folder) || typeof identity.folder.rootId !== 'string' || typeof identity.folder.relativePath !== 'string')) return false
+  return true
 }
+
+function isSha256(value: unknown): value is string { return typeof value === 'string' && /^[\da-f]{64}$/iu.test(value) }
+function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
 
 async function sha256(input: ArrayBuffer | Uint8Array): Promise<string> {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input)

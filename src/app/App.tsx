@@ -99,7 +99,7 @@ export function App() {
   const [fileBackedCsvDocuments, setFileBackedCsvDocuments] = useState<FileBackedCsvDocument[]>([])
   const fileBackedCsvDocumentsRef = useRef(fileBackedCsvDocuments)
   fileBackedCsvDocumentsRef.current = fileBackedCsvDocuments
-  const [pendingFileBackedCsv, setPendingFileBackedCsv] = useState<{ file: PickedFile; folderRef?: FileBackedCsvDocument['folderRef']; candidates?: { fileId: string; basis: 'digest' | 'name-size' }[] } | null>(null)
+  const [pendingFileBackedCsv, setPendingFileBackedCsv] = useState<{ file: PickedFile; folderRef?: FileBackedCsvDocument['folderRef']; candidates?: { fileId: string; basis: 'digest' | 'name-size' | 'header' }[]; recovery?: boolean } | null>(null)
   const [fileBackedCsvEnabled, setFileBackedCsvEnabled] = useState(() => import.meta.env.DEV && readDeveloperCsvSetting())
   const [activeId, setActiveId] = useState('')
   const subscribeActiveDocument = useCallback((listener: () => void) => documentStore.subscribeDocument(activeId, listener), [activeId, documentStore])
@@ -536,7 +536,7 @@ export function App() {
           const result = await openFileBackedCsv(file, { folderRef, persistSession: recoveryEnabledRef.current })
           if (workspaceOperations.current.locked) return deferRemaining(index)
           if (result.status === 'choose') {
-            setPendingFileBackedCsv({ file, candidates: result.candidates, ...(folderRef ? { folderRef } : {}) })
+            setPendingFileBackedCsv({ file, candidates: result.candidates, recovery: result.candidates.some((candidate) => candidate.basis === 'header'), ...(folderRef ? { folderRef } : {}) })
             continue
           }
           setFileBackedCsvDocuments((items) => [result.document, ...items.filter((item) => item.id !== result.document.id)])
@@ -605,7 +605,7 @@ export function App() {
     const picked: PickedFile = { name: file.name, type: file.type, file, ...(fileHandle ? { fileHandle } : {}) }
     const existing = fileBackedCsvDocumentsRef.current.find((item) => item.folderRef?.folderId === folderRef.folderId && item.folderRef.path === folderRef.path)
     const result = await openFileBackedCsv(picked, { folderRef, persistSession: recoveryEnabledRef.current, ...(existing ? { documentId: existing.id, mode: existing.mode } : {}) })
-    if (result.status === 'choose') { setPendingFileBackedCsv({ file: picked, folderRef, candidates: result.candidates }); return null }
+    if (result.status === 'choose') { setPendingFileBackedCsv({ file: picked, folderRef, candidates: result.candidates, recovery: result.candidates.some((candidate) => candidate.basis === 'header') }); return null }
     return result.document
   }, [fileBackedCsvEnabled])
 
@@ -1477,9 +1477,7 @@ export function App() {
   const activeFolderErrorPath = folderWorkspace.activePath
   const activeFolderError = activeFolderErrorPath ? folderWorkspace.errorsByPath.get(activeFolderErrorPath) : undefined
   const activeFileBackedSource = activeFileBackedCsv ? getCsvFileSource(activeFileBackedCsv.id) : null
-  const activeCsvWorkspace = Boolean(activeFileBackedCsv
-    ? activeFileBackedCsv.sourceState.status === 'ready' && activeFileBackedSource
-    : activeDocument?.format === 'csv' && activeDocument.parseState === 'ready' && activeDocument.modelRevision === activeDocument.revision)
+  const activeCsvWorkspace = Boolean(activeFileBackedCsv || activeDocument?.format === 'csv' && activeDocument.parseState === 'ready' && activeDocument.modelRevision === activeDocument.revision)
   return <div className="app-shell" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <FilePicker ref={inputRef} onFiles={(files, format) => { void openFiles(files, format) }} onError={notify} />
     <FolderPicker ref={folderInputRef} onFolder={(picked) => { void folderWorkspace.acceptPickedFolder(picked) }} onCancel={() => { if (folderWorkspace.phase === 'picking') folderWorkspace.cancelTransition(); else folderWorkspace.cancelReconnect() }} onError={(message) => { if (folderWorkspace.phase === 'picking') folderWorkspace.cancelTransition(); else folderWorkspace.cancelReconnect(); notify(message, 'error') }} />
@@ -1497,13 +1495,11 @@ export function App() {
         </div>)}
         <button className="icon-button" type="button" aria-label="복구 안내 닫기" onClick={() => setRecoveryIssues([])}><X size={14} /></button>
       </section>}
-      {pendingFileBackedCsv && <div className="overlay"><section className="csv-link-choice csv-link-choice-dialog" role="dialog" aria-modal="true" aria-labelledby="csv-link-choice-title"><h2 id="csv-link-choice-title">기존 CSV 설정 연결</h2><p>같은 이름·크기의 파일 후보가 있습니다. 연결할 기존 설정을 고르거나 새 설정을 만드세요.</p>{pendingFileBackedCsv.candidates?.map((candidate) => <button key={candidate.fileId} className="secondary-button" type="button" onClick={() => { void resolvePendingFileBackedCsv(candidate.fileId) }}>기존 보기 연결 · {candidate.basis}</button>)}<button className="secondary-button" type="button" onClick={() => { void resolvePendingFileBackedCsv('new') }}>새 설정 만들기</button><button className="icon-button" type="button" aria-label="연결 취소" onClick={() => setPendingFileBackedCsv(null)}>취소</button></section></div>}
+      {pendingFileBackedCsv && <div className="overlay"><section className="csv-link-choice csv-link-choice-dialog" role="dialog" aria-modal="true" aria-labelledby="csv-link-choice-title"><h2 id="csv-link-choice-title">{pendingFileBackedCsv.recovery ? 'CSV 설정 연결을 복구할까요?' : '기존 CSV 설정 연결'}</h2><p>{pendingFileBackedCsv.recovery ? '원본 지문이 없거나 손상되어 머리글과 구분자가 같은 저장 설정을 찾았습니다. 연결할 프로필을 확인하세요.' : '같은 이름·크기의 파일 후보가 있습니다. 내용을 확인한 뒤 연결하거나 새 설정을 만드세요.'}</p>{pendingFileBackedCsv.candidates?.map((candidate) => <button key={candidate.fileId} className="secondary-button" type="button" onClick={() => { void resolvePendingFileBackedCsv(candidate.fileId) }}>기존 보기 연결 · {candidate.basis === 'header' ? '머리글' : candidate.basis}</button>)}<button className="secondary-button" type="button" onClick={() => { void resolvePendingFileBackedCsv('new') }}>새 CSV 설정 만들기</button><button className="icon-button" type="button" aria-label="연결 취소" onClick={() => setPendingFileBackedCsv(null)}>취소</button></section></div>}
 
       {activeWorkspaceDocument ? <>
         <div id={`document-panel-${activeWorkspaceDocument.id}`} className="document-workspace" key={activeWorkspaceDocument.id} role="tabpanel" aria-label={`${activeWorkspaceDocument.mode === 'view' ? '보기' : '원본'} · ${activeWorkspaceDocument.name}`} tabIndex={0}>
-          {activeFileBackedCsv ? (activeFileBackedCsv.sourceState.status !== 'ready' || !activeFileBackedSource
-            ? <section className="csv-view-state" role="alert"><p>{activeFileBackedCsv.sourceState.status === 'error' ? activeFileBackedCsv.sourceState.message : '원본 CSV 파일을 다시 선택해야 합니다.'}</p><button className="secondary-button" type="button" onClick={() => pickFiles('csv')}>CSV 다시 열기</button></section>
-            : <CsvViewWorkspace document={activeFileBackedCsv} defaultContent={<CsvSourceRangeView file={activeFileBackedSource.file} parser={activeFileBackedSource.stored.record.profile.parser} />} onModeChange={setMode} onError={(message) => notify(message, 'error')} onReconnect={() => pickFiles('csv')} cacheEnabled={recoveryEnabled} theme={resolvedTheme} />)
+          {activeFileBackedCsv ? <CsvViewWorkspace document={activeFileBackedCsv} defaultContent={activeFileBackedSource ? <CsvSourceRangeView file={activeFileBackedSource.file} parser={activeFileBackedSource.stored.record.profile.parser} header={activeFileBackedSource.sample.header} preparedFile={activeFileBackedSource.requiresTranscode ? activeFileBackedSource.queryFile : undefined} /> : null} onModeChange={setMode} onError={(message) => notify(message, 'error')} onReconnect={() => pickFiles('csv')} cacheEnabled={recoveryEnabled} theme={resolvedTheme} />
             : activeDocument ? (activeDocument.payloadLoaded === false ? <div className="source-diagnostic" role="status"><span>저장 문서 본문을 불러오고 있습니다.</span></div> : <>
               {activeDocument.parseState === 'pending' && !(activeDocument.format === 'md' && activeDocument.mode === 'view') && <div className="source-diagnostic" role="status"><span>최신 원문을 해석하고 있습니다. 편집은 계속할 수 있습니다.</span></div>}
               {activeDocument.parseState === 'error' && <div className="source-diagnostic" role="alert"><span>원문을 해석하지 못했습니다. 마지막 유효 보기는 유지되며 구조 편집은 잠깁니다.</span><small>{activeDocument.diagnostics.find((item) => item.severity === 'error')?.message ?? activeDocument.sourceError}</small></div>}

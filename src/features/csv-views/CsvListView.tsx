@@ -4,6 +4,7 @@ import { encodeGroupKey } from '../../domain/csv-views/query'
 import { formatCell, resolveDisplay } from '../../domain/csv-views/format'
 import type { CsvColumnDefinition, CsvDisplayOverride, CsvQueryRow } from '../../domain/csv-views/model'
 import type { CsvResultViewProps } from './CsvQueryTable'
+import { csvQueryNextStep } from '../../domain/csv-views/errorGuidance'
 
 type ListLayout = Extract<import('../../domain/csv-views/model').CsvLayout, { kind: 'list' }>
 type ListEntry =
@@ -14,7 +15,7 @@ const ESTIMATED_ROW_HEIGHT = 112
 const ESTIMATED_GROUP_HEIGHT = 48
 const LIST_OVERSCAN = 5
 
-export function CsvListView({ layout, columns, columnIds, displayOverrides, rows, hasMore, loadingMore, loadMoreError, onLoadMore, onRetryLoadMore }: CsvResultViewProps<ListLayout>) {
+export function CsvListView({ layout, columns, columnIds, displayOverrides, rows, hasMore, loadingMore, loadMoreError, onLoadMore, onRetryLoadMore, onAdjustQuery }: CsvResultViewProps<ListLayout>) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const measuredHeights = useRef(new Map<string, number>())
   const firstRowId = rows[0]?.rowId ?? null
@@ -105,7 +106,7 @@ export function CsvListView({ layout, columns, columnIds, displayOverrides, rows
           <div className="csv-view-list-values">{columnIds.filter((id) => ![layout.titleColumnId, layout.subtitleColumnId, layout.trailingColumnId].includes(id)).map((id) => <span key={id}><small>{displayOverrides[id]?.label ?? columns.get(id)?.label ?? id}</small><CellDisplay column={columns.get(id)} override={displayOverrides[id]} cell={entry.row.cells[id]} /></span>)}</div>
         </article>
       })}
-      {hasMore && <div className="csv-query-more csv-view-list-more" style={{ top: totalHeight }}>{loadMoreError ? <><span role="alert">추가 항목을 불러오지 못했습니다.</span><button type="button" className="subtle-button" onClick={onRetryLoadMore}>다시 시도</button></> : <button type="button" className="subtle-button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? '불러오는 중…' : '더 보기'}</button>}</div>}
+      {hasMore && <div className="csv-query-more csv-view-list-more" style={{ top: totalHeight }}>{loadMoreError ? <><span role="alert">{loadMoreError.message} {csvQueryNextStep(loadMoreError)}</span><button type="button" className="subtle-button" onClick={onRetryLoadMore}>다시 조회</button><button type="button" className="subtle-button" onClick={onAdjustQuery}>조건 수정</button></> : <button type="button" className="subtle-button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? '불러오는 중…' : '더 보기'}</button>}</div>}
     </div>
   </div>
 }

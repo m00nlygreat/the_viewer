@@ -319,8 +319,26 @@
 .csv-view-error { color: var(--warning); }
 .csv-view-conflict { display: grid; gap: .3rem; padding: .75rem; border: 1px solid var(--line); border-radius: .5rem; }
 .csv-source-range { display: flex; flex: 1; flex-direction: column; min-height: 0; }
-.csv-source-range-heading { position: sticky; top: 0; background: var(--panel, #17191c); }
+.csv-source-range-guide, .csv-file-view-banner { display: flex; align-items: center; gap: .65rem; padding: .6rem 1rem; border-bottom: 1px solid var(--line); color: var(--text-muted); background: var(--panel, #17191c); font-size: 12px; }
+.csv-source-range-guide strong, .csv-file-view-banner strong { color: var(--text-strong); font-weight: 550; }
+.csv-source-range-heading { position: sticky; top: 0; z-index: 2; flex-wrap: wrap; background: var(--panel, #17191c); }
+.csv-source-range-heading label { display: inline-flex; align-items: center; gap: .45rem; color: var(--text-muted); font-size: 11px; }
+.csv-source-range-heading input { width: 9rem; height: 30px; font: 12px var(--font-mono); }
+.csv-source-range-spacer { flex: 1; }
+.csv-source-range-bytes { color: var(--text-muted); font: 11px var(--font-mono); }
 .csv-source-range-table { flex: 1; min-height: 0; max-height: none; }
+.csv-source-range-table table { width: 100%; table-layout: fixed; border-collapse: collapse; font: 12px/1.35 var(--font-mono); }
+.csv-source-range-table thead { position: sticky; top: 0; z-index: 1; background: var(--sidebar); }
+.csv-source-range-table th, .csv-source-range-table td { height: 32px; box-sizing: border-box; padding: 0 .65rem; overflow: hidden; border-bottom: 1px solid var(--line); text-overflow: ellipsis; white-space: nowrap; }
+.csv-source-range-table th:first-child { width: 4.5rem; color: var(--text-weak); text-align: end; }
+.csv-source-range-table .csv-source-range-spacer td { padding: 0; border: 0; }
+.csv-source-range .csv-view-error { padding: .75rem 1rem; }
+.csv-source-range .csv-view-error small { color: var(--text-muted); }
+.csv-source-range .csv-view-error > div { display: flex; gap: .5rem; margin-top: .4rem; }
+.csv-calendar-diagnostics { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: .6rem; padding: .45rem .7rem; border-block: 1px solid var(--line); color: var(--text-muted); font-size: 11px; }
+.csv-calendar-day-error { display: grid; gap: .3rem; color: var(--warning); font-size: 10px; }
+.csv-calendar-day-error button { justify-self: start; }
+.csv-view-host > .csv-view-state > div { display: flex; flex-wrap: wrap; gap: .5rem; }
 .csv-kanban-wrap, .csv-calendar-wrap { min-width: 0; flex: 1; overflow: auto; padding: .75rem; }
 .csv-kanban-status { display: flex; align-items: center; justify-content: space-between; gap: .75rem; min-height: 2rem; color: var(--text-muted); font-size: .82rem; }
 .csv-kanban-columns { display: flex; align-items: flex-start; gap: .75rem; min-height: 12rem; overflow-x: auto; padding-block: .5rem; }

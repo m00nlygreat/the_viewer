@@ -1,4 +1,5 @@
 import { CSV_POLICY } from '../../domain/csv-views/policy'
+import { clearUtf8OpfsSources } from './utf8OpfsSource'
 
 const FORMAT_VERSION = 1
 const appBase = typeof __APP_BASE__ === 'string' ? __APP_BASE__ : '/'
@@ -110,6 +111,7 @@ export async function clearAllCsvCache(): Promise<void> {
     if (!('storage' in navigator) || !navigator.storage.getDirectory) return
     try { await (await navigator.storage.getDirectory()).removeEntry(directoryName, { recursive: true }) }
     catch (error) { if (!(error instanceof DOMException && error.name === 'NotFoundError')) throw error }
+    await clearUtf8OpfsSources()
   })
 }
 

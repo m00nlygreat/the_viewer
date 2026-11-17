@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { CsvColumnDefinition, CsvQueryDiagnostic, CsvTotal, CsvViewDefinition } from '../../domain/csv-views/model'
 import type { CsvQueryState } from '../../app/csvViewController'
+import { csvQueryNextStep } from '../../domain/csv-views/errorGuidance'
 import { CsvGalleryView } from './CsvGalleryView'
 import { CsvListView } from './CsvListView'
 import { CsvQueryTable } from './CsvQueryTable'
@@ -19,11 +20,15 @@ export interface CsvViewHostProps {
   onEditView(): void
   onEditColumnType(columnId: string): void
   onManageViews(): void
+  onReconnect(): void
+  onShowTable(): void
   onChangeView(view: CsvViewDefinition): void
   onDuplicateView(): void
   onDeleteView(): void
   onExportView(): void
   editable: boolean
+  fileBacked?: boolean
+  sourceAvailable?: boolean
   controller: Pick<CsvViewController, 'queryScoped' | 'discoverGroups'>
   sample: CsvSample | null
   cacheToken: string | null
@@ -31,11 +36,12 @@ export interface CsvViewHostProps {
   tabId?: string
 }
 
-export function CsvViewHost({ view, columns, query, onLoadMore, onRetry, onEditView, onEditColumnType, onManageViews, onChangeView, onDuplicateView, onDeleteView, onExportView, editable, controller, sample, cacheToken, theme, tabId }: CsvViewHostProps) {
+export function CsvViewHost({ view, columns, query, onLoadMore, onRetry, onEditView, onEditColumnType, onManageViews, onReconnect, onShowTable, onChangeView, onDuplicateView, onDeleteView, onExportView, editable, fileBacked = false, sourceAvailable = true, controller, sample, cacheToken, theme, tabId }: CsvViewHostProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const columnMap = new Map(columns.map((column) => [column.id, column]))
   const scoped = view.layout.kind === 'kanban' || view.layout.kind === 'calendar'
   return <section id="csv-view-panel" className="csv-view-host" role="tabpanel" aria-labelledby={tabId ?? `csv-view-${view.id}-tab`}>
+    {fileBacked && <div className="csv-file-view-banner" role="note"><strong>읽기 전용 파일 기반 CSV</strong><span>CSV 원문 편집과 Undo는 사용할 수 없습니다.</span></div>}
     <div className="csv-view-toolbar" aria-label={`${view.name} 도구 모음`}>
       <div className="csv-view-toolbar-chips">
         {layoutSummary(view, columnMap) && <span className="csv-view-chip summary" title={layoutSummary(view, columnMap)}><span className="csv-view-chip-text">{layoutSummary(view, columnMap)}</span></span>}
@@ -60,21 +66,23 @@ export function CsvViewHost({ view, columns, query, onLoadMore, onRetry, onEditV
         </div>}
       </div>
     </div>
-    {view.layout.kind === 'kanban' && <CsvKanbanView view={view as CsvViewDefinition & { layout: Extract<CsvViewDefinition['layout'], { kind: 'kanban' }> }} columns={columns} sample={sample} controller={controller} />}
-    {view.layout.kind === 'calendar' && <CsvCalendarView view={view as CsvViewDefinition & { layout: Extract<CsvViewDefinition['layout'], { kind: 'calendar' }> }} columns={columns} controller={controller} cacheToken={cacheToken} />}
+    {!sourceAvailable ? <section className="csv-view-state" role="status"><strong>원본 CSV 파일을 다시 연결해 주세요.</strong><p>보기 설정은 보관되어 있습니다. 원본 연결 전에는 조회와 미리보기를 사용할 수 없습니다.</p><div><button className="secondary-button" type="button" onClick={onReconnect}>CSV 다시 열기</button><button className="subtle-button" type="button" onClick={onManageViews}>보기 관리</button>{editable && <button className="subtle-button" type="button" onClick={onEditView}>뷰 설정</button>}</div></section> : <>
+    {view.layout.kind === 'kanban' && <CsvKanbanView view={view as CsvViewDefinition & { layout: Extract<CsvViewDefinition['layout'], { kind: 'kanban' }> }} columns={columns} sample={sample} controller={controller} onEditView={onEditView} />}
+    {view.layout.kind === 'calendar' && <CsvCalendarView view={view as CsvViewDefinition & { layout: Extract<CsvViewDefinition['layout'], { kind: 'calendar' }> }} columns={columns} sample={sample} controller={controller} cacheToken={cacheToken} onShowTable={onShowTable} onEditView={onEditView} />}
     {!scoped && query.status === 'loading' && <>
       {view.layout.kind === 'grid' ? <div className="csv-view-loading-grid" role="status" aria-label="CSV 결과 조회 중"><table><thead><tr><th>#</th>{view.columnIds.map((id) => <th key={id}>{columnMap.get(id)?.label ?? id}</th>)}</tr></thead><tbody>{Array.from({ length: 10 }, (_, rowIndex) => <tr key={rowIndex}><td>{rowIndex + 1}</td>{view.columnIds.map((id, columnIndex) => <td key={id}><span style={{ width: `${34 + ((rowIndex * 17 + columnIndex * 23) % 48)}%` }} /></td>)}</tr>)}</tbody></table></div> : <div className="csv-view-state" role="status">조회 중…</div>}
       <footer className="csv-view-statusbar" role="status"><span>조회 중…</span><span className="csv-view-status-spacer" />표본과 원본 크기에 따라 시간이 걸릴 수 있습니다.</footer>
     </>}
-    {!scoped && query.status === 'error' && <div className="csv-view-state" role="alert"><p>{query.error.message}</p><button type="button" className="secondary-button" onClick={onRetry}>다시 조회</button></div>}
+    {!scoped && query.status === 'error' && <div className="csv-view-state" role="alert"><p>{query.error.message}</p><small>{csvQueryNextStep(query.error)}</small><div><button type="button" className="secondary-button" onClick={onRetry}>다시 조회</button><button type="button" className="subtle-button" onClick={onEditView}>조건 수정</button></div></div>}
     {!scoped && query.status === 'idle' && <div className="csv-view-state" role="status">조회 조건을 준비하고 있습니다.</div>}
     {!scoped && query.status === 'ready' && query.rows.length === 0 && <div className="csv-view-empty-state" role="status"><strong>조건에 맞는 행이 없습니다</strong><p>{view.filter ? `현재 필터: ${filterSummary(view.filter, columnMap)}. ` : '현재 조건에는 '}해석 실패와 빈 값은 일반 비교에서 제외됩니다.</p><div>{editable && view.filter && <button type="button" className="secondary-button" onClick={() => onChangeView({ ...view, filter: null, updatedAt: new Date().toISOString() })}>필터 해제</button>}<button type="button" className="secondary-button" onClick={onEditView}>{editable ? '뷰 설정' : '보기 추가'}</button></div></div>}
     {!scoped && query.status === 'ready' && query.rows.length > 0 && <>
-      {view.layout.kind === 'grid' && <CsvQueryTable layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} theme={theme} onEditColumnType={onEditColumnType} />}
-      {view.layout.kind === 'list' && <CsvListView layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} />}
-      {view.layout.kind === 'gallery' && <CsvGalleryView layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} />}
+      {view.layout.kind === 'grid' && <CsvQueryTable layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} onAdjustQuery={onEditView} theme={theme} onEditColumnType={onEditColumnType} />}
+      {view.layout.kind === 'list' && <CsvListView layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} onAdjustQuery={onEditView} />}
+      {view.layout.kind === 'gallery' && <CsvGalleryView layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} onAdjustQuery={onEditView} />}
     </>}
-    {query.status === 'ready' && <footer className="csv-view-statusbar" role="status"><span>{query.rows.length.toLocaleString()}행 표시{query.hasMore ? ' · 더 보기 가능' : ''}</span><span>{totalLabel(query.total)}</span>{query.diagnostics.length > 0 && <span className="csv-view-status-warning">진단 {query.diagnostics.length}개 · {diagnosticLabel(query.diagnostics[0]!.code)}</span>}<span className="csv-view-status-spacer" />{query.loadingMore && <span>추가 행 불러오는 중…</span>}</footer>}
+    {query.status === 'ready' && <footer className="csv-view-statusbar" role="status"><span>{query.rows.length.toLocaleString()}행 확보{query.hasMore ? ' · 더 보기 가능' : ''}</span><span>{query.total.status === 'unknown' && sample?.reachedEof ? `전체 ${sample.records.length.toLocaleString()}행` : totalLabel(query.total)}</span>{query.diagnostics.length > 0 && <span className="csv-view-status-warning">진단 {query.diagnostics.length}개 · {diagnosticLabel(query.diagnostics[0]!.code)}</span>}<span className="csv-view-status-spacer" />{query.loadingMore && <span>추가 행 불러오는 중…</span>}</footer>}
+    </>}
   </section>
 }
 
