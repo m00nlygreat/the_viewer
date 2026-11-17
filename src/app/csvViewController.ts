@@ -72,6 +72,7 @@ interface Options {
   storage: CsvViewStorage
   sourceName: string
   defaultViewQuery?: boolean
+  queriesEnabled?: boolean
 }
 
 export class DefaultCsvViewController implements CsvViewController {
@@ -85,6 +86,7 @@ export class DefaultCsvViewController implements CsvViewController {
   private stored: CsvStoredProfile
   private sourceRevision: string
   private readonly defaultViewQuery: boolean
+  private readonly queriesEnabled: boolean
   private currentQueryView: CsvViewDefinition | null = null
   private currentQuery: { queryId: string; requestId: string; abort: AbortController } | null = null
   private previewTimer: number | null = null
@@ -101,6 +103,7 @@ export class DefaultCsvViewController implements CsvViewController {
     this.sourceName = options.sourceName
     this.sourceRevision = options.sourceRevision
     this.defaultViewQuery = options.defaultViewQuery ?? false
+    this.queriesEnabled = options.queriesEnabled ?? true
     this.state = {
       documentId: options.documentId,
       selection: { kind: 'builtin', mode: 'view' },
@@ -138,6 +141,12 @@ export class DefaultCsvViewController implements CsvViewController {
     this.saveSelection(selection)
     this.cancelCurrent()
     this.preview = null
+    if (!this.queriesEnabled) {
+      this.currentQueryView = null
+      this.state = { ...this.state, query: { status: 'idle' } }
+      this.emit()
+      return
+    }
     if (selection.kind === 'builtin') {
       if (this.defaultViewQuery && selection.mode === 'view') this.startQuery(this.defaultView())
       else { this.currentQueryView = null; this.state = { ...this.state, query: { status: 'idle' } }; this.emit() }
@@ -168,6 +177,7 @@ export class DefaultCsvViewController implements CsvViewController {
   }
 
   loadMore(): void {
+    if (!this.queriesEnabled) return
     if (this.state.query.status !== 'ready' || !this.state.query.hasMore || !this.state.query.nextCursor || this.state.query.loadingMore) return
     const current = this.state.query
     this.state = { ...this.state, query: { ...current, loadingMore: true, loadMoreError: null } }; this.emit()
@@ -187,6 +197,7 @@ export class DefaultCsvViewController implements CsvViewController {
   }
 
   queryScoped = async (view: CsvViewDefinition, scope: CsvQueryRequest['scope'], cursor: string | null, queryId: string, signal: AbortSignal): Promise<CsvQueryPage> => {
+    if (!this.queriesEnabled) throw new QueryError('source-unavailable', '원본 CSV를 다시 연결하면 조회할 수 있습니다.')
     const task = async () => {
       if (signal.aborted) throw new QueryError('cancelled', '범위 조회가 취소되었습니다.')
       if (this.disposed) throw new QueryError('engine-restarted', 'CSV 조회 세션이 종료되었습니다.')
@@ -202,6 +213,7 @@ export class DefaultCsvViewController implements CsvViewController {
   }
 
   discoverGroups = async (view: CsvViewDefinition, columnId: string, limit: number, signal: AbortSignal): Promise<{ keys: string[]; complete: boolean }> => {
+    if (!this.queriesEnabled) throw new QueryError('source-unavailable', '원본 CSV를 다시 연결하면 그룹을 확인할 수 있습니다.')
     if (!this.source.discoverGroups) throw new QueryError('source-unavailable', '이 CSV 원본에서는 그룹 목록을 조회할 수 없습니다.')
     const task = async () => {
       if (signal.aborted) throw new QueryError('cancelled', '그룹 조회가 취소되었습니다.')
@@ -218,9 +230,10 @@ export class DefaultCsvViewController implements CsvViewController {
     return next
   }
 
-  retry(): void { if (this.state.selection.kind === 'custom' && !usesScopedQueries(this.activeView())) this.startQuery() }
+  retry(): void { if (this.queriesEnabled && this.state.selection.kind === 'custom' && !usesScopedQueries(this.activeView())) this.startQuery() }
 
   previewDraft(draft: CsvViewDefinition): void {
+    if (!this.queriesEnabled) return
     this.preview = draft
     if (this.previewTimer !== null) window.clearTimeout(this.previewTimer)
     this.previewTimer = window.setTimeout(() => { this.previewTimer = null; this.startQuery(draft) }, CSV_POLICY.queryDebounceMs)
@@ -229,7 +242,8 @@ export class DefaultCsvViewController implements CsvViewController {
   endPreview(): void {
     if (this.previewTimer !== null) { window.clearTimeout(this.previewTimer); this.previewTimer = null }
     this.preview = null
-    if (this.state.selection.kind === 'custom') this.startQuery()
+    if (!this.queriesEnabled) { this.cancelCurrent(); this.currentQueryView = null; this.state = { ...this.state, query: { status: 'idle' } }; this.emit() }
+    else if (this.state.selection.kind === 'custom') this.startQuery()
     else if (this.defaultViewQuery && this.state.selection.mode === 'view') this.startQuery(this.defaultView())
     else { this.cancelCurrent(); this.currentQueryView = null; this.state = { ...this.state, query: { status: 'idle' } }; this.emit() }
   }
@@ -356,6 +370,11 @@ export class DefaultCsvViewController implements CsvViewController {
   }
 
   private startQuery(draft?: CsvViewDefinition): void {
+    if (!this.queriesEnabled) {
+      this.cancelCurrent(); this.currentQueryView = null
+      this.state = { ...this.state, query: { status: 'idle' } }; this.emit()
+      return
+    }
     const view = draft ?? this.activeView()
     if (!view || this.disposed) { this.state = { ...this.state, query: { status: 'idle' } }; this.emit(); return }
     if (!draft && usesScopedQueries(view)) { this.currentQueryView = null; this.state = { ...this.state, query: { status: 'idle' } }; this.emit(); return }
