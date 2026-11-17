@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp, GripVertical } from 'lucide-react'
 import { allowedOperators, filterColumns } from '../../domain/csv-views/query'
+import { csvQueryNextStep } from '../../domain/csv-views/errorGuidance'
 import type { CsvColumnDefinition, CsvFilter, CsvSaveResult, CsvStoredProfile, CsvViewDefinition, CsvLayout, CsvCellState, CsvSort } from '../../domain/csv-views/model'
 import type { CsvQueryState } from '../../app/csvViewController'
 import { CsvDataTable } from './CsvQueryTable'
 import { CsvMockupIcon } from './CsvMockupIcon'
+import { CsvViewLayoutPreview } from './CsvViewLayoutPreview'
 
 export interface CsvViewBuilderProps {
   profile: import('../../domain/csv-views/model').CsvFileProfile
@@ -115,12 +117,15 @@ export function CsvViewBuilder({ profile, sourceName, initial, mode, preview, so
 
 function CsvBuilderPreview({ draft, preview, columns, sourceAvailable, fileBacked }: { draft: CsvViewDefinition; preview: CsvQueryState; columns: CsvColumnDefinition[]; sourceAvailable: boolean; fileBacked: boolean }) {
   const columnMap = new Map(columns.map((column) => [column.id, column]))
-  const layoutLabel = { grid: '표', list: '리스트', gallery: '갤러리', kanban: '칸반', calendar: '캘린더' }[draft.layout.kind]
-  const requiredColumn = draft.layout.kind === 'kanban' ? draft.layout.groupColumnId : draft.layout.kind === 'calendar' ? draft.layout.dateColumnId : null
-  const requiredColumnReady = requiredColumn === null || columns.some((column) => column.id === requiredColumn)
   return <div className="csv-view-builder-preview">
     <div className="csv-view-builder-preview-head"><CsvMockupIcon name={draft.layout.kind} size={13} /><strong>미리보기</strong><span className="csv-view-preview-limit">{!sourceAvailable ? '원본 미연결' : preview.status === 'ready' ? `${preview.rows.length}행 확보${preview.hasMore ? ' · 추가 행 있음' : ''}` : preview.status === 'loading' ? '조건에 맞는 행 조회 중' : fileBacked ? '표본 200행 기준' : '현재 작업본 처음 200행'}</span><span className="csv-view-preview-limit-note">저장 전 결과는 제한된 미리보기입니다</span></div>
-    {!sourceAvailable ? <div className="csv-view-preview-state" role="status">원본 CSV를 다시 연결한 뒤 조건을 미리 볼 수 있습니다. 지금은 뷰 설정을 편집하고 저장할 수 있습니다.</div> : draft.layout.kind !== 'grid' ? <div className="csv-view-preview-state"><span><strong>{layoutLabel} 미리보기</strong><small>{requiredColumnReady ? '연결 컬럼 기준으로 표본을 배치합니다.' : '필수 연결 컬럼을 선택하면 표시됩니다.'}</small></span></div> : preview.status === 'error' ? <div className="csv-view-preview-state" role="alert">{preview.error.message}</div> : preview.status === 'loading' ? <div className="csv-view-preview-state" role="status">미리보기 조회 중…</div> : preview.status === 'ready' && preview.rows.length === 0 ? <div className="csv-view-preview-state">조건에 맞는 행이 없습니다.</div> : preview.status === 'ready' ? <div className="csv-view-preview-table-wrap"><CsvDataTable className="csv-view-preview-table" columns={draft.columnIds.flatMap((id) => { const column = columnMap.get(id); return column ? [{ id, column, label: draft.displayOverrides[id]?.label ?? column.label }] : [] })} rows={preview.rows.slice(0, 200)} totalRows={preview.rows.length} displayOverrides={draft.displayOverrides} compact /></div> : <div className="csv-view-preview-state">조건을 설정하면 제한된 결과를 미리 볼 수 있습니다.</div>}
+    {!sourceAvailable ? <div className="csv-view-preview-state" role="status">원본 CSV를 다시 연결한 뒤 조건을 미리 볼 수 있습니다. 지금은 뷰 설정을 편집하고 저장할 수 있습니다.</div>
+      : preview.status === 'error' ? <div className="csv-view-preview-state" role="alert"><span><strong>미리보기를 불러오지 못했습니다</strong><small>{preview.error.message} {csvQueryNextStep(preview.error)}</small></span></div>
+        : preview.status === 'loading' ? <div className="csv-view-preview-state" role="status">미리보기 조회 중…</div>
+          : preview.status === 'ready' && preview.rows.length === 0 ? <div className="csv-view-preview-state">조건에 맞는 행이 없습니다.</div>
+            : preview.status === 'ready' && draft.layout.kind === 'grid' ? <div className="csv-view-preview-table-wrap"><CsvDataTable className="csv-view-preview-table" columns={draft.columnIds.flatMap((id) => { const column = columnMap.get(id); return column ? [{ id, column, label: draft.displayOverrides[id]?.label ?? column.label }] : [] })} rows={preview.rows.slice(0, 200)} totalRows={preview.rows.length} displayOverrides={draft.displayOverrides} compact /></div>
+              : preview.status === 'ready' ? <div className="csv-view-preview-layout-wrap"><CsvViewLayoutPreview view={draft} columns={columns} rows={preview.rows.slice(0, 40)} /></div>
+                : <div className="csv-view-preview-state">조건을 설정하면 제한된 결과를 미리 볼 수 있습니다.</div>}
   </div>
 }
 

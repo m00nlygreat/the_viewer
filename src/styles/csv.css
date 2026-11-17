@@ -183,6 +183,27 @@
 .csv-view-column-type { padding: 3px 6px; border-radius: 5px; color: var(--text-muted); background: transparent; font-size: 11px; }
 .csv-view-column-type:hover { background: var(--selected); color: var(--text); }
 .csv-view-builder-preview { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 10px; overflow: auto; padding: 16px 18px; background: var(--bg); }
+.csv-view-preview-layout-wrap { min-width: 0; min-height: 0; flex: 1; display: flex; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.csv-view-preview-layout-wrap > * { min-width: 0; min-height: 0; }
+.csv-view-preview-layout-wrap > .csv-view-list-scroll, .csv-view-preview-layout-wrap > .csv-view-gallery-wrap { width: 100%; height: 100%; }
+.csv-view-preview-layout-wrap > .csv-view-gallery-wrap .csv-view-gallery { padding: 10px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.csv-view-preview-layout-wrap .csv-view-card { gap: 7px; padding: 10px; }
+.csv-view-preview-kanban { overflow: hidden; padding: 8px; }
+.csv-view-preview-kanban .csv-kanban-status { min-height: 28px; padding: 0 2px; font-size: 10px; }
+.csv-view-preview-kanban .csv-kanban-columns { padding-block: 4px; }
+.csv-view-preview-more { color: var(--text-weak); text-align: center; font-size: 10px; }
+.csv-view-preview-calendar { overflow: hidden; }
+.csv-view-preview-calendar .csv-calendar-nav { min-height: 36px; gap: 4px; padding-inline: 7px; }
+.csv-view-preview-calendar .csv-calendar-nav strong { margin-inline: 2px; font-size: 12px; }
+.csv-view-preview-calendar .csv-calendar-icon-button { width: 24px; height: 24px; }
+.csv-view-preview-calendar .csv-calendar-range-label { font-size: 9px; }
+.csv-view-preview-calendar .csv-calendar-grid { grid-auto-rows: minmax(58px, 1fr); }
+.csv-view-preview-calendar .csv-calendar-day { gap: 2px; padding: 3px; }
+.csv-view-preview-calendar .csv-calendar-day > header { font-size: 9px; }
+.csv-view-preview-calendar .csv-calendar-day > header time { width: 17px; height: 17px; }
+.csv-view-preview-calendar .csv-calendar-event { min-height: 15px; padding-inline: 3px; font-size: 9px; }
+.csv-view-preview-calendar .csv-calendar-event strong, .csv-view-preview-calendar .csv-calendar-event span { font-size: 9px; }
+.csv-view-preview-calendar .csv-calendar-diagnostics { min-height: 28px; padding-inline: 7px; font-size: 9px; }
 .csv-view-builder-preview-head { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 12px; }
 .csv-view-builder-preview-head > span:first-child { display: grid; gap: 3px; }
 .csv-view-builder-preview-head strong { color: var(--text-secondary); font-weight: 550; }

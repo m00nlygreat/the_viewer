@@ -157,7 +157,7 @@ function firstSampleDateFailure(sample: CsvSample | null, dateColumn: CsvColumnD
 
 function CalendarEvent({ row, view, columns }: { row: CsvQueryRow; view: Props['view']; columns: CsvColumnDefinition[] }) {
   const columnMap = new Map(columns.map((column) => [column.id, column]))
-  const titleId = view.layout.titleColumnId ?? view.columnIds.find((id) => id !== view.layout.dateColumnId) ?? null
+  const titleId = view.layout.titleColumnId ?? null
   const subtitleId = view.layout.subtitleColumnId ?? null
   const titleColumn = titleId ? columnMap.get(titleId) : undefined
   const titleCell = titleId ? row.cells[titleId] : undefined
