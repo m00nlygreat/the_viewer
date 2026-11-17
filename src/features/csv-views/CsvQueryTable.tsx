@@ -1,15 +1,6 @@
-import { useCallback, useMemo } from 'react'
-import {
-  DataEditor,
-  GridCellKind,
-  type GridCell,
-  type GridColumn,
-  type Item,
-} from '@glideapps/glide-data-grid'
-import '@glideapps/glide-data-grid/dist/index.css'
-import { createGridTheme } from '../gridTheme'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatCell, resolveDisplay } from '../../domain/csv-views/format'
-import type { CsvCell, CsvColumnDefinition, CsvDisplayOverride, CsvQueryError, CsvQueryRow } from '../../domain/csv-views/model'
+import type { CsvCell, CsvColumnDefinition, CsvColumnType, CsvDisplayOverride, CsvQueryError, CsvQueryRow, CsvSort } from '../../domain/csv-views/model'
 import { csvQueryNextStep } from '../../domain/csv-views/errorGuidance'
 
 export interface CsvResultViewProps<L> {
@@ -26,52 +17,91 @@ export interface CsvResultViewProps<L> {
   onAdjustQuery(): void
 }
 
-type GridProps = CsvResultViewProps<{ kind: 'grid' }> & { theme: 'light' | 'dark' }
-const typeMarks = { text: 'T', integer: '#', decimal: '1.2', boolean: '✓', date: '◷', datetime: '◷', select: '▾', multiSelect: '≡' } as const
+const ROW_HEIGHT = 34
+const OVERSCAN = 8
+const typeMarks: Record<CsvColumnType, string> = { text: 'Aa', integer: '12', decimal: '1.5', boolean: '☑', date: 'D', datetime: 'DT', select: '◉', multiSelect: '≡' }
+const typeLabels: Record<CsvColumnType, string> = { text: '텍스트', integer: '정수', decimal: '소수', boolean: '참/거짓', date: '날짜', datetime: '날짜·시간', select: '단일 선택', multiSelect: '다중 선택' }
 
-export function CsvQueryTable({ columns, columnIds, displayOverrides, rows, hasMore, loadingMore, loadMoreError, onLoadMore, onRetryLoadMore, onAdjustQuery, theme, onEditColumnType }: GridProps & { onEditColumnType(columnId: string): void }) {
-  const gridColumns = useMemo<GridColumn[]>(() => columnIds.map((id) => {
+interface Props extends CsvResultViewProps<{ kind: 'grid' }> {
+  sort?: CsvSort[]
+  onEditColumnType(columnId: string): void
+}
+
+export function CsvQueryTable({ columns, columnIds, displayOverrides, rows, sort = [], hasMore, loadingMore, loadMoreError, onLoadMore, onRetryLoadMore, onAdjustQuery, onEditColumnType }: Props) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(560)
+  const gridColumns = useMemo(() => columnIds.flatMap((id) => {
     const column = columns.get(id)
-    const label = displayOverrides[id]?.label ?? column?.label ?? id
-    return { title: `${column ? typeMarks[column.type] : '·'} ${label}`, width: 180 }
-  }), [columnIds, columns, displayOverrides])
-  const gridTheme = useMemo(() => createGridTheme(theme), [theme])
-  const getCellContent = useCallback(([columnIndex, rowIndex]: Item): GridCell => {
-    const id = columnIds[columnIndex]
-    const row = rows[rowIndex]
-    const column = id ? columns.get(id) : undefined
-    const cell = id && row ? row.cells[id] : undefined
-    const value = renderCellText(column, id ? displayOverrides[id] : undefined, cell)
-    return { kind: GridCellKind.Text, data: value, displayData: value, readonly: true, allowOverlay: true, contentAlign: column && ['integer', 'decimal'].includes(column.type) ? 'right' : 'left' }
-  }, [columnIds, columns, displayOverrides, rows])
+    return column ? [{ id, column, label: displayOverrides[id]?.label ?? column.label, sort: sort.find((item) => item.columnId === id) }] : []
+  }), [columnIds, columns, displayOverrides, sort])
+  const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
+  const end = Math.min(rows.length, start + Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2)
+  const visibleRows = rows.slice(start, end)
 
-  return <div className="csv-query-table-scroll" role="region" aria-label="조회 결과 표">
-    <div className="csv-query-table-grid">
-      <DataEditor
-        className="csv-query-grid-editor"
-        columns={gridColumns}
-        rows={rows.length}
-        getCellContent={getCellContent}
-        getCellsForSelection={true}
-        rowMarkers="none"
-        rowSelect="none"
-        columnSelect="none"
-        rangeSelect="rect"
-        rowHeight={40}
-        headerHeight={36}
-        width="100%"
-        height="100%"
-        theme={gridTheme}
-        onHeaderClicked={(columnIndex) => { const id = columnIds[columnIndex]; if (id) onEditColumnType(id) }}
-      />
-    </div>
-    {hasMore && <div className="csv-query-more">{loadMoreError ? <><span role="alert">{loadMoreError.message} {csvQueryNextStep(loadMoreError)}</span><button type="button" className="subtle-button" onClick={onRetryLoadMore}>다시 조회</button><button type="button" className="subtle-button" onClick={onAdjustQuery}>조건 수정</button></> : <button type="button" className="subtle-button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? '불러오는 중…' : '더 보기'}</button>}</div>}
+  useEffect(() => {
+    const element = scrollRef.current
+    if (!element) return
+    const updateSize = () => setViewportHeight(element.clientHeight)
+    updateSize()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateSize)
+    observer?.observe(element)
+    return () => observer?.disconnect()
+  }, [])
+
+  return <div ref={scrollRef} className="csv-query-table-scroll" role="region" aria-label="조회 결과 표" onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
+    <table className="csv-query-table">
+      <thead><tr>
+        <th className="rn" scope="col" title="원본 레코드 번호">#</th>
+        {gridColumns.map(({ id, column, label, sort: columnSort }) => <th scope="col" key={id}>
+          <div className="csv-query-header">
+            <button className="csv-query-type-button" type="button" title={`${typeLabels[column.type]} · ${column.typeSource === 'user' ? '사용자 지정' : '추천'}`} aria-label={`${label} 컬럼 타입 설정`} onClick={() => onEditColumnType(id)}>
+              <span className="csv-query-type-icon" aria-hidden="true">{typeMarks[column.type]}</span><span>{label}</span>
+            </button>
+            {columnSort && <span className="csv-query-sort" title={columnSort.direction === 'asc' ? '오름차순 정렬' : '내림차순 정렬'} aria-label={columnSort.direction === 'asc' ? '오름차순 정렬' : '내림차순 정렬'}>{columnSort.direction === 'asc' ? '↑' : '↓'}</span>}
+          </div>
+        </th>)}
+      </tr></thead>
+      <tbody>
+        {start > 0 && <tr className="csv-query-spacer" aria-hidden="true"><td colSpan={gridColumns.length + 1} style={{ height: start * ROW_HEIGHT }} /></tr>}
+        {visibleRows.map((row) => <tr key={row.rowId}>
+          <td className="rn">{row.recordNo}</td>
+          {gridColumns.map(({ id, column }) => <td key={id} className={cellClass(column, displayOverrides[id], row.cells[id])}>
+            <QueryCell column={column} override={displayOverrides[id]} cell={row.cells[id]} />
+          </td>)}
+        </tr>)}
+        {end < rows.length && <tr className="csv-query-spacer" aria-hidden="true"><td colSpan={gridColumns.length + 1} style={{ height: (rows.length - end) * ROW_HEIGHT }} /></tr>}
+        {hasMore && <tr className="csv-query-more-row">
+          <td className="rn">…</td>
+          <td colSpan={Math.max(1, gridColumns.length)}>
+            {loadMoreError ? <div className="csv-query-more-content" role="alert"><span>{loadMoreError.message} {csvQueryNextStep(loadMoreError)}</span><button type="button" className="subtle-button" onClick={onRetryLoadMore}>다시 조회</button><button type="button" className="subtle-button" onClick={onAdjustQuery}>조건 수정</button></div>
+              : <button type="button" className="csv-query-more-button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? '다음 행 불러오는 중…' : '다음 행 불러오기'}</button>}
+          </td>
+        </tr>}
+      </tbody>
+    </table>
   </div>
 }
 
-function renderCellText(column: CsvColumnDefinition | undefined, override: CsvDisplayOverride | undefined, cell: CsvCell | undefined): string {
-  if (!column || !cell) return '누락'
+function cellClass(column: CsvColumnDefinition, override: CsvDisplayOverride | undefined, cell: CsvCell | undefined): string {
+  if (!cell) return 'csv-query-cell missing'
   const formatted = formatCell(column, resolveDisplay(column, override), cell, override?.stateText ?? {})
-  if (formatted.chips) return formatted.chips.map((chip) => chip.unmatched ? `${chip.text} · 미등록` : chip.text).join(' · ')
-  return formatted.text
+  return ['csv-query-cell', formatted.tone, formatted.align === 'end' ? 'numeric' : '', column.type === 'date' || column.type === 'datetime' ? 'date' : '', cell.state === 'invalid' ? 'cell-invalid' : ''].filter(Boolean).join(' ')
+}
+
+function QueryCell({ column, override, cell }: { column: CsvColumnDefinition; override: CsvDisplayOverride | undefined; cell: CsvCell | undefined }) {
+  if (!cell) return <span className="csv-query-state missing">누락</span>
+  const display = resolveDisplay(column, override)
+  const formatted = formatCell(column, display, cell, override?.stateText ?? {})
+  const title = cell.state === 'invalid' ? `해석 실패 · ${cell.code}` : cell.state === 'null-marker' ? `결측 표식 · ${cell.raw}` : undefined
+  if (cell.state === 'value' && column.type === 'boolean' && 'as' in display && display.as === 'check' && typeof cell.value === 'boolean') {
+    return <span className={`csv-query-boolean${cell.value ? ' on' : ''}`} aria-label={cell.value ? '참' : '거짓'}><span className="box">{cell.value ? '✓' : ''}</span></span>
+  }
+  if (formatted.chips) return <span className="csv-query-options" title={title}>{formatted.chips.map((chip, index) => <span key={`${chip.text}-${index}`} className={optionClass(column, chip.unmatched)} data-color={chip.color ?? undefined}>{chip.text}</span>)}</span>
+  return <span className={`csv-query-state ${formatted.tone}`} title={title}>{formatted.text}</span>
+}
+
+function optionClass(column: CsvColumnDefinition, unmatched: boolean): string {
+  const kind = column.type === 'select' ? 'single' : 'multiple'
+  return `csv-query-option ${kind}${unmatched ? ' unmatched' : ''}`
 }

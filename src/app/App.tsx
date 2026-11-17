@@ -1499,7 +1499,7 @@ export function App() {
 
       {activeWorkspaceDocument ? <>
         <div id={`document-panel-${activeWorkspaceDocument.id}`} className="document-workspace" key={activeWorkspaceDocument.id} role="tabpanel" aria-label={`${activeWorkspaceDocument.mode === 'view' ? '보기' : '원본'} · ${activeWorkspaceDocument.name}`} tabIndex={0}>
-          {activeFileBackedCsv ? <CsvViewWorkspace document={activeFileBackedCsv} defaultContent={activeFileBackedSource ? <CsvSourceRangeView file={activeFileBackedSource.file} parser={activeFileBackedSource.stored.record.profile.parser} header={activeFileBackedSource.sample.header} preparedFile={activeFileBackedSource.requiresTranscode ? activeFileBackedSource.queryFile : undefined} /> : null} onModeChange={setMode} onError={(message) => notify(message, 'error')} onReconnect={() => pickFiles('csv')} cacheEnabled={recoveryEnabled} theme={resolvedTheme} />
+          {activeFileBackedCsv ? <CsvViewWorkspace document={activeFileBackedCsv} defaultContent={activeFileBackedSource ? <CsvSourceRangeView file={activeFileBackedSource.file} parser={activeFileBackedSource.stored.record.profile.parser} header={activeFileBackedSource.sample.header} preparedFile={activeFileBackedSource.requiresTranscode ? activeFileBackedSource.queryFile : undefined} /> : null} onModeChange={setMode} onError={(message) => notify(message, 'error')} onReconnect={() => pickFiles('csv')} cacheEnabled={recoveryEnabled} />
             : activeDocument ? (activeDocument.payloadLoaded === false ? <div className="source-diagnostic" role="status"><span>저장 문서 본문을 불러오고 있습니다.</span></div> : <>
               {activeDocument.parseState === 'pending' && !(activeDocument.format === 'md' && activeDocument.mode === 'view') && <div className="source-diagnostic" role="status"><span>최신 원문을 해석하고 있습니다. 편집은 계속할 수 있습니다.</span></div>}
               {activeDocument.parseState === 'error' && <div className="source-diagnostic" role="alert"><span>원문을 해석하지 못했습니다. 마지막 유효 보기는 유지되며 구조 편집은 잠깁니다.</span><small>{activeDocument.diagnostics.find((item) => item.severity === 'error')?.message ?? activeDocument.sourceError}</small></div>}
@@ -1507,7 +1507,7 @@ export function App() {
               <FeatureLoadBoundary key={activeDocument.id} fileName={activeDocument.name} sourceText={activeDocument.text}>
                 <Suspense fallback={null}>
                   {activeDocument.format === 'csv' && activeDocument.parseState === 'ready' && activeDocument.modelRevision === activeDocument.revision
-                    ? <CsvViewWorkspace document={activeDocument} defaultContent={activeDocument.mode === 'view' && !activeDocument.contentKind ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)} onModeChange={setMode} onError={(message) => notify(message, 'error')} onReconnect={() => pickFiles('csv')} theme={resolvedTheme} />
+                    ? <CsvViewWorkspace document={activeDocument} defaultContent={activeDocument.mode === 'view' && !activeDocument.contentKind ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)} onModeChange={setMode} onError={(message) => notify(message, 'error')} onReconnect={() => pickFiles('csv')} />
                     : activeDocument.mode === 'view' && !activeDocument.contentKind && !isBlockEditorFormat(activeDocument.format) ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)}
                 </Suspense>
               </FeatureLoadBoundary>
