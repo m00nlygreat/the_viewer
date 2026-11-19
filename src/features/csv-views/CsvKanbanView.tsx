@@ -83,7 +83,9 @@ function KanbanLane({ groupKey, label, view, columns, controller, onEditView }: 
     abortRef.current?.abort()
     const abort = new AbortController(); abortRef.current = abort
     if (!append) { queryId.current = crypto.randomUUID(); setRows([]); setCursor(null); setHasMore(false) }
-    setError(null); append ? setLoadingMore(true) : setLoading(true)
+    setError(null)
+    if (append) setLoadingMore(true)
+    else setLoading(true)
     void controllerRef.current.queryScoped(view, { kind: 'group', columnId: view.layout.groupColumnId, key: groupKey }, nextCursor, queryId.current, abort.signal).then((page) => {
       if (abort.signal.aborted) return
       setRows((existing) => append ? [...existing, ...page.rows] : page.rows)

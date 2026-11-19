@@ -57,7 +57,7 @@ export function CsvViewWorkspace({ document, defaultContent, onModeChange, onErr
       let header: (string | null)[]
       let records: string[][]
       let sourceRevision: string
-      let sourceName = document.name
+      const sourceName = document.name
       const fileBacked = isFileBackedCsvDocument(document)
       if (fileBacked) {
         const entry = getCsvFileSource(document.id)

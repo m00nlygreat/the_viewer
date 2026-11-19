@@ -153,7 +153,8 @@ export class IndexedDbCsvViewStorage implements CsvViewStorage {
     const profiles: CsvViewBackup['profiles'] = []
     for (const record of fileRecords) {
       const stored = orderStored(record, viewsByFile.get(record.fileId) ?? [])
-      const { viewOrder: _order, ...profile } = stored.record.profile
+      const profile = { ...stored.record.profile }
+      Reflect.deleteProperty(profile, 'viewOrder')
       profiles.push({
         source: { fileName: typeof record.identity?.name === 'string' ? record.identity.name : record.fileId, headers: profile.columns.map((column) => column.sourceHeader), columnCount: profile.columns.length },
         profile, viewOrder: [...stored.record.profile.viewOrder], views: stored.views

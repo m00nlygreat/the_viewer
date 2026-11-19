@@ -31,7 +31,7 @@ export class DuckDbCsvDataSource {
     this.file = file; this.handle = handle; this.sampleResult = sample; this.profile = profile; this.documentId = documentId; this.fileId = fileId; this.sourceRevision = sourceRevision; this.cacheEnabled = cacheEnabled; this.queryFile = queryFile; this.releaseQueryFile = releaseQueryFile
   }
 
-  async sample(_documentId: string, _sourceRevision: string, _maxRecords: number): Promise<CsvSample> { return this.sampleResult }
+  async sample(): Promise<CsvSample> { return this.sampleResult }
   async registerSnapshot(): Promise<void> { /* File-backed CSV keeps the Blob registered directly with DuckDB. */ }
   async setSchema(_documentId: string, _schemaRevision: number, columns: CsvColumnDefinition[]): Promise<void> {
     this.profile = { ...this.profile, columns }

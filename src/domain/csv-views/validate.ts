@@ -82,8 +82,12 @@ export function validateBackup(input: unknown): CsvValidationResult<CsvViewBacku
     if (!checked.ok) issues.push(...checked.issues.map((item) => ({ ...item, path: `/profiles/${index}${item.path}` })))
     else {
       filledDefaults.push(...checked.filledDefaults.map((item) => ({ path: `/profiles/${index}${item.path}` })))
-      const { kind: _kind, schemaVersion: _version, exportedAt: _date, appVersion: _app, ...profile } = checked.value
-      profiles.push(profile)
+      profiles.push({
+        source: checked.value.source,
+        profile: checked.value.profile,
+        viewOrder: checked.value.viewOrder,
+        views: checked.value.views
+      })
     }
   }
   if (!isIsoDateTime(input.exportedAt)) issues.push(issue('/exportedAt', 'type'))

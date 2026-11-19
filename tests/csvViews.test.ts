@@ -59,7 +59,8 @@ describe('CSV view schema and revisions', () => {
 
   it('validates an exported multi-profile backup without trusting local identity', () => {
     const exported = bundle()
-    const { kind: _kind, schemaVersion: _version, exportedAt, appVersion, ...profile } = exported
+    const { exportedAt, appVersion, source, profile: exportedProfile, viewOrder, views } = exported
+    const profile = { source, profile: exportedProfile, viewOrder, views }
     expect(validateBackup({ kind: 'csv-view-backup', schemaVersion: 1, exportedAt, appVersion, profiles: [profile] }).ok).toBe(true)
     expect(validateBackup({ kind: 'csv-view-backup', schemaVersion: 9, exportedAt, appVersion, profiles: [] })).toMatchObject({ ok: false })
   })

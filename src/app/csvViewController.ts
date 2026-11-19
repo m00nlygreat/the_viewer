@@ -332,7 +332,8 @@ export class DefaultCsvViewController implements CsvViewController {
     const stored = this.getStored()
     const selected = viewIds === 'all' ? stored.views : stored.views.filter((view) => viewIds.includes(view.id))
     const ordered = stored.record.profile.viewOrder.flatMap((id) => selected.some((view) => view.id === id) ? [id] : [])
-    const { viewOrder: _order, ...profile } = stored.record.profile
+    const profile = { ...stored.record.profile }
+    Reflect.deleteProperty(profile, 'viewOrder')
     return { kind: 'csv-view-bundle', schemaVersion: 1, exportedAt: new Date().toISOString(), appVersion: __APP_VERSION__, source: { fileName: this.sourceName, headers: profile.columns.map((column) => column.sourceHeader), columnCount: profile.columns.length }, profile, viewOrder: ordered, views: selected }
   }
 

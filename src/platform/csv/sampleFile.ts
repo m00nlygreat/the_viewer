@@ -168,7 +168,13 @@ export async function readCsvSample(file: CsvSourceFile, settings?: Partial<CsvP
   const maxRecords = CSV_POLICY.sampleRecords + (parser.hasHeader ? 1 : 0)
   await new Promise<void>((resolve, reject) => {
     let settled = false
-    const finish = (error?: Error) => { if (settled) return; settled = true; signal?.removeEventListener('abort', onAbort); error ? reject(error) : resolve() }
+    const finish = (error?: Error) => {
+      if (settled) return
+      settled = true
+      signal?.removeEventListener('abort', onAbort)
+      if (error) reject(error)
+      else resolve()
+    }
     const onAbort = () => { stoppedBy = 'records'; finish(abortError()) }
     signal?.addEventListener('abort', onAbort, { once: true })
     Papa.parse<string[]>(sampleFile, {
@@ -234,7 +240,13 @@ export async function readCsvRecordPage(file: CsvSourceFile, settings: CsvParser
   let hasMore = false
   await new Promise<void>((resolve, reject) => {
     let settled = false
-    const finish = (error?: Error) => { if (settled) return; settled = true; signal?.removeEventListener('abort', onAbort); error ? reject(error) : resolve() }
+    const finish = (error?: Error) => {
+      if (settled) return
+      settled = true
+      signal?.removeEventListener('abort', onAbort)
+      if (error) reject(error)
+      else resolve()
+    }
     const onAbort = () => finish(abortError())
     signal?.addEventListener('abort', onAbort, { once: true })
     Papa.parse<string[]>(file as File, {
