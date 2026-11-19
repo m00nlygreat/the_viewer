@@ -4,6 +4,8 @@ const memory = vi.hoisted(() => ({
   documents: new Map<string, unknown>(),
   documentPayloads: new Map<string, unknown>(),
   documentBlobs: new Map<string, unknown>(),
+  csvSessions: new Map<string, unknown>(),
+  csvViewSelections: new Map<string, unknown>(),
   settings: new Map<string, { key: string; value: unknown }>(),
   shares: new Map<string, unknown>(),
   transactions: [] as Array<{ stores: string[]; mode: string }>,
@@ -17,9 +19,11 @@ vi.mock('idb', () => ({ openDB: vi.fn(async () => ({
     const documents = new Map(memory.documents)
     const documentPayloads = new Map(memory.documentPayloads)
     const documentBlobs = new Map(memory.documentBlobs)
+    const csvSessions = new Map(memory.csvSessions)
+    const csvViewSelections = new Map(memory.csvViewSelections)
     const settings = new Map(memory.settings)
     const shares = new Map(memory.shares)
-    const data = new Map([['documents', documents], ['documentPayloads', documentPayloads], ['documentBlobs', documentBlobs], ['settings', settings], ['shares', shares]])
+    const data = new Map([['documents', documents], ['documentPayloads', documentPayloads], ['documentBlobs', documentBlobs], ['csvSessions', csvSessions], ['csvViewSelections', csvViewSelections], ['settings', settings], ['shares', shares]])
     const tx = {
       get done() {
         return Promise.resolve().then(() => {
@@ -27,6 +31,8 @@ vi.mock('idb', () => ({ openDB: vi.fn(async () => ({
           memory.documents = documents
           memory.documentPayloads = documentPayloads
           memory.documentBlobs = documentBlobs
+          memory.csvSessions = csvSessions
+          memory.csvViewSelections = csvViewSelections
           memory.settings = settings
           memory.shares = shares
         })
@@ -44,10 +50,10 @@ vi.mock('idb', () => ({ openDB: vi.fn(async () => ({
     }
     return tx
   },
-  getAll: async (name: string) => [...(name === 'documents' ? memory.documents : name === 'documentPayloads' ? memory.documentPayloads : name === 'documentBlobs' ? memory.documentBlobs : name === 'settings' ? memory.settings : memory.shares).values()],
-  get: async (name: string, key: string) => (name === 'documents' ? memory.documents : name === 'documentPayloads' ? memory.documentPayloads : name === 'documentBlobs' ? memory.documentBlobs : name === 'settings' ? memory.settings : memory.shares).get(key),
-  put: async (name: string, record: { id?: string; key?: string; [key: string]: unknown }) => { (name === 'documents' ? memory.documents : name === 'documentPayloads' ? memory.documentPayloads : name === 'documentBlobs' ? memory.documentBlobs : name === 'settings' ? memory.settings : memory.shares).set(record.id ?? record.key ?? '', record) },
-  delete: async (name: string, key: string) => { (name === 'documents' ? memory.documents : name === 'documentPayloads' ? memory.documentPayloads : name === 'documentBlobs' ? memory.documentBlobs : name === 'settings' ? memory.settings : memory.shares).delete(key) }
+  getAll: async (name: string) => [...(name === 'documents' ? memory.documents : name === 'documentPayloads' ? memory.documentPayloads : name === 'documentBlobs' ? memory.documentBlobs : name === 'csvSessions' ? memory.csvSessions : name === 'csvViewSelections' ? memory.csvViewSelections : name === 'settings' ? memory.settings : memory.shares).values()],
+  get: async (name: string, key: string) => (name === 'documents' ? memory.documents : name === 'documentPayloads' ? memory.documentPayloads : name === 'documentBlobs' ? memory.documentBlobs : name === 'csvSessions' ? memory.csvSessions : name === 'csvViewSelections' ? memory.csvViewSelections : name === 'settings' ? memory.settings : memory.shares).get(key),
+  put: async (name: string, record: { id?: string; key?: string; [key: string]: unknown }) => { (name === 'documents' ? memory.documents : name === 'documentPayloads' ? memory.documentPayloads : name === 'documentBlobs' ? memory.documentBlobs : name === 'csvSessions' ? memory.csvSessions : name === 'csvViewSelections' ? memory.csvViewSelections : name === 'settings' ? memory.settings : memory.shares).set(record.id ?? record.key ?? '', record) },
+  delete: async (name: string, key: string) => { (name === 'documents' ? memory.documents : name === 'documentPayloads' ? memory.documentPayloads : name === 'documentBlobs' ? memory.documentBlobs : name === 'csvSessions' ? memory.csvSessions : name === 'csvViewSelections' ? memory.csvViewSelections : name === 'settings' ? memory.settings : memory.shares).delete(key) }
 })) }))
 
 import type { ViewerDocument } from '../src/domain/types'
@@ -66,6 +72,8 @@ beforeEach(() => {
   memory.documents.clear()
   memory.documentPayloads.clear()
   memory.documentBlobs.clear()
+  memory.csvSessions.clear()
+  memory.csvViewSelections.clear()
   memory.settings.clear()
   memory.shares.clear()
   memory.transactions = []
@@ -84,7 +92,7 @@ describe('workspace storage transaction', () => {
     expect(memory.settings.get('workspace')?.value).toEqual(folder)
     expect(memory.settings.get('theme')?.value).toBe('dark')
     expect(memory.shares.has('ticket-1')).toBe(true)
-    expect(memory.transactions).toEqual([{ stores: ['documents', 'documentPayloads', 'documentBlobs', 'settings'], mode: 'readwrite' }])
+    expect(memory.transactions).toEqual([{ stores: ['documents', 'documentPayloads', 'documentBlobs', 'settings', 'csvSessions', 'csvViewSelections'], mode: 'readwrite' }])
     await expect(loadWorkspace()).resolves.toEqual({ documents: [], folder })
     expect(memory.transactions[1]).toEqual({ stores: ['documents', 'settings'], mode: 'readonly' })
   })

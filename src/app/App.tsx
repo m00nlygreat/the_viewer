@@ -11,7 +11,7 @@ import { RuntimeAssetDialog } from '../components/RuntimeAssetDialog'
 import { settleCodeEditors } from '../components/editorSettling'
 import { clearDocumentResources, disposeDocumentResources } from './documentResources'
 import { DocumentActionBar, DocumentHeader } from './DocumentHeader'
-import { DocumentStore, type DocumentStoreChange } from './documentStore'
+import { DocumentStore, type DocumentListItem, type DocumentStoreChange } from './documentStore'
 import { WorkspaceOperationCoordinator } from './workspaceOperationCoordinator'
 import { safeDisplayFileName } from './displayName'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
@@ -27,13 +27,14 @@ import { FolderResourceManager } from '../platform/folderResources'
 import { folderDocumentKey, type FolderPath, type FolderWorkspace, type FolderEntry } from '../domain/workspace'
 import type { FolderTransitionPhase } from '../domain/folderTransition'
 import { LocalReferenceState, type MarkdownReferenceContext, type MarkdownReferenceServices } from '../features/markdown/localReferenceState'
-import { FORMAT_LABEL, FORMAT_MIME, FORMATS, type DocumentModel, type Format, type ThemePreference, type ViewerDocument } from '../domain/types'
+import { FORMAT_LABEL, FORMAT_MIME, FORMATS, getFormat, type DocumentModel, type FileBackedCsvDocument, type Format, type ThemePreference, type ViewerDocument } from '../domain/types'
 import { DocumentController } from '../domain/documentController'
 import { buildExportSnapshot, canPersistRecovery, diagnosticsFromMessages, documentIsDirty, flushDocument, hasByteOrderMark, makeDocumentFromBytes, makeFileDocumentFromBytes } from '../domain/session'
 import type { ParsedFile } from '../domain/formatParsing'
 import { parseTextWithWorker, parseWithWorker } from '../domain/workerClient'
 import { hasFatalDiagnostics } from '../domain/parseDiagnostics'
 import { isStructuredFormat, type StructuredFormat } from '../domain/structured/model'
+import { isSourceUrl } from '../domain/sourceLocation'
 import { isBlockEditorFormat } from '../domain/blockDocuments'
 import type { EnvModel } from '../domain/env/model'
 import { isStructuredViewerDocument, matchDocumentModel, replaceDocumentModel } from '../domain/documentModel'
@@ -41,9 +42,14 @@ import { clearAllData, clearDocuments, clearWorkspace, completeShareTicketFile, 
 import { DocumentWriteQueue } from '../platform/documentWriteQueue'
 import { FilePicker, type FilePickerHandle } from '../platform/FilePicker'
 import type { PickedFile } from '../platform/fileTypes'
-import { downloadLocalFile, readClipboardText, readDroppedItems, readPickedFileBytes, receiveLaunchedFiles, saveLocalFile, shareLocalFile, supportsFileHandlePicker } from '../platform/browserFiles'
+import { downloadLocalBlob, downloadLocalFile, readClipboardText, readDroppedItems, readPickedFileBytes, receiveLaunchedFiles, saveLocalFile, shareLocalBlob, shareLocalFile, supportsFileHandlePicker } from '../platform/browserFiles'
 import { commitExtensionFile, parseRelayRoute, receiveExtensionFile, RelayTransferError, restoreLegacySnapshot, type ReceivedExtensionFile, type RelayRoute } from '../platform/pwa/extensionRelay'
 import { continueWithoutRuntimeAssetGroup, ensureRuntimeAssetGroup, getRuntimeAssetProgress, retryRuntimeAssetGroup, subscribeRuntimeAssetProgress } from '../platform/pwa/runtimeAssets'
+import { CSV_POLICY, maxMemoryCsvBytes } from '../domain/csv-views/policy'
+import { clearCsvFileSources, getCsvFileSource, openFileBackedCsv, releaseCsvFileSource } from '../platform/csv/fileRegistry'
+import { csvViewStorage, loadCsvSessions, removeCsvSession, updateCsvSessionMode } from '../platform/csv/viewStorage'
+import { CsvViewWorkspace } from '../features/csv-views/CsvViewWorkspace'
+import { CsvSourceRangeView } from '../features/csv-views/CsvSourceRangeView'
 
 const CsvEditor = lazy(() => import('../features/CsvEditor').then((module) => ({ default: module.CsvEditor })))
 const MarkdownEditor = lazy(() => import('../features/MarkdownEditor').then((module) => ({ default: module.MarkdownEditor })))
@@ -91,10 +97,19 @@ export function App() {
   const subscribeDocumentList = useCallback((listener: () => void) => documentStore.subscribeList(listener), [documentStore])
   const readDocumentList = useCallback(() => documentStore.getListSnapshot(), [documentStore])
   const documents = useSyncExternalStore(subscribeDocumentList, readDocumentList, readDocumentList)
+  const [fileBackedCsvDocuments, setFileBackedCsvDocuments] = useState<FileBackedCsvDocument[]>([])
+  const fileBackedCsvDocumentsRef = useRef(fileBackedCsvDocuments)
+  fileBackedCsvDocumentsRef.current = fileBackedCsvDocuments
+  const [pendingFileBackedCsv, setPendingFileBackedCsv] = useState<{ file: PickedFile; folderRef?: FileBackedCsvDocument['folderRef']; candidates?: { fileId: string; basis: 'digest' | 'name-size' | 'header' }[]; recovery?: boolean } | null>(null)
+  const [fileBackedCsvEnabled, setFileBackedCsvEnabled] = useState(() => import.meta.env.DEV && readDeveloperCsvSetting())
   const [activeId, setActiveId] = useState('')
   const subscribeActiveDocument = useCallback((listener: () => void) => documentStore.subscribeDocument(activeId, listener), [activeId, documentStore])
   const readActiveDocument = useCallback(() => documentStore.get(activeId), [activeId, documentStore])
   const activeDocumentSnapshot = useSyncExternalStore(subscribeActiveDocument, readActiveDocument, readActiveDocument)
+  const workspaceDocuments = useMemo<DocumentListItem[]>(() => [
+    ...documents,
+    ...fileBackedCsvDocuments.map((item): DocumentListItem => ({ id: item.id, name: item.name, format: 'csv', contentKind: undefined, isDirty: false, folderRef: item.folderRef, openedAt: item.openedAt, storageKind: 'file-csv' }))
+  ].sort((left, right) => right.openedAt - left.openedAt), [documents, fileBackedCsvDocuments])
   const [loaded, setLoaded] = useState(false)
   const [theme, setTheme] = useState<ThemePreference>('system')
   const [systemLight, setSystemLight] = useState(() => typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: light)').matches)
@@ -144,7 +159,9 @@ export function App() {
   const relayRuns = useRef(new Set<string>())
   const receivedRelayFiles = useRef(new Map<string, ReceivedExtensionFile>())
   const activeDocument = activeDocumentSnapshot
-  const activeSummary = documents.find((item) => item.id === activeId) ?? null
+  const activeFileBackedCsv = fileBackedCsvDocuments.find((item) => item.id === activeId) ?? null
+  const activeWorkspaceDocument = activeDocument ?? activeFileBackedCsv
+  const activeSummary = workspaceDocuments.find((item) => item.id === activeId) ?? null
   const activeDocumentId = activeDocument?.id
   const activeDocumentPayloadLoaded = activeDocument?.payloadLoaded
   const resolvedTheme = theme === 'system' ? (systemLight ? 'light' : 'dark') : theme
@@ -188,6 +205,7 @@ export function App() {
         ...payload,
         mode: latest.mode,
         folderRef: latest.folderRef,
+        sourceLocation: latest.sourceLocation,
         sourceFileHandle: latest.sourceFileHandle,
         fileSource: latest.fileSource,
         parentId: latest.parentId,
@@ -290,9 +308,17 @@ export function App() {
     let cancelled = false
     void (async () => {
       try {
-        const [storedTheme, recover] = await Promise.all([loadTheme(), readSetting('recovery', true)])
+        const [storedTheme, recover, csvSessions] = await Promise.all([loadTheme(), readSetting('recovery', true), loadCsvSessions().catch(() => [])])
         const restored = recover ? await loadWorkspace() : { documents: [], folder: null }
         const saved = restored.documents
+        let savedCsvSessions: FileBackedCsvDocument[] = recover ? csvSessions.map((item): FileBackedCsvDocument => ({
+          id: item.documentId, name: item.name, format: 'csv', mimeType: item.mimeType, size: item.size, storageKind: 'file-csv',
+          fileId: item.fileId, sourceRevision: item.sourceRevision, mode: item.mode,
+          openedAt: Date.parse(item.openedAt) || Date.now(), lastEditedAt: Date.parse(item.lastEditedAt) || Date.now(),
+          ...(item.folderRef ? { folderRef: { folderId: item.folderRef.rootId, path: item.folderRef.relativePath } } : {}),
+          isDirty: false, capabilities: { canView: true, canSource: true, canDownloadOriginal: true, canShare: true, canEditData: false, canOverwriteOriginal: false, canUndo: false },
+          sourceState: { status: 'needs-file' }
+        })) : []
         if ('issues' in restored && restored.issues?.length) {
           setRecoveryIssues(restored.issues)
           notify(`${restored.issues.length}개 저장 문서를 복원하지 못했습니다. 정상 문서는 계속 사용할 수 있습니다.`, 'error')
@@ -311,6 +337,26 @@ export function App() {
         } else if (folder?.access === 'input') {
           rootError = '폴더 새로고침을 눌러 현재 폴더를 선택하면 항목을 표시합니다.'
         }
+        const preferredSession = recover
+          ? (folder?.activePath ? csvSessions.find((item) => item.folderRef?.rootId === folder.id && item.folderRef.relativePath === folder.activePath) : undefined) ?? csvSessions[0]
+          : undefined
+        if (preferredSession) {
+          try {
+            const stored = await csvViewStorage.loadProfile(preferredSession.fileId)
+            const handle = stored?.record.handle
+            const permission = await handle?.queryPermission?.({ mode: 'read' })
+            if (handle && permission === 'granted') {
+              const file = await handle.getFile()
+              const picked: PickedFile = { name: file.name, type: file.type, file, fileHandle: handle }
+              const reopened = await openFileBackedCsv(picked, {
+                documentId: preferredSession.documentId, fileIdChoice: preferredSession.fileId, mode: preferredSession.mode,
+                persistSession: true,
+                ...(preferredSession.folderRef ? { folderRef: { folderId: preferredSession.folderRef.rootId, path: preferredSession.folderRef.relativePath } } : {})
+              })
+              if (reopened.status === 'opened') savedCsvSessions = savedCsvSessions.map((item) => item.id === reopened.document.id ? reopened.document : item)
+            }
+          } catch { /* Keep the needs-file recovery entry when a saved handle is unavailable. */ }
+        }
         if (cancelled) return
         setTheme(storedTheme)
         setRecoveryEnabled(recover)
@@ -318,12 +364,14 @@ export function App() {
         recoveryWasEnabled.current = recover
         recoveryObservedDocuments.current = new Map(saved.map((item) => [item.id, item]))
         documentStore.replaceAll(saved)
+        setFileBackedCsvDocuments(savedCsvSessions)
         folderWorkspaceRef.current?.restoreWorkspace(folder, source, rootEntries, rootError)
         folderResources.current.setGeneration(folderWorkspaceRef.current?.generation ?? 0)
         const folderActive = folder?.activePath ? saved.find((item) => item.folderRef?.folderId === folder.id && item.folderRef.path === folder.activePath) : undefined
-        const first = folderActive ?? saved[0]
+        const folderActiveCsv = folder?.activePath ? savedCsvSessions.find((item) => item.folderRef?.folderId === folder.id && item.folderRef.path === folder.activePath) : undefined
+        const first = folderActive ?? folderActiveCsv ?? saved[0] ?? savedCsvSessions[0]
         setActiveId(first?.id ?? '')
-        if (folderActive) location.hash = `/file/${folderActive.id}`
+        if (first) location.hash = `/file/${first.id}`
       } catch {
         if (!cancelled) notify('이 기기의 저장 공간에 접근할 수 없습니다. 현재 탭에서만 작업합니다.', 'error')
       } finally { if (!cancelled) setLoaded(true) }
@@ -426,11 +474,11 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    if (loaded && !relayRoute && documents.length === 0 && !folderWorkspaceRef.current?.folder && !sessionStorage.getItem('viewer-command-shown')) {
+    if (loaded && !relayRoute && workspaceDocuments.length === 0 && !folderWorkspaceRef.current?.folder && !sessionStorage.getItem('viewer-command-shown')) {
       setShowCommand(true)
       sessionStorage.setItem('viewer-command-shown', '1')
     }
-  }, [loaded, documents.length, relayRoute])
+  }, [loaded, workspaceDocuments.length, relayRoute])
 
   useEffect(() => {
     const onInstall = (event: Event) => { event.preventDefault(); setInstallPrompt(event as BeforeInstallPrompt) }
@@ -452,6 +500,7 @@ export function App() {
     const opened: ViewerDocument[] = []
     const errors: string[] = []
     let first: ViewerDocument | null = null
+    let firstWorkspaceId: string | null = null
     const deferRemaining = (startIndex: number): Promise<{ opened: ViewerDocument[]; errors: string[] }> => new Promise((resolve) => {
       workspaceOperations.current.inputs.enqueueFiles({ files: files.slice(startIndex), format: forcedFormat, origin, resolve: (result) => resolve({ opened: [...opened, ...result.opened], errors: [...errors, ...result.errors] }) })
     })
@@ -478,7 +527,23 @@ export function App() {
               if (!first) first = existing
               continue
             }
+            const existingCsv = fileBackedCsvDocumentsRef.current.find((item) => item.folderRef?.folderId === folderRef!.folderId && item.folderRef.path === path)
+            if (existingCsv) { firstWorkspaceId ??= existingCsv.id; continue }
           }
+        }
+        const sourceFile = 'file' in file ? file.file : undefined
+        const isCsv = forcedFormat === 'csv' || getFormat(file.name, file.type) === 'csv'
+        if (!origin && fileBackedCsvEnabled && sourceFile && isCsv && sourceFile.size > maxMemoryCsvBytes(navigator.userAgent)) {
+          if (sourceFile.size > CSV_POLICY.maxFileBackedCsvBytes) throw new Error(`파일 기반 CSV 임시 한도 ${Math.round(CSV_POLICY.maxFileBackedCsvBytes / 1024 / 1024)} MiB를 초과했습니다.`)
+          const result = await openFileBackedCsv(file, { folderRef, persistSession: recoveryEnabledRef.current })
+          if (workspaceOperations.current.locked) return deferRemaining(index)
+          if (result.status === 'choose') {
+            setPendingFileBackedCsv({ file, candidates: result.candidates, recovery: result.candidates.some((candidate) => candidate.basis === 'header'), ...(folderRef ? { folderRef } : {}) })
+            continue
+          }
+          setFileBackedCsvDocuments((items) => [result.document, ...items.filter((item) => item.id !== result.document.id)])
+          firstWorkspaceId ??= result.document.id
+          continue
         }
         const bytes = await readPickedFileBytes(file)
         const document = forcedFormat
@@ -486,35 +551,67 @@ export function App() {
           : await makeFileDocumentFromBytes(file.name, file.type, bytes, undefined, { transferInputBytes: true })
         if (workspaceOperations.current.locked) return deferRemaining(index)
         if (forcedFormat && document.format !== forcedFormat) throw new Error(`선택한 형식 ${forcedFormat.toUpperCase()}과 파일 내용이 다릅니다.`)
+        const sourceLocation = origin ? { kind: 'shared' as const } : folderRef ? undefined : { kind: 'local-file' as const }
         const openedDocument: ViewerDocument = {
           ...document,
+          ...(sourceFile instanceof File ? { sourceLastModified: sourceFile.lastModified } : {}),
           ...(file.fileHandle ? { sourceFileHandle: file.fileHandle } : {}),
           ...(folderRef ? { folderRef } : {}),
+          ...(sourceLocation ? { sourceLocation } : {}),
           ...(origin ? { ...origin } : {})
         }
         documentStore.upsert(openedDocument)
         notifyFolderDocumentSubscribers(openedDocument)
         opened.push(openedDocument)
         if (!first) first = openedDocument
+        firstWorkspaceId ??= openedDocument.id
       } catch (error) {
         const message = `${file.name}: ${error instanceof Error ? error.message : '파일을 열지 못했습니다.'}`
         errors.push(message)
         notify(message, 'error')
       }
     }
-    if (first) {
-      setActiveId(first.id)
-      folderWorkspaceRef.current?.selectDocumentPath(first.folderRef?.path ?? null)
+    if (firstWorkspaceId || first) {
+      const selectedId = firstWorkspaceId ?? first!.id
+      setActiveId(selectedId)
+      const selected = documentStore.get(selectedId)
+      const selectedFileCsv = fileBackedCsvDocumentsRef.current.find((item) => item.id === selectedId)
+      folderWorkspaceRef.current?.selectDocumentPath(selected?.folderRef?.path ?? selectedFileCsv?.folderRef?.path ?? null)
       setShowCommand(false)
-      setTimeout(() => { location.hash = `/file/${first!.id}` }, 0)
+      setTimeout(() => { location.hash = `/file/${selectedId}` }, 0)
     }
     return { opened, errors }
-  }, [documentStore, notify, notifyFolderDocumentSubscribers])
+  }, [documentStore, fileBackedCsvEnabled, notify, notifyFolderDocumentSubscribers])
 
   const openFiles = useCallback((files: PickedFile[], forcedFormat?: Format, origin?: { shareTicketId: string; shareFileIndex: number }): Promise<{ opened: ViewerDocument[]; errors: string[] }> => {
     if (workspaceOperations.current.locked) return new Promise((resolve) => workspaceOperations.current.inputs.enqueueFiles({ files, format: forcedFormat, origin, resolve }))
     return processOpenFiles(files, forcedFormat, origin)
   }, [processOpenFiles])
+
+  const resolvePendingFileBackedCsv = useCallback(async (fileIdChoice: string | 'new') => {
+    const pending = pendingFileBackedCsv
+    if (!pending) return
+    try {
+      const existingSession = pending.folderRef ? fileBackedCsvDocumentsRef.current.find((item) => item.folderRef?.folderId === pending.folderRef!.folderId && item.folderRef.path === pending.folderRef!.path) : undefined
+      const result = await openFileBackedCsv(pending.file, { folderRef: pending.folderRef, fileIdChoice, persistSession: recoveryEnabledRef.current, ...(existingSession ? { documentId: existingSession.id, mode: existingSession.mode } : {}) })
+      if (result.status === 'choose') return
+      setFileBackedCsvDocuments((items) => [result.document, ...items.filter((item) => item.id !== result.document.id)])
+      setActiveId(result.document.id)
+      folderWorkspaceRef.current?.selectDocumentPath(result.document.folderRef?.path ?? null)
+      setPendingFileBackedCsv(null)
+      setShowCommand(false)
+      history.replaceState(null, '', `#/file/${result.document.id}`)
+    } catch (error) { notify(error instanceof Error ? error.message : 'CSV 설정을 연결하지 못했습니다.', 'error') }
+  }, [notify, pendingFileBackedCsv])
+
+  const openLargeFolderCsv = useCallback(async (file: File, fileHandle: FileSystemFileHandle | undefined, folderRef: NonNullable<FileBackedCsvDocument['folderRef']>) => {
+    if (!fileBackedCsvEnabled) return null
+    const picked: PickedFile = { name: file.name, type: file.type, file, ...(fileHandle ? { fileHandle } : {}) }
+    const existing = fileBackedCsvDocumentsRef.current.find((item) => item.folderRef?.folderId === folderRef.folderId && item.folderRef.path === folderRef.path)
+    const result = await openFileBackedCsv(picked, { folderRef, persistSession: recoveryEnabledRef.current, ...(existing ? { documentId: existing.id, mode: existing.mode } : {}) })
+    if (result.status === 'choose') { setPendingFileBackedCsv({ file: picked, folderRef, candidates: result.candidates, recovery: result.candidates.some((candidate) => candidate.basis === 'header') }); return null }
+    return result.document
+  }, [fileBackedCsvEnabled])
 
   const queueRelayRoute = useCallback((route: RelayRoute) => {
     workspaceOperations.current.inputs.enqueueRelay(route)
@@ -581,7 +678,16 @@ export function App() {
             const document = await makeDocumentFromBytes(received.file.name, received.file.type, received.file.bytes)
             if (workspaceOperations.current.locked) { queueRelayRoute(route); return }
             if (document.format !== received.kind) throw new Error('전달된 파일 형식 정보와 실제 파일 내용이 다릅니다.')
-            imported = { ...document, id: route.ticketId, relayTicketId: route.ticketId, ...(received.source === 'file-url' ? { fileSource: 'file-url' as const } : {}) }
+            const sourceLocation = isSourceUrl(received.sourceUrl)
+              ? { kind: 'url' as const, url: received.sourceUrl }
+              : received.source === 'file-url' ? { kind: 'local-file' as const } : undefined
+            imported = {
+              ...document,
+              id: route.ticketId,
+              relayTicketId: route.ticketId,
+              ...(received.source === 'file-url' ? { fileSource: 'file-url' as const } : {}),
+              ...(sourceLocation ? { sourceLocation } : {})
+            }
           }
           if (workspaceOperations.current.locked) { queueRelayRoute(route); return }
           if (recoveryEnabled) await recoveryWriteQueue.current.enqueue(imported.id, () => saveDocument(imported!))
@@ -709,6 +815,12 @@ export function App() {
 
   const setMode = useCallback((mode: ViewerDocument['mode']) => {
     if (workspaceOperations.current.locked) return
+    const fileCsv = fileBackedCsvDocumentsRef.current.find((item) => item.id === activeId)
+    if (fileCsv) {
+      setFileBackedCsvDocuments((items) => items.map((item) => item.id === activeId ? { ...item, mode, lastEditedAt: Date.now() } : item))
+      if (recoveryEnabledRef.current) void updateCsvSessionMode(fileCsv.id, mode).catch(() => notify('CSV 세션 모드를 저장하지 못했습니다.', 'error'))
+      return
+    }
     const current = documentStore.get(activeId)
     if (!current || current.payloadLoaded === false || current.contentKind || current.mode === mode) return
     if (mode === 'source') {
@@ -765,6 +877,15 @@ export function App() {
   }, [documentStore, notify, trackWorkspaceOperation])
 
   const saveCurrent = useCallback(() => {
+    const fileCsv = fileBackedCsvDocumentsRef.current.find((item) => item.id === activeId)
+    if (fileCsv) {
+      if (workspaceOperations.current.locked) return
+      const source = getCsvFileSource(fileCsv.id)
+      if (!source) { notify('원본 파일을 다시 선택한 뒤 다운로드할 수 있습니다.', 'error'); return }
+      downloadLocalBlob(fileCsv.name, source.file)
+      notify('CSV 원본 내려받기를 시작했습니다.', 'success')
+      return
+    }
     const active = documentStore.get(activeId)
     if (!active || active.payloadLoaded === false || active.contentKind === 'unsupported' || workspaceOperations.current.locked) return
     const operation = (async () => {
@@ -843,6 +964,24 @@ export function App() {
   const closeDocument = useCallback((id: string) => {
     if (workspaceOperations.current.locked) return
     const operation = (async () => {
+      const fileCsv = fileBackedCsvDocumentsRef.current.find((item) => item.id === id)
+      if (fileCsv) {
+        try { await removeCsvSession(id) }
+        catch (error) { notify(error instanceof Error ? `“${fileCsv.name}”의 CSV 세션을 정리하지 못했습니다: ${error.message}` : 'CSV 세션을 정리하지 못했습니다.', 'error'); return }
+        releaseCsvFileSource(id)
+        setFileBackedCsvDocuments((items) => items.filter((item) => item.id !== id))
+        window.setTimeout(() => disposeDocumentResources(id), 0)
+        if (activeId === id) {
+          const candidates = [...documentStore.getAll().map((item) => ({ id: item.id, openedAt: item.openedAt, folderRef: item.folderRef })),
+            ...fileBackedCsvDocumentsRef.current.filter((item) => item.id !== id).map((item) => ({ id: item.id, openedAt: item.openedAt, folderRef: item.folderRef }))]
+          const next = candidates.sort((left, right) => right.openedAt - left.openedAt)[0]
+          setActiveId(next?.id ?? '')
+          folderWorkspaceRef.current?.selectDocumentPath(next?.folderRef?.path ?? null)
+          if (next) location.hash = `/file/${next.id}`
+          else location.hash = '/'
+        }
+        return
+      }
       const item = documentStore.get(id)
       if (!item) return
       if (item.isDirty && !window.confirm(`“${item.name}”에 내보내지 않은 변경이 있습니다. 닫을까요?`)) return
@@ -969,10 +1108,14 @@ export function App() {
       return
     }
     const documentIds = documentStore.getAll().map((document) => document.id)
+    const fileCsvIds = fileBackedCsvDocumentsRef.current.map((document) => document.id)
     documentController.current.clearHistory()
     documentStore.clear()
+    clearCsvFileSources()
+    setFileBackedCsvDocuments([])
+    setPendingFileBackedCsv(null)
     setRecoveryIssues([])
-    window.setTimeout(() => clearDocumentResources(documentIds), 0)
+    window.setTimeout(() => clearDocumentResources([...documentIds, ...fileCsvIds]), 0)
     for (const scheduled of sourceParseTimers.current.values()) window.clearTimeout(scheduled.timer)
     sourceParseTimers.current.clear()
     sourceRequestTokens.current.clear()
@@ -1006,11 +1149,24 @@ export function App() {
   const closeCommandMenu = useCallback(() => setShowCommand(false), [])
   const closeSettings = useCallback(() => setShowSettings(false), [])
   const changeRecoveryFromSettings = useCallback((enabled: boolean) => { void changeRecovery(enabled) }, [changeRecovery])
+  const changeDeveloperCsv = useCallback((enabled: boolean) => {
+    if (!import.meta.env.DEV) return
+    try { localStorage.setItem('viewer.csv-file-backed', enabled ? 'true' : 'false') } catch { /* The developer toggle is session-local if storage is unavailable. */ }
+    setFileBackedCsvEnabled(enabled)
+  }, [])
   const clearDataFromSettings = useCallback(() => { void clearData() }, [clearData])
   const installFromSettings = useCallback(() => { void installApp() }, [installApp])
 
   const shareCurrent = useCallback(async () => {
     if (workspaceOperations.current.locked) return
+    const fileCsv = fileBackedCsvDocumentsRef.current.find((item) => item.id === activeId)
+    if (fileCsv) {
+      const source = getCsvFileSource(fileCsv.id)
+      if (!source || !navigator.share) { notify('원본 파일에 다시 연결한 뒤 시스템 공유를 사용할 수 있습니다.', 'info'); return }
+      try { await shareLocalBlob(fileCsv.name, source.file); notify('공유를 시작했습니다.', 'success') }
+      catch (error) { if (!(error instanceof DOMException && error.name === 'AbortError')) notify('파일을 공유하지 못했습니다.', 'error') }
+      return
+    }
     const active = documentStore.get(activeId)
     if (!active || active.payloadLoaded === false || active.contentKind === 'unsupported' || !navigator.share) { notify('이 브라우저에서는 시스템 공유를 사용할 수 없습니다.', 'info'); return }
     try {
@@ -1049,8 +1205,11 @@ export function App() {
     await replaceWorkspace(persistedFolder, recoveryEnabledRef.current)
     setRecoveryIssues([])
 
-    const oldIds = documentStore.getAll().map((item) => item.id)
+    const oldIds = [...documentStore.getAll().map((item) => item.id), ...fileBackedCsvDocumentsRef.current.map((item) => item.id)]
     documentStore.clear()
+    clearCsvFileSources()
+    setFileBackedCsvDocuments([])
+    setPendingFileBackedCsv(null)
     setActiveId('')
     setStructuredFormats({})
     setShowCommand(false)
@@ -1094,6 +1253,14 @@ export function App() {
     history.replaceState(null, '', `#/file/${document.id}`)
   }, [documentStore, notifyFolderDocumentSubscribers])
 
+  const addFileBackedFolderDocument = useCallback((document: FileBackedCsvDocument) => {
+    if (workspaceOperations.current.locked) return
+    setFileBackedCsvDocuments((items) => [document, ...items.filter((item) => item.id !== document.id)])
+    setActiveId(document.id)
+    setShowCommand(false)
+    history.replaceState(null, '', `#/file/${document.id}`)
+  }, [])
+
   const selectFolderDocument = useCallback((id: string) => {
     if (workspaceOperations.current.locked) return
     setActiveId(id)
@@ -1103,8 +1270,9 @@ export function App() {
   }, [])
 
   const getDocuments = useCallback(() => documentStore.getAll(), [documentStore])
-  const getDocumentSummaries = useCallback(() => documentStore.getListSnapshot(), [documentStore])
+  const getDocumentSummaries = useCallback(() => workspaceDocuments, [workspaceDocuments])
   const subscribeDocumentSummaries = useCallback((listener: () => void) => documentStore.subscribeList(listener), [documentStore])
+  const findFileBackedFolderDocument = useCallback((folderId: string, path: FolderPath) => fileBackedCsvDocumentsRef.current.find((item) => item.folderRef?.folderId === folderId && item.folderRef.path === path), [])
   const getPendingSerializations = useCallback(() => pendingSerializations.current, [])
   const selectFolderAsset = useCallback((path: FolderPath | null) => {
     if (!path) return
@@ -1124,6 +1292,8 @@ export function App() {
     saveService: documentSaveService,
     onCommit: commitWorkspaceTransition,
     onDocumentOpen: addFolderDocument,
+    ...(fileBackedCsvEnabled ? { onOpenLargeCsv: openLargeFolderCsv } : {}),
+    onFileBackedDocumentOpen: addFileBackedFolderDocument,
     onDocumentSelect: selectFolderDocument,
     onAssetSelect: selectFolderAsset,
     onError: reportFolderError,
@@ -1131,8 +1301,9 @@ export function App() {
     onGenerationChange: setFolderGeneration,
     onTransitionLock: handleTransitionLock,
     onTransitionPhase: setFolderTransitionPhase,
-    settleExternalWork: settleWorkspaceOperations
-  }), [addFolderDocument, commitWorkspaceTransition, documentSaveService, getDocumentSummaries, getDocuments, getPendingSerializations, handleTransitionLock, hydrateDocumentPayload, persistWorkspaceMetadata, reportFolderError, selectFolderAsset, selectFolderDocument, setFolderGeneration, setFolderTransitionPhase, settleWorkspaceOperations, subscribeDocumentSummaries])
+    settleExternalWork: settleWorkspaceOperations,
+    getFileBackedDocument: findFileBackedFolderDocument,
+  }), [addFileBackedFolderDocument, addFolderDocument, commitWorkspaceTransition, documentSaveService, fileBackedCsvEnabled, findFileBackedFolderDocument, getDocumentSummaries, getDocuments, getPendingSerializations, handleTransitionLock, hydrateDocumentPayload, openLargeFolderCsv, persistWorkspaceMetadata, reportFolderError, selectFolderAsset, selectFolderDocument, setFolderGeneration, setFolderTransitionPhase, settleWorkspaceOperations, subscribeDocumentSummaries])
   const folderWorkspace = useFolderWorkspace(folderWorkspaceOptions)
   folderWorkspaceRef.current = folderWorkspace
 
@@ -1199,11 +1370,11 @@ export function App() {
     errorsByPath: folderWorkspace.errorsByPath,
     activePath: folderWorkspace.activePath,
     dirtyPaths: folderWorkspace.dirtyPaths,
-    openPaths: new Set(documents.filter((item) => item.folderRef?.folderId === folderWorkspace.folder!.id).map((item) => item.folderRef!.path)),
+    openPaths: new Set(workspaceDocuments.filter((item) => item.folderRef?.folderId === folderWorkspace.folder!.id).map((item) => item.folderRef!.path)),
     onToggleDirectory: folderWorkspace.toggleDirectory,
     onOpenPath: openFolderPath,
     onRefresh: refreshFolder
-  } : undefined, [documents, folderWorkspace.activePath, folderWorkspace.dirtyPaths, folderWorkspace.entriesByPath, folderWorkspace.errorsByPath, folderWorkspace.folder, folderWorkspace.loadingPaths, folderWorkspace.toggleDirectory, openFolderPath, refreshFolder])
+  } : undefined, [workspaceDocuments, folderWorkspace.activePath, folderWorkspace.dirtyPaths, folderWorkspace.entriesByPath, folderWorkspace.errorsByPath, folderWorkspace.folder, folderWorkspace.loadingPaths, folderWorkspace.toggleDirectory, openFolderPath, refreshFolder])
 
   const openDrawerFolderPath = useCallback((path: FolderPath) => {
     void openFolderPathAction(path)
@@ -1222,14 +1393,14 @@ export function App() {
 
   const switchTab = useCallback((id: string) => {
     if (workspaceOperations.current.locked) return
-    const selected = documentStore.get(id)
+    const selected = documentStore.get(id) ?? fileBackedCsvDocumentsRef.current.find((item) => item.id === id)
     folderWorkspaceRef.current?.selectDocumentPath(selected?.folderRef?.path ?? null)
     setActiveId(id)
     location.hash = `/file/${id}`
   }, [documentStore])
 
   const commands = useMemo<CommandItem[]>(() => [
-    ...documents.map((item) => ({ id: `switch-${item.id}`, title: `열린 파일 · ${safeDisplayFileName(item.name)}`, detail: `${item.contentKind === 'plain-text' ? '일반 텍스트' : item.contentKind === 'unsupported' ? '지원하지 않는 파일' : labels[item.format]}${item.isDirty ? ' · 수정됨' : ''}`, section: '열린 파일', icon: 'open' as const, run: () => switchTab(item.id) })),
+    ...workspaceDocuments.map((item) => ({ id: `switch-${item.id}`, title: `열린 파일 · ${safeDisplayFileName(item.name)}`, detail: `${item.contentKind === 'plain-text' ? '일반 텍스트' : item.contentKind === 'unsupported' ? '지원하지 않는 파일' : labels[item.format]}${item.isDirty ? ' · 수정됨' : ''}`, section: '열린 파일', icon: 'open' as const, run: () => switchTab(item.id) })),
     { id: 'open', title: '파일 열기', detail: '모든 파일을 열어 형식과 텍스트 여부를 판별합니다.', section: '파일', icon: 'open', run: () => pickFiles() },
     { id: 'open-folder', title: '폴더 열기', detail: '폴더를 선택한 뒤 변경 사항을 확인합니다.', section: '폴더', icon: 'folder', run: openFolderPicker },
     ...(folderWorkspace.folder ? [
@@ -1238,11 +1409,11 @@ export function App() {
       { id: 'browse-folder', title: '폴더 탐색', detail: '폴더 트리를 엽니다.', section: '폴더', icon: 'open' as const, run: () => { if (window.matchMedia('(max-width: 760px)').matches) setShowFolderDrawer(true); else setSidebarCollapsed(false) } }
     ] : []),
     ...FORMATS.map((format) => ({ id: `new-${format}`, title: `새 ${labels[format]} 만들기`, detail: `Untitled.${format}`, section: '새 파일', icon: 'new' as const, run: () => { void createBlank(format) } })),
-    ...(activeSummary && activeSummary.contentKind !== 'unsupported' ? [{ id: 'revert', title: '처음 연 파일로 되돌리기', detail: activeSummary.name, section: '문서', icon: 'new' as const, run: () => { void revertCurrent() } }] : []),
+    ...(activeSummary && activeSummary.storageKind !== 'file-csv' && activeSummary.contentKind !== 'unsupported' ? [{ id: 'revert', title: '처음 연 파일로 되돌리기', detail: activeSummary.name, section: '문서', icon: 'new' as const, run: () => { void revertCurrent() } }] : []),
     { id: 'paste', title: '클립보드에서 열기', detail: '붙여넣은 텍스트를 새 문서로 엽니다.', section: '입력', icon: 'paste', run: () => { void handlePaste() } },
     { id: 'settings', title: '설정', detail: '테마, 로컬 복구와 앱 정보', section: '앱', icon: 'settings', run: () => setShowSettings(true) },
     { id: 'theme', title: '테마 전환', detail: '시스템 · 라이트 · 다크', section: '앱', icon: 'theme', run: () => changeTheme(theme === 'dark' ? 'light' : 'dark') }
-  ], [documents, pickFiles, openFolderPicker, folderWorkspace.folder, closeFolderWorkspace, refreshFolder, createBlank, handlePaste, changeTheme, theme, activeSummary, revertCurrent, switchTab])
+  ], [workspaceDocuments, pickFiles, openFolderPicker, folderWorkspace.folder, closeFolderWorkspace, refreshFolder, createBlank, handlePaste, changeTheme, theme, activeSummary, revertCurrent, switchTab])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1294,35 +1465,39 @@ export function App() {
       if (files.length) await openFiles(files)
     }).catch((error: unknown) => notify(error instanceof Error ? error.message : '놓은 항목을 읽지 못했습니다.', 'error'))
   }, [openFiles, notify])
-  const renderActiveDocument = (document: ViewerDocument) => renderDocument(
-    document,
-    (model, group) => changeModel(document.id, documentStore.get(document.id)?.revision ?? document.revision, model, group),
-    (text, group) => applySourceText(document.id, text, group),
-    openAttachment, downloadAttachment, resolvedTheme,
-    () => undo(), () => undo(true), structuredFormats[document.id] ?? defaultStructuredOutputFormat(document),
-    (format) => setStructuredFormats((current) => ({ ...current, [document.id]: format })),
-    document.folderRef ? {
-      services: markdownReferenceServices,
-      referenceState: markdownReferenceState.current,
-      instanceId: document.id,
-      folderId: document.folderRef.folderId,
-      generation: folderWorkspace.generation,
-      ownerPath: document.folderRef.path,
-      ancestors: [{ folderId: document.folderRef.folderId, path: document.folderRef.path, fragment: '' }],
-      depth: 0
-    } : undefined
-  )
+  const renderActiveDocument = (document: ViewerDocument) => {
+    return renderDocument(
+      document,
+      (model, group) => changeModel(document.id, documentStore.get(document.id)?.revision ?? document.revision, model, group),
+      (text, group) => applySourceText(document.id, text, group),
+      openAttachment, downloadAttachment, resolvedTheme,
+      () => undo(), () => undo(true), structuredFormats[document.id] ?? defaultStructuredOutputFormat(document),
+      (format) => setStructuredFormats((current) => ({ ...current, [document.id]: format })),
+      document.folderRef ? {
+        services: markdownReferenceServices,
+        referenceState: markdownReferenceState.current,
+        instanceId: document.id,
+        folderId: document.folderRef.folderId,
+        generation: folderWorkspace.generation,
+        ownerPath: document.folderRef.path,
+        ancestors: [{ folderId: document.folderRef.folderId, path: document.folderRef.path, fragment: '' }],
+        depth: 0
+      } : undefined
+    )
+  }
 
   const folderPickingAvailable = supportsDirectoryPicker() || supportsFolderInput()
   const activeFolderErrorPath = folderWorkspace.activePath
   const activeFolderError = activeFolderErrorPath ? folderWorkspace.errorsByPath.get(activeFolderErrorPath) : undefined
+  const activeFileBackedSource = activeFileBackedCsv ? getCsvFileSource(activeFileBackedCsv.id) : null
+  const activeCsvWorkspace = Boolean(activeFileBackedCsv || activeDocument?.format === 'csv' && activeDocument.parseState === 'ready' && activeDocument.modelRevision === activeDocument.revision)
   return <div className="app-shell" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <FilePicker ref={inputRef} onFiles={(files, format) => { void openFiles(files, format) }} onError={notify} />
     <FolderPicker ref={folderInputRef} onFolder={(picked) => { void folderWorkspace.acceptPickedFolder(picked) }} onCancel={() => { if (folderWorkspace.phase === 'picking') folderWorkspace.cancelTransition(); else folderWorkspace.cancelReconnect() }} onError={(message) => { if (folderWorkspace.phase === 'picking') folderWorkspace.cancelTransition(); else folderWorkspace.cancelReconnect(); notify(message, 'error') }} />
-    <WorkspaceSidebar documents={documents} activeId={activeId} collapsed={sidebarCollapsed} onToggleCollapsed={toggleSidebar} onPickFiles={pickFiles} onOpenCommands={openSidebarCommands} onSelectDocument={switchTab} onCloseDocument={closeSidebarDocument} onOpenSettings={openSidebarSettings} folder={folderWorkspace.folder} folderTree={folderTreeProps} folderPickingAvailable={folderPickingAvailable} onOpenFolder={openFolderPicker} onCloseFolder={closeFolderWorkspace} />
+    <WorkspaceSidebar documents={workspaceDocuments} activeId={activeId} collapsed={sidebarCollapsed} onToggleCollapsed={toggleSidebar} onPickFiles={pickFiles} onOpenCommands={openSidebarCommands} onSelectDocument={switchTab} onCloseDocument={closeSidebarDocument} onOpenSettings={openSidebarSettings} folder={folderWorkspace.folder} folderTree={folderTreeProps} folderPickingAvailable={folderPickingAvailable} onOpenFolder={openFolderPicker} onCloseFolder={closeFolderWorkspace} />
 
     <main className="main-column">
-      <DocumentHeader document={activeDocument} theme={resolvedTheme} canShare={'share' in navigator && activeDocument?.contentKind !== 'unsupported'} saveLabel={saveLabel} onModeChange={setMode} onThemeChange={changeTheme} onUndo={() => undo()} onRedo={() => undo(true)} onSave={() => { void saveCurrent() }} onShare={() => { void shareCurrent() }} onClose={() => { if (activeDocument) void closeDocument(activeDocument.id) }} onPickFiles={() => pickFiles()} onOpenCommands={() => { if (!workspaceOperations.current.locked) setShowCommand(true) }} onOpenSettings={() => { if (!workspaceOperations.current.locked) setShowSettings(true) }} onBrowseFolder={() => { if (!folderPickingAvailable) return; if (folderWorkspace.folder) setShowFolderDrawer(true); else openFolderPicker() }} />
+      <DocumentHeader document={activeWorkspaceDocument} csvWorkspace={activeCsvWorkspace} theme={resolvedTheme} canShare={'share' in navigator && (activeFileBackedCsv ? activeFileBackedCsv.capabilities.canShare : activeDocument?.contentKind !== 'unsupported')} saveLabel={saveLabel} onModeChange={setMode} onThemeChange={changeTheme} onUndo={() => undo()} onRedo={() => undo(true)} onSave={() => { void saveCurrent() }} onShare={() => { void shareCurrent() }} onClose={() => { if (activeWorkspaceDocument) void closeDocument(activeWorkspaceDocument.id) }} onPickFiles={() => pickFiles()} onOpenCommands={() => { if (!workspaceOperations.current.locked) setShowCommand(true) }} onOpenSettings={() => { if (!workspaceOperations.current.locked) setShowSettings(true) }} onBrowseFolder={() => { if (!folderPickingAvailable) return; if (folderWorkspace.folder) setShowFolderDrawer(true); else openFolderPicker() }} />
 
       {recoveryIssues.length > 0 && <section className="source-diagnostic" role="alert" aria-label="복구하지 못한 저장 문서">
         <strong>복구하지 못한 저장 문서 {recoveryIssues.length}개</strong>
@@ -1333,21 +1508,25 @@ export function App() {
         </div>)}
         <button className="icon-button" type="button" aria-label="복구 안내 닫기" onClick={() => setRecoveryIssues([])}><X size={14} /></button>
       </section>}
+      {pendingFileBackedCsv && <div className="overlay"><section className="csv-link-choice csv-link-choice-dialog" role="dialog" aria-modal="true" aria-labelledby="csv-link-choice-title"><h2 id="csv-link-choice-title">{pendingFileBackedCsv.recovery ? 'CSV 설정 연결을 복구할까요?' : '기존 CSV 설정 연결'}</h2><p>{pendingFileBackedCsv.recovery ? '원본 지문이 없거나 손상되어 머리글과 구분자가 같은 저장 설정을 찾았습니다. 연결할 프로필을 확인하세요.' : '같은 이름·크기의 파일 후보가 있습니다. 내용을 확인한 뒤 연결하거나 새 설정을 만드세요.'}</p>{pendingFileBackedCsv.candidates?.map((candidate) => <button key={candidate.fileId} className="secondary-button" type="button" onClick={() => { void resolvePendingFileBackedCsv(candidate.fileId) }}>기존 보기 연결 · {candidate.basis === 'header' ? '머리글' : candidate.basis}</button>)}<button className="secondary-button" type="button" onClick={() => { void resolvePendingFileBackedCsv('new') }}>새 CSV 설정 만들기</button><button className="icon-button" type="button" aria-label="연결 취소" onClick={() => setPendingFileBackedCsv(null)}>취소</button></section></div>}
 
-      {activeDocument ? <>
-        <div id={`document-panel-${activeDocument.id}`} className="document-workspace" key={activeDocument.id} role="tabpanel" aria-label={`${activeDocument.mode === 'view' ? '보기' : '원본'} · ${activeDocument.name}`} tabIndex={0}>
-          {activeDocument.payloadLoaded === false ? <div className="source-diagnostic" role="status"><span>저장 문서 본문을 불러오고 있습니다.</span></div> : <>
-          {activeDocument.parseState === 'pending' && !(activeDocument.format === 'md' && activeDocument.mode === 'view') && <div className="source-diagnostic" role="status"><span>최신 원문을 해석하고 있습니다. 편집은 계속할 수 있습니다.</span></div>}
-          {activeDocument.parseState === 'error' && <div className="source-diagnostic" role="alert"><span>원문을 해석하지 못했습니다. 마지막 유효 보기는 유지되며 구조 편집은 잠깁니다.</span><small>{activeDocument.diagnostics.find((item) => item.severity === 'error')?.message ?? activeDocument.sourceError}</small></div>}
-          {activeDocument.parseState === 'ready' && activeDocument.diagnostics.some((item) => item.severity === 'warning') && <div className="inline-warning" role="status">진단 {activeDocument.diagnostics.filter((item) => item.severity === 'warning').length}개 · {activeDocument.diagnostics.find((item) => item.severity === 'warning')?.message}</div>}
-          <FeatureLoadBoundary key={activeDocument.id} fileName={activeDocument.name} sourceText={activeDocument.text}>
-            <Suspense fallback={null}>
-              {activeDocument.mode === 'view' && !activeDocument.contentKind && !isBlockEditorFormat(activeDocument.format) ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)}
-            </Suspense>
-          </FeatureLoadBoundary>
-          </>}
+      {activeWorkspaceDocument ? <>
+        <div id={`document-panel-${activeWorkspaceDocument.id}`} className="document-workspace" key={activeWorkspaceDocument.id} role="tabpanel" aria-label={`${activeWorkspaceDocument.mode === 'view' ? '보기' : '원본'} · ${activeWorkspaceDocument.name}`} tabIndex={0}>
+          {activeFileBackedCsv ? <CsvViewWorkspace document={activeFileBackedCsv} defaultContent={activeFileBackedSource ? <CsvSourceRangeView file={activeFileBackedSource.file} parser={activeFileBackedSource.stored.record.profile.parser} header={activeFileBackedSource.sample.header} preparedFile={activeFileBackedSource.requiresTranscode ? activeFileBackedSource.queryFile : undefined} /> : null} onModeChange={setMode} onError={(message) => notify(message, 'error')} onReconnect={() => pickFiles('csv')} cacheEnabled={recoveryEnabled} />
+            : activeDocument ? (activeDocument.payloadLoaded === false ? <div className="source-diagnostic" role="status"><span>저장 문서 본문을 불러오고 있습니다.</span></div> : <>
+              {activeDocument.parseState === 'pending' && !(activeDocument.format === 'md' && activeDocument.mode === 'view') && <div className="source-diagnostic" role="status"><span>최신 원문을 해석하고 있습니다. 편집은 계속할 수 있습니다.</span></div>}
+              {activeDocument.parseState === 'error' && <div className="source-diagnostic" role="alert"><span>원문을 해석하지 못했습니다. 마지막 유효 보기는 유지되며 구조 편집은 잠깁니다.</span><small>{activeDocument.diagnostics.find((item) => item.severity === 'error')?.message ?? activeDocument.sourceError}</small></div>}
+              {activeDocument.parseState === 'ready' && activeDocument.diagnostics.some((item) => item.severity === 'warning') && <div className="inline-warning" role="status">진단 {activeDocument.diagnostics.filter((item) => item.severity === 'warning').length}개 · {activeDocument.diagnostics.find((item) => item.severity === 'warning')?.message}</div>}
+              <FeatureLoadBoundary key={activeDocument.id} fileName={activeDocument.name} sourceText={activeDocument.text}>
+                <Suspense fallback={null}>
+                  {activeDocument.format === 'csv' && activeDocument.parseState === 'ready' && activeDocument.modelRevision === activeDocument.revision
+                    ? <CsvViewWorkspace document={activeDocument} defaultContent={activeDocument.mode === 'view' && !activeDocument.contentKind ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)} onModeChange={setMode} onError={(message) => notify(message, 'error')} onReconnect={() => pickFiles('csv')} />
+                    : activeDocument.mode === 'view' && !activeDocument.contentKind && !isBlockEditorFormat(activeDocument.format) ? <ViewerZoom>{renderActiveDocument(activeDocument)}</ViewerZoom> : renderActiveDocument(activeDocument)}
+                </Suspense>
+              </FeatureLoadBoundary>
+            </>) : null}
         </div>
-        {activeDocument.payloadLoaded !== false && activeDocument.mode === 'source' && <div className="source-statusbar"><span>{activeDocument.contentKind === 'plain-text' ? '일반 텍스트 · 원본 보기' : '원본 텍스트 · UTF-8 출력'}</span><span>{activeDocument.text.split(/\r\n|\r|\n/).length}줄 · {activeDocument.text.length.toLocaleString()}자</span><div className="toolbar-spacer" />{activeDocument.parseState === 'pending' ? <span>해석 중</span> : activeDocument.parseState === 'error' ? <span className="error-label">문법 오류</span> : <span className="ready-label">{activeDocument.contentKind === 'plain-text' ? '텍스트' : '유효한 문서'}</span>}</div>}
+        {activeDocument && activeDocument.payloadLoaded !== false && activeDocument.mode === 'source' && <div className="source-statusbar"><span>{activeDocument.contentKind === 'plain-text' ? '일반 텍스트 · 원본 보기' : '원본 텍스트 · UTF-8 출력'}</span><span>{activeDocument.text.split(/\r\n|\r|\n/).length}줄 · {activeDocument.text.length.toLocaleString()}자</span><div className="toolbar-spacer" />{activeDocument.parseState === 'pending' ? <span>해석 중</span> : activeDocument.parseState === 'error' ? <span className="error-label">문법 오류</span> : <span className="ready-label">{activeDocument.contentKind === 'plain-text' ? '텍스트' : '유효한 문서'}</span>}</div>}
       </> : folderWorkspace.folder ? (folderWorkspace.activeAssetPath && folderWorkspace.source
         ? <FolderAssetPreview source={folderWorkspace.source} generation={folderWorkspace.generation} path={folderWorkspace.activeAssetPath} resources={folderResources.current} onClose={() => folderWorkspace.selectDocumentPath(null)} />
         : activeFolderError && activeFolderErrorPath
@@ -1355,7 +1534,7 @@ export function App() {
           : <section className="folder-empty-state" aria-live="polite"><FolderOpen size={24} /><strong>{folderWorkspace.source ? '폴더에서 파일을 선택하세요' : '폴더에 접근할 수 없습니다'}</strong><p>{folderWorkspace.source ? `${folderWorkspace.folder.name} 폴더의 트리에서 문서를 열 수 있습니다.` : '복구된 작업본은 유지됩니다. 폴더 목록의 새로고침을 눌러 현재 폴더 접근을 복구하세요.'}</p></section>)
         : <WelcomeScreen onOpen={() => pickFiles()} onPaste={() => { void handlePaste() }} onCommand={() => { if (!workspaceOperations.current.locked) setShowCommand(true) }} />}
 
-      <DocumentActionBar document={activeDocument?.payloadLoaded === false ? null : activeDocument} saveLabel={saveLabel} onModeChange={setMode} onUndo={() => undo()} onRedo={() => undo(true)} onSave={() => { void saveCurrent() }} />
+      <DocumentActionBar document={activeDocument?.payloadLoaded === false ? (activeFileBackedCsv ?? null) : activeWorkspaceDocument} saveLabel={saveLabel} onModeChange={setMode} onUndo={() => undo()} onRedo={() => undo(true)} onSave={() => { void saveCurrent() }} />
       {offlineReady && <div className="status-banner"><Check size={15} />기본 파일을 오프라인에서 사용할 수 있습니다. 글꼴·편집기는 처음 사용할 때 준비합니다.<button className="icon-button" aria-label="알림 닫기" onClick={() => setOfflineReady(false)}><X size={14} /></button></div>}
       {updateReady && !relayRoute && <div className="status-banner update-banner"><span>새 버전을 사용할 수 있습니다. 업데이트는 사용자가 선택할 때 적용됩니다.</span><button className="subtle-button" disabled={folderWorkspace.isTransitioning || resettingData.current} onClick={() => { if (workspaceOperations.current.locked || resettingData.current) return; window.dispatchEvent(new Event('viewer:apply-update')) }}>업데이트</button><button className="icon-button" aria-label="업데이트 알림 닫기" onClick={() => setUpdateReady(false)}><X size={14} /></button></div>}
     </main>
@@ -1363,7 +1542,7 @@ export function App() {
     {showCommand && <CommandMenu commands={commands} onClose={closeCommandMenu} />}
     {(folderWorkspace.phase === 'confirming' || folderWorkspace.phase === 'saving') && <FolderTransitionDialog phase={folderWorkspace.phase} rows={folderWorkspace.rows} closing={folderWorkspace.isClosing} busyRowId={folderWorkspace.busyRowId} onSaveAll={() => { void folderWorkspace.saveAll() }} onDiscard={() => { void folderWorkspace.discardAndContinue() }} onCancel={folderWorkspace.cancelTransition} onContinue={(row) => { void folderWorkspace.continueSave(row) }} onConfirmDownload={(row) => { void folderWorkspace.confirmDownload(row) }} />}
     {showFolderDrawer && folderWorkspace.folder && drawerTree && <FolderTreeDrawer folder={folderWorkspace.folder} tree={drawerTree} onClose={closeFolderDrawer} />}
-    {showSettings && <SettingsDialog theme={theme} onThemeChange={changeTheme} recoveryEnabled={recoveryEnabled} onRecoveryChange={changeRecoveryFromSettings} onClearData={clearDataFromSettings} onClose={closeSettings} onInstall={installFromSettings} canInstall={Boolean(installPrompt)} />}
+    {showSettings && <SettingsDialog theme={theme} onThemeChange={changeTheme} recoveryEnabled={recoveryEnabled} onRecoveryChange={changeRecoveryFromSettings} onClearData={clearDataFromSettings} onClose={closeSettings} onInstall={installFromSettings} canInstall={Boolean(installPrompt)} fileBackedCsvEnabled={fileBackedCsvEnabled} onFileBackedCsvChange={changeDeveloperCsv} onExportCsvBackup={() => { void csvViewStorage.exportBackup().then((backup) => downloadLocalBlob('csv-views.backup.json', new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }))).then(() => notify('CSV 보기 설정 백업을 다운로드했습니다.', 'success')).catch((error: unknown) => notify(error instanceof Error ? `CSV 보기 설정 백업 실패: ${error.message}` : 'CSV 보기 설정 백업에 실패했습니다.', 'error')) }} />}
     {showPaste && <PasteDialog text={pasteText} format={pasteFormat} onTextChange={setPasteText} onFormatChange={setPasteFormat} onClose={() => setShowPaste(false)} onOpen={() => { void createFromPaste() }} />}
     {runtimeAssetProgress && <RuntimeAssetDialog progress={runtimeAssetProgress} onRetry={() => { void retryRuntimeAssetGroup(runtimeAssetProgress.group).catch(() => undefined) }} onContinue={() => continueWithoutRuntimeAssetGroup(runtimeAssetProgress.group)} />}
     {relayRoute && relayError && <div className="status-banner relay-error-banner" role="status" aria-live="polite"><span>{relayError}</span><button className="subtle-button" onClick={() => { void runRelay(relayRoute) }}>다시 시도</button></div>}
@@ -1384,6 +1563,10 @@ function renderDocument(document: ViewerDocument, onModel: (model: DocumentModel
     case 'env': return <EnvEditor document={document} model={document.model} onChange={(model, group) => onModel(model, group)} />
     case 'diff': return <DiffView document={document} model={document.model} />
   }
+}
+
+function readDeveloperCsvSetting(): boolean {
+  try { return localStorage.getItem('viewer.csv-file-backed') === 'true' } catch { return false }
 }
 
 type StructuredParsedFile = Extract<ParsedFile, { format: StructuredFormat }>

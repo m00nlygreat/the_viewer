@@ -1,6 +1,6 @@
 import type { ViewerDocument } from '../domain/types'
 
-export type DocumentListItem = Pick<ViewerDocument, 'id' | 'name' | 'format' | 'contentKind' | 'isDirty' | 'folderRef'>
+export type DocumentListItem = Pick<ViewerDocument, 'id' | 'name' | 'format' | 'contentKind' | 'isDirty' | 'folderRef' | 'openedAt'> & { storageKind?: 'file-csv' }
 
 export type DocumentStoreChange =
   | { type: 'document'; document: ViewerDocument; previous: ViewerDocument }
@@ -16,13 +16,14 @@ function summarize(document: ViewerDocument): DocumentListItem {
     format: document.format,
     contentKind: document.contentKind,
     isDirty: document.isDirty,
-    folderRef: document.folderRef
+    folderRef: document.folderRef,
+    openedAt: document.openedAt
   }
 }
 
 function sameSummary(left: DocumentListItem, right: DocumentListItem): boolean {
   return left.id === right.id && left.name === right.name && left.format === right.format &&
-    left.contentKind === right.contentKind && left.isDirty === right.isDirty && left.folderRef === right.folderRef
+    left.contentKind === right.contentKind && left.isDirty === right.isDirty && left.folderRef === right.folderRef && left.openedAt === right.openedAt && left.storageKind === right.storageKind
 }
 
 /** Owns full document snapshots while exposing a stable, lightweight list snapshot. */

@@ -2,11 +2,12 @@ import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 're
 import { documentIsDirty, makeFileDocumentFromBytes } from '../domain/session'
 import { transitionFolderPhase, type FolderTransitionPhase } from '../domain/folderTransition'
 import { getFormat } from '../domain/fileFormats'
+import { assertInputFileSize, maxInputFileBytes } from '../domain/inputPolicy'
 import { parseLocalReference, resolveFolderPath, type MarkdownReferenceSyntax } from '../domain/folderPaths'
 import { folderDocumentKey, type FolderEntry, type FolderPath, type FolderWorkspace } from '../domain/workspace'
 import { listFolderChildren, readFolderFile, type FolderSource, type PickedFolder } from '../platform/folderAccess'
-import { downloadLocalFile } from '../platform/browserFiles'
-import type { ViewerDocument } from '../domain/types'
+import { downloadLocalBlob } from '../platform/browserFiles'
+import type { FileBackedCsvDocument, ViewerDocument } from '../domain/types'
 import type { DocumentSaveResult, DocumentSaveService } from './documentSave'
 import type { TransitionRow } from './FolderTransitionDialog'
 import { parseWithWorker } from '../domain/workerClient'
@@ -35,6 +36,7 @@ interface Options {
   initialSource?: FolderSource | null
   initialEntries?: FolderEntry[]
   getDocuments: () => readonly ViewerDocument[]
+  getFileBackedDocument?: (folderId: string, path: FolderPath) => FileBackedCsvDocument | undefined
   getDocumentSummaries?: () => readonly DocumentListItem[]
   subscribeDocumentSummaries?: (listener: () => void) => () => void
   loadDocumentPayload: (documentId: string) => Promise<ViewerDocument>
@@ -42,6 +44,8 @@ interface Options {
   saveService: DocumentSaveService
   onCommit: (folder: FolderWorkspace | null, source: FolderSource | null, rootEntries: FolderEntry[]) => Promise<void>
   onDocumentOpen: (document: ViewerDocument) => void
+  onOpenLargeCsv?: (file: File, fileHandle: FileSystemFileHandle | undefined, folderRef: NonNullable<FileBackedCsvDocument['folderRef']>) => Promise<FileBackedCsvDocument | null>
+  onFileBackedDocumentOpen?: (document: FileBackedCsvDocument) => void
   onDocumentSelect: (documentId: string) => void
   onAssetSelect: (path: FolderPath | null) => void
   onError: (message: string) => void
@@ -106,6 +110,7 @@ export function useFolderWorkspace(options: Options) {
       const promise = (async () => {
         const { file } = await readFolderFile(source, path, controller.signal)
         assertCurrentReference(requestedGeneration, generation.current, controller.signal)
+        assertInputFileSize(file.name, file.size, navigator.userAgent)
         const bytes = new Uint8Array(await file.arrayBuffer())
         assertCurrentReference(requestedGeneration, generation.current, controller.signal)
         const parsed = await parseWithWorker(file.name, file.type, bytes, 'md')
@@ -554,6 +559,18 @@ export function useFolderWorkspace(options: Options) {
       options.onDocumentSelect(existing.id)
       return
     }
+    const existingCsv = options.getFileBackedDocument?.(currentFolder.id, path)
+    if (existingCsv?.sourceState.status === 'ready') {
+      setActivePath(path)
+      const updated = { ...currentFolder, activePath: path }
+      folderRef.current = updated
+      setFolder(updated)
+      options.onMetadataChange?.(updated, source, generation.current)
+      setActiveAssetPath(null)
+      options.onAssetSelect(null)
+      options.onDocumentSelect(existingCsv.id)
+      return
+    }
     const inFlight = openPromises.current.get(key)
     if (inFlight) { await inFlight; return }
     const startedGeneration = generation.current
@@ -561,6 +578,22 @@ export function useFolderWorkspace(options: Options) {
     const operation = (async () => {
       const { file, fileHandle } = await readFolderFile(source, path, controller.signal)
       if (controller.signal.aborted || startedGeneration !== generation.current || transitionLock.current) return
+      if (file.size > maxInputFileBytes(navigator.userAgent) && getFormat(file.name, file.type) === 'csv' && options.onOpenLargeCsv) {
+        const openedCsv = await options.onOpenLargeCsv(file, fileHandle, { folderId: currentFolder.id, path })
+        if (controller.signal.aborted || startedGeneration !== generation.current || transitionLock.current) return
+        if (!openedCsv) return
+        options.onFileBackedDocumentOpen?.(openedCsv)
+        options.onDocumentSelect(openedCsv.id)
+        setActivePath(path)
+        const updated = { ...currentFolder, activePath: path }
+        folderRef.current = updated
+        setFolder(updated)
+        options.onMetadataChange?.(updated, source, generation.current)
+        setActiveAssetPath(null)
+        options.onAssetSelect(null)
+        return
+      }
+      assertInputFileSize(file.name, file.size, navigator.userAgent)
       const bytes = new Uint8Array(await file.arrayBuffer())
       if (controller.signal.aborted || startedGeneration !== generation.current || transitionLock.current) return
       const latest = options.getDocuments().find((item) => item.folderRef?.folderId === currentFolder.id && item.folderRef.path === path)
@@ -605,9 +638,8 @@ export function useFolderWorkspace(options: Options) {
     try {
       const { file } = await readFolderFile(source, path, controller.signal)
       if (controller.signal.aborted || startedGeneration !== generation.current || transitionLock.current) return
-      const bytes = new Uint8Array(await file.arrayBuffer())
       if (controller.signal.aborted || startedGeneration !== generation.current || transitionLock.current) return
-      downloadLocalFile(file.name, file.type || 'application/octet-stream', bytes)
+      downloadLocalBlob(file.name, file)
     } catch (error) { if (!controller.signal.aborted && startedGeneration === generation.current) options.onError(error instanceof Error ? error.message : '파일을 내려받지 못했습니다.') }
   }, [options])
 

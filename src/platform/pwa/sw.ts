@@ -13,7 +13,7 @@ registerRoute(new NavigationRoute(createHandlerBoundToURL(`${base}index.html`), 
 registerRoute(
   ({ request, url }) => url.origin === self.location.origin &&
     url.pathname.startsWith(new URL(base, self.location.origin).pathname) &&
-    (request.destination === 'font' || /\.(?:woff2?|ttf)$/iu.test(url.pathname) || /(?:monaco|monacosourceeditor|codeblockeditor|editor\.worker).*\.(?:js|css)$/iu.test(url.pathname)),
+    (request.destination === 'font' || /\.(?:woff2?|ttf)$/iu.test(url.pathname) || /(?:monaco|monacosourceeditor|codeblockeditor|editor\.worker).*\.(?:js|css)$/iu.test(url.pathname) || /\/csv-query\/[^/]+$/u.test(url.pathname)),
   async ({ request }) => {
     const cache = await caches.open(runtimeAssetCacheName)
     // Static runtime assets can vary by request headers. Once downloaded, the

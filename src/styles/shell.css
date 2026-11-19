@@ -114,7 +114,10 @@
 .topbar-document { min-width: 0; display: flex; align-items: center; gap: 8px; }
 .topbar-file-icon { width: auto; min-width: 24px; flex: 0 0 auto; display: flex; align-items: center; color: var(--text-muted); }
 .topbar-file-icon .file-badge { height: 16px; padding-inline: 2px; }
-.topbar-name { max-width: min(36vw, 440px); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-strong); font-size: 14px; font-weight: 500; }
+.topbar-document-meta { min-width: 0; max-width: min(72vw, 850px); display: flex; align-items: center; }
+.topbar-title-line { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.topbar-name { min-width: 0; max-width: min(32vw, 400px); flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-strong); font-size: 14px; font-weight: 500; }
+.topbar-source-location { min-width: 0; max-width: min(38vw, 520px); flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-weak); font: 10px/12px var(--font-mono), Consolas, monospace; }
 .modified-pill { display: inline-flex; align-items: center; min-height: 18px; padding: 0 6px; border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent); border-radius: 5px; color: var(--warning); font-size: 11px; white-space: nowrap; }
 .parent-tag { color: var(--text-weak); font-size: 12px; }
 .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
@@ -184,7 +187,7 @@ kbd { min-height: 18px; padding: 1px 5px; display: inline-flex; align-items: cen
 .runtime-asset-progress::-moz-progress-bar { border-radius: 99px; background: var(--primary); }
 .runtime-asset-content .runtime-asset-count { margin-top: 7px; color: var(--text-weak); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
 .runtime-asset-dialog .dialog-actions { padding: 20px 0 0; }
-.command-overlay { align-items: flex-start; padding-top: max(112px, 12vh); background: transparent; backdrop-filter: none; pointer-events: none; }
+.command-overlay { align-items: flex-start; padding-top: max(112px, 12vh); background: transparent; backdrop-filter: none; pointer-events: auto; }
 .command-menu { width: min(580px, calc(100% - 32px)); max-height: min(540px, calc(100dvh - 144px)); overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--button-line); border-radius: 10px; background: var(--panel-raised); box-shadow: var(--shadow); pointer-events: auto; }
 .command-search { height: 52px; flex: 0 0 auto; padding: 0 15px; display: flex; align-items: center; gap: 11px; border-bottom: 1px solid var(--line); color: var(--text-muted); }
 .command-search input { flex: 1; height: 38px; padding: 0; border: 0; outline: 0; color: var(--text-strong); background: transparent; font-size: 16px; }

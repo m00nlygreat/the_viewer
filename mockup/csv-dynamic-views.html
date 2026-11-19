@@ -1,0 +1,966 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSV 다이나믹 뷰 목업</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono&family=Noto+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── 앱 토큰 (src/styles/foundation.css와 동일) ── */
+:root {
+  font-family: 'Geist', 'Noto Sans KR', sans-serif; font-size: 16px; letter-spacing: -0.005em; color-scheme: dark;
+  --bg:#0B0B0C; --sidebar:#0E0E10; --line:#1E1F22; --row-line:#17181B; --text:#E6E6E8; --text-strong:#F2F2F3; --body:#D4D5D8;
+  --text-secondary:#C9CACE; --text-muted:#8A8B91; --text-weak:#7D7E85; --selected:#1D1E21; --selected-row:#131418; --selected-cell:#161830;
+  --accent:#A4AAF7; --warning:#E0A33A; --danger:#F08A8A; --control:#141416; --control-active:#26272B; --button-line:#2A2B30;
+  --primary:#5B63D3; --primary-line:#6A72E0; --panel:#101012; --panel-raised:#151518; --shadow:0 18px 60px rgb(0 0 0 / 42%);
+  --font-mono:'Geist Mono', 'Noto Sans Mono', monospace;
+  --c0:#93C5FD; --c1:#86EFAC; --c2:#FCA5A5; --c3:#FCD34D; --c4:#C4B5FD; --c5:#67E8F9;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg:#FCFCFD; --sidebar:#F4F4F6; --line:#E4E4E8; --row-line:#EEEEF1; --text:#1C1D21; --text-strong:#0F1013; --body:#2E2F34;
+  --text-secondary:#3D3E44; --text-muted:#62636A; --text-weak:#6E6F76; --selected:#E6E6EB; --selected-row:#F4F5FE; --selected-cell:#ECEEFD;
+  --accent:#4A52C4; --warning:#A0650F; --danger:#B42318; --control:#EFEFF2; --control-active:#FFFFFF; --button-line:#DADADF;
+  --panel:#FFFFFF; --panel-raised:#FFFFFF; --shadow:0 18px 60px rgb(18 20 40 / 18%);
+  --c0:#1D4ED8; --c1:#15803D; --c2:#B91C1C; --c3:#A16207; --c4:#6D28D9; --c5:#0E7490;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: #050506; color: var(--text); overflow: hidden; }
+:root[data-theme='light'] body { background: #DCDCE2; }
+button, input, select { font: inherit; color: inherit; }
+button { border: 0; background: transparent; cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input, select { min-width: 0; background: var(--control); border: 1px solid var(--button-line); border-radius: 6px; height: 28px; padding: 0 8px; font-size: 12px; }
+svg.i { width: 15px; height: 15px; flex: 0 0 auto; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.sm { width: 13px; height: 13px; }
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--text-weak); }
+
+/* ── 프레임 ── */
+.stage { height: 100%; display: flex; justify-content: center; }
+.app { width: 100%; height: 100%; display: flex; background: var(--bg); overflow: hidden; position: relative; }
+.app.is-mobile { width: 390px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); flex-direction: column; }
+
+/* ── 사이드바 ── */
+.sidebar { width: 232px; min-width: 232px; padding: 10px 10px 12px; display: flex; flex-direction: column; gap: 14px; background: var(--sidebar); border-right: 1px solid var(--line); }
+.brand { height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 7px; color: var(--text-strong); font-size: 14px; font-weight: 550; }
+.brand-logo { width: 18px; height: 18px; border-radius: 5px; background: linear-gradient(135deg, var(--primary), var(--accent)); }
+.side-cmd { width: 100%; min-height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: 6px; color: var(--text-secondary); font-size: 14px; text-align: left; }
+.side-cmd:hover { background: var(--selected); }
+.side-heading { padding: 5px 7px 2px; color: var(--text-weak); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
+.doc-row { min-height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 7px; border-radius: 6px; color: var(--text-secondary); font-size: 13px; }
+.doc-row.active { background: var(--selected); color: var(--text-strong); }
+.file-badge { flex: 0 0 34px; height: 17px; display: inline-grid; place-items: center; border: 1px solid var(--button-line); border-radius: 4px; color: var(--text-muted); font: 11px/1 var(--font-mono); }
+.file-badge.csv { color: #79CFA0; border-color: color-mix(in srgb, #42A773 36%, var(--button-line)); }
+.file-badge.md { color: #B8A2FA; border-color: color-mix(in srgb, #8C70DC 36%, var(--button-line)); }
+.dirty-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--warning); }
+.side-bottom { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 0 8px; min-height: 30px; color: var(--text-secondary); font-size: 13px; }
+.side-bottom .mono { margin-left: auto; color: var(--text-weak); font-size: 12px; }
+
+/* ── 메인 / 탑바 ── */
+.main { min-width: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.topbar { height: 48px; min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+.topbar-doc { min-width: 0; display: flex; align-items: center; gap: 8px; flex: 0 1 auto; }
+.topbar-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-strong); font-size: 14px; font-weight: 500; }
+.pill { display: inline-flex; align-items: center; gap: 4px; min-height: 18px; padding: 0 6px; border: 1px solid var(--button-line); border-radius: 5px; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.pill.warn { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 30%, transparent); }
+.pill.accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.icon-btn { width: 28px; height: 28px; display: inline-grid; place-items: center; border-radius: 6px; color: var(--text-muted); flex: 0 0 auto; }
+.icon-btn:hover { background: var(--control-active); color: var(--text-strong); }
+.icon-btn:disabled { opacity: .35; cursor: not-allowed; background: transparent; }
+.divider { width: 1px; height: 20px; margin: 0 3px; background: var(--line); flex: 0 0 auto; }
+.primary-btn, .secondary-btn { min-height: 28px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--primary-line); border-radius: 6px; color: #fff; background: var(--primary); font-size: 13px; font-weight: 520; white-space: nowrap; }
+.secondary-btn { border-color: var(--button-line); color: var(--text-secondary); background: var(--control); }
+.secondary-btn:hover { background: var(--control-active); color: var(--text-strong); }
+.danger-btn { color: var(--danger); }
+
+/* ── 탭: [사용자 뷰들] [+ 보기 추가] | [보기] [원본] ── */
+.tabbar { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.mode-switch { padding: 2px; display: flex; gap: 1px; border: 1px solid var(--line); border-radius: 7px; background: var(--control); min-width: 0; }
+.mode-switch button { height: 24px; min-width: 42px; padding: 0 8px; display: inline-flex; align-items: center; gap: 5px; border-radius: 5px; color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+.mode-switch button:hover { color: var(--text); }
+.mode-switch button.active { color: var(--text-strong); background: var(--control-active); box-shadow: 0 1px 2px rgb(0 0 0 / 15%); }
+.mode-switch button .i { width: 13px; height: 13px; color: var(--text-weak); }
+.mode-switch button.active .i { color: var(--accent); }
+.views-switch { max-width: min(42vw, 520px); overflow-x: auto; scrollbar-width: none; }
+.views-switch::-webkit-scrollbar { display: none; }
+.add-view { height: 28px; padding: 0 8px; display: inline-flex; align-items: center; gap: 5px; border: 1px dashed var(--button-line); border-radius: 7px; color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.add-view:hover { color: var(--text-strong); border-color: var(--text-weak); }
+.tab-sep { width: 1px; height: 18px; background: var(--button-line); margin: 0 4px; }
+
+/* ── 뷰 툴바 ── */
+.workspace { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.toolbar { min-height: 44px; padding: 6px 12px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.tb-btn { height: 27px; padding: 0 8px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 5px; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
+.tb-btn:hover { border-color: var(--line); background: var(--control); color: var(--text); }
+.tb-btn.icon-only { width: 28px; padding: 0; justify-content: center; }
+.chip { height: 25px; padding: 0 4px 0 8px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--button-line)); border-radius: 13px; background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
+.chip b { font-weight: 500; color: var(--text-strong); }
+.chip .x { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; color: var(--text-weak); }
+.chip .x:hover { background: var(--control-active); color: var(--text); }
+.chip.ghost { border-style: dashed; border-color: var(--button-line); background: transparent; color: var(--text-muted); padding-right: 8px; }
+.search { width: 200px; height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--text-weak); background: var(--control); font-size: 12px; }
+.spacer { flex: 1; }
+.menu-wrap { position: relative; }
+.menu { position: absolute; right: 0; top: 32px; z-index: 30; min-width: 190px; padding: 4px; border: 1px solid var(--button-line); border-radius: 8px; background: var(--panel-raised); box-shadow: var(--shadow); }
+.menu button { width: 100%; min-height: 30px; padding: 0 9px; display: flex; align-items: center; gap: 9px; border-radius: 5px; color: var(--text-secondary); font-size: 13px; text-align: left; }
+.menu button:hover { background: var(--selected); color: var(--text-strong); }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+.menu .hint { padding: 4px 9px 6px; color: var(--text-weak); font-size: 11px; }
+
+/* ── 배너 ── */
+.banner { padding: 8px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--accent) 6%, var(--bg)); color: var(--text-secondary); font-size: 12px; }
+.banner.warn { background: color-mix(in srgb, var(--warning) 8%, var(--bg)); color: var(--warning); border-bottom-color: color-mix(in srgb, var(--warning) 26%, var(--line)); }
+.banner .i { color: var(--accent); }
+.banner.warn .i { color: var(--warning); }
+
+/* ── 조회 표 ── */
+.grid-wrap { min-height: 0; flex: 1; overflow: auto; }
+table.qt { border-collapse: separate; border-spacing: 0; min-width: 100%; font-size: 13px; }
+.qt th, .qt td { height: 34px; padding: 0 10px; border-bottom: 1px solid var(--row-line); border-right: 1px solid var(--row-line); white-space: nowrap; text-align: left; }
+.qt thead th { position: sticky; top: 0; z-index: 2; height: 34px; background: var(--sidebar); border-bottom-color: var(--line); color: var(--text-muted); font-weight: 500; font-size: 12px; }
+.qt th.rn, .qt td.rn { position: sticky; left: 0; z-index: 1; width: 52px; min-width: 52px; text-align: right; color: var(--text-weak); font: 11px var(--font-mono); background: var(--bg); }
+.qt thead th.rn { z-index: 3; background: var(--sidebar); }
+.qt tbody tr:hover td { background: var(--selected-row); }
+.th-inner { display: flex; align-items: center; gap: 6px; }
+.th-btn { display: inline-flex; align-items: center; gap: 6px; padding: 3px 5px; margin: 0 -5px; border-radius: 5px; color: inherit; font-size: 12px; font-weight: 500; }
+.th-btn:hover { background: var(--control-active); color: var(--text-strong); }
+.type-ic { width: 18px; height: 16px; display: inline-grid; place-items: center; border-radius: 4px; background: var(--control); color: var(--text-muted); font: 10px/1 var(--font-mono); }
+.th-sort { color: var(--accent); }
+.td-num { text-align: right !important; font-family: var(--font-mono); font-size: 12px; }
+.sel { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 10px; font-size: 12px; background: color-mix(in srgb, var(--sc) 14%, transparent); color: var(--sc); border: 1px solid color-mix(in srgb, var(--sc) 28%, transparent); }
+.sel.unreg { --sc: var(--text-muted); border-style: dashed; }
+.tag { display: inline-flex; align-items: center; height: 19px; padding: 0 6px; margin-right: 3px; border-radius: 4px; background: var(--control); border: 1px solid var(--button-line); color: var(--text-secondary); font-size: 11px; }
+.bool { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+.bool .box { width: 14px; height: 14px; display: grid; place-items: center; border-radius: 4px; border: 1px solid var(--button-line); }
+.bool.on .box { background: var(--primary); border-color: var(--primary-line); color: #fff; }
+.st-empty { color: var(--text-weak); font-size: 11px; font-style: italic; }
+.st-missing { display: inline-block; padding: 0 6px; color: var(--text-weak); font-size: 11px; border-radius: 4px; background: repeating-linear-gradient(135deg, transparent 0 4px, var(--control) 4px 8px); }
+.st-null { color: var(--text-weak); font: 11px var(--font-mono); }
+.st-invalid { display: inline-flex; align-items: center; gap: 5px; color: var(--warning); font: 12px var(--font-mono); }
+.st-invalid::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--warning); }
+td.cell-invalid { background: color-mix(in srgb, var(--warning) 7%, transparent); box-shadow: inset 2px 0 0 var(--warning); }
+tr.loading td { color: var(--text-weak); }
+.skel { display: inline-block; height: 9px; border-radius: 4px; background: var(--control-active); opacity: .6; }
+.statusbar { height: 28px; flex: 0 0 auto; padding: 0 12px; display: flex; align-items: center; gap: 13px; border-top: 1px solid var(--line); color: var(--text-weak); background: var(--sidebar); font: 11px var(--font-mono); white-space: nowrap; overflow: hidden; }
+.statusbar .warn { color: var(--warning); }
+.link-btn { color: var(--accent); font: inherit; padding: 0; }
+.link-btn:hover { text-decoration: underline; }
+
+/* ── 갤러리 ── */
+.gallery { min-height: 0; flex: 1; overflow: auto; padding: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; align-content: start; }
+.card { padding: 12px 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); display: flex; flex-direction: column; gap: 9px; }
+.card:hover { border-color: var(--button-line); }
+.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.card-title { color: var(--text-strong); font-size: 14px; font-weight: 550; }
+.card-sub { color: var(--text-weak); font: 11px var(--font-mono); margin-top: 2px; }
+.card-fields { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; font-size: 12px; align-items: center; }
+.card-fields dt { color: var(--text-weak); }
+.card-fields dd { margin: 0; color: var(--text-secondary); text-align: right; }
+.load-more-tile { border: 1px dashed var(--button-line); border-radius: 9px; display: grid; place-items: center; color: var(--text-muted); font-size: 12px; min-height: 150px; }
+
+/* ── 리스트 ── */
+.list { min-height: 0; flex: 1; overflow: auto; }
+.list-group-head { position: sticky; top: 0; z-index: 1; height: 30px; padding: 0 16px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); background: var(--sidebar); color: var(--text-muted); font-size: 12px; font-weight: 500; }
+.list-group-head .count { color: var(--text-weak); font: 11px var(--font-mono); }
+.list-group-head.warn { color: var(--warning); }
+.list-item { min-height: 58px; padding: 9px 16px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--row-line); }
+.list-item:hover { background: var(--selected-row); }
+.list-item.selected { background: var(--selected-cell); box-shadow: inset 2px 0 0 var(--accent); }
+.list-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sc); flex: 0 0 auto; }
+.list-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.list-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.list-title b { color: var(--text-strong); font-size: 14px; font-weight: 550; white-space: nowrap; }
+.list-title .mono { color: var(--text-weak); font-size: 11px; }
+.list-sub { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--text-weak); font-size: 12px; white-space: nowrap; }
+.list-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: 0 0 auto; }
+.list-side .amt { font: 13px var(--font-mono); color: var(--text-secondary); }
+.urgent { height: 18px; padding: 0 6px; display: inline-flex; align-items: center; border-radius: 4px; font-size: 11px; color: var(--c2); background: color-mix(in srgb, var(--c2) 12%, transparent); }
+.list-end { padding: 14px 16px; color: var(--text-weak); font-size: 12px; text-align: center; }
+.app.is-mobile .list-item { padding: 10px 12px; }
+.app.is-mobile .list-group-head { padding: 0 12px; }
+
+/* ── 칸반 ── */
+.kanban { min-height: 0; flex: 1; overflow: auto; padding: 14px; display: flex; gap: 12px; align-items: flex-start; }
+.kcol { width: 264px; min-width: 264px; max-height: 100%; display: flex; flex-direction: column; border-radius: 9px; background: var(--sidebar); border: 1px solid var(--line); }
+.kcol-head { height: 40px; padding: 0 10px 0 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.kcol-head .count { color: var(--text-weak); font: 11px var(--font-mono); }
+.kcol-body { padding: 8px; display: flex; flex-direction: column; gap: 7px; overflow: auto; }
+.kcard { padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.kcard .t { color: var(--text-strong); font-size: 13px; font-weight: 500; }
+.kcard .row { display: flex; align-items: center; justify-content: space-between; color: var(--text-weak); }
+.kmore { height: 30px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 6px; color: var(--text-muted); font-size: 12px; }
+.kmore:hover { background: var(--selected); color: var(--text); }
+.kcol.special .kcol-head { color: var(--text-muted); }
+.kcol.warn .kcol-head { color: var(--warning); }
+.kcol.addgroup { background: transparent; border-style: dashed; min-height: 120px; display: grid; place-items: center; color: var(--text-muted); font-size: 12px; text-align: center; padding: 16px; }
+
+/* ── 캘린더 ── */
+.cal { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.cal-head { height: 44px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
+.cal-head h3 { margin: 0 6px; font-size: 15px; font-weight: 550; color: var(--text-strong); }
+.cal-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(92px, 1fr); overflow: auto; }
+.cal-dow { position: sticky; top: 0; height: 28px; display: flex; align-items: center; padding: 0 8px; font-size: 11px; color: var(--text-weak); border-bottom: 1px solid var(--line); background: var(--bg); z-index: 1; }
+.cal-day { border-right: 1px solid var(--row-line); border-bottom: 1px solid var(--row-line); padding: 5px 6px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cal-day.out { background: color-mix(in srgb, var(--sidebar) 60%, transparent); }
+.cal-day.out .dn { color: var(--text-weak); opacity: .6; }
+.cal-day .dn { font: 11px var(--font-mono); color: var(--text-muted); }
+.cal-day.today .dn { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--primary); color: #fff; }
+.ev { height: 20px; padding: 0 6px; display: flex; align-items: center; gap: 5px; border-radius: 4px; font-size: 11px; color: var(--text-secondary); background: color-mix(in srgb, var(--sc) 13%, transparent); border-left: 2px solid var(--sc); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ev-more { font-size: 11px; color: var(--text-muted); padding: 0 4px; text-align: left; }
+.ev-more:hover { color: var(--accent); }
+
+/* ── 원본 ── */
+.source { min-height: 0; flex: 1; overflow: auto; padding: 10px 0; font: 13px/1.65 var(--font-mono); color: var(--body); }
+.source .ln { display: flex; }
+.source .ln span:first-child { width: 56px; padding-right: 14px; text-align: right; color: var(--text-weak); flex: 0 0 auto; user-select: none; }
+.range-bar { height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--text-muted); }
+.range-track { flex: 1; height: 6px; border-radius: 3px; background: var(--control); position: relative; max-width: 360px; }
+.range-track i { position: absolute; left: 0; top: 0; bottom: 0; width: 3%; border-radius: 3px; background: var(--accent); }
+
+/* ── 빈 상태 ── */
+.empty-state { margin: auto; max-width: 420px; padding: 32px 24px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; color: var(--text-muted); font-size: 13px; line-height: 1.55; }
+.empty-state strong { color: var(--text-strong); font-size: 15px; font-weight: 550; }
+.empty-state .big-ic { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); }
+.empty-state p { margin: 0; }
+
+/* ── 다이얼로그 ── */
+.overlay { position: absolute; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgb(0 0 0 / 52%); }
+.dialog { width: min(980px, 100%); max-height: calc(100% - 20px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--button-line); border-radius: 11px; background: var(--panel-raised); box-shadow: var(--shadow); }
+.dialog.narrow { width: min(620px, 100%); }
+.dlg-head { min-height: 54px; padding: 0 18px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
+.dlg-head h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text-strong); }
+.dlg-head .sub { color: var(--text-weak); font-size: 12px; }
+.dlg-body { min-height: 0; flex: 1; overflow: auto; display: flex; }
+.dlg-foot { min-height: 56px; padding: 0 18px; display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); }
+.dlg-foot .note { color: var(--text-weak); font-size: 12px; }
+.pane { padding: 16px 18px; overflow: auto; }
+.pane.left { width: 380px; min-width: 340px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 18px; }
+.pane.right { flex: 1; min-width: 0; background: var(--bg); display: flex; flex-direction: column; gap: 10px; }
+.field { display: flex; flex-direction: column; gap: 7px; }
+.field > label, .field-label { color: var(--text-muted); font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+.field-label .req { color: var(--warning); font-weight: 400; }
+.field input[type=text] { height: 32px; font-size: 13px; }
+.layout-opts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.layout-opt { height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--button-line); border-radius: 8px; color: var(--text-muted); font-size: 12px; background: var(--control); }
+.layout-opt .i { width: 18px; height: 18px; }
+.layout-opt.active { border-color: var(--primary-line); color: var(--text-strong); background: color-mix(in srgb, var(--primary) 14%, var(--control)); }
+.layout-opt.active .i { color: var(--accent); }
+.validation { display: flex; gap: 7px; padding: 8px 10px; border-radius: 7px; font-size: 12px; line-height: 1.5; color: var(--warning); background: color-mix(in srgb, var(--warning) 9%, transparent); border: 1px solid color-mix(in srgb, var(--warning) 24%, transparent); }
+.col-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.col-item { height: 34px; padding: 0 8px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--row-line); font-size: 13px; color: var(--text-secondary); background: var(--panel); }
+.col-item:last-child { border-bottom: 0; }
+.col-item.off { color: var(--text-weak); }
+.col-item .grip { color: var(--text-weak); cursor: grab; }
+.col-item .meta { margin-left: auto; color: var(--text-weak); font-size: 11px; }
+.cb { width: 15px; height: 15px; border-radius: 4px; border: 1px solid var(--button-line); display: grid; place-items: center; flex: 0 0 auto; }
+.cb.on { background: var(--primary); border-color: var(--primary-line); color: #fff; }
+.filter-group { border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: var(--panel); }
+.filter-row { display: grid; grid-template-columns: 46px 1fr 92px 1fr 24px; gap: 5px; align-items: center; font-size: 12px; }
+.filter-row .conj { color: var(--text-weak); font-size: 11px; text-align: center; }
+.filter-row select, .filter-row input { height: 28px; font-size: 12px; width: 100%; }
+.mini-btn { height: 26px; padding: 0 8px; display: inline-flex; align-items: center; gap: 5px; border-radius: 5px; color: var(--text-muted); font-size: 12px; }
+.mini-btn:hover { background: var(--selected); color: var(--text); }
+.preview-head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+.preview-box { border: 1px solid var(--line); border-radius: 8px; overflow: auto; background: var(--bg); flex: 1; min-height: 240px; }
+.preview-box .qt th, .preview-box .qt td { height: 30px; font-size: 12px; }
+.seg { display: inline-flex; padding: 2px; gap: 1px; border: 1px solid var(--line); border-radius: 7px; background: var(--control); flex-wrap: wrap; }
+.seg button { height: 26px; padding: 0 9px; border-radius: 5px; color: var(--text-muted); font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
+.seg button.active { background: var(--control-active); color: var(--text-strong); box-shadow: 0 1px 2px rgb(0 0 0 / 15%); }
+.seg button .rec { color: var(--accent); font-size: 10px; }
+
+/* 타입 편집 */
+.type-cols { width: 250px; min-width: 230px; border-right: 1px solid var(--line); padding: 8px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.type-col { min-height: 42px; padding: 5px 8px; display: flex; align-items: center; gap: 9px; border-radius: 6px; text-align: left; color: var(--text-secondary); }
+.type-col:hover { background: var(--selected); }
+.type-col.active { background: var(--selected); color: var(--text-strong); }
+.type-col .nm { font-size: 13px; }
+.type-col .ty { font-size: 11px; color: var(--text-weak); }
+.type-col .src { margin-left: auto; }
+.evidence { display: flex; gap: 14px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 12px; color: var(--text-muted); }
+.evidence b { color: var(--text-strong); font-weight: 550; font-family: var(--font-mono); }
+.meter { width: 120px; height: 6px; border-radius: 3px; background: var(--control-active); overflow: hidden; display: inline-block; vertical-align: middle; }
+.meter i { display: block; height: 100%; background: var(--c1); }
+.rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+.rules .field select, .rules .field input { height: 30px; width: 100%; }
+.check-line { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-secondary); }
+table.sample { width: 100%; border-collapse: collapse; font-size: 12px; }
+.sample th { text-align: left; color: var(--text-weak); font-weight: 500; font-size: 11px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.sample td { padding: 6px 8px; border-bottom: 1px solid var(--row-line); font-family: var(--font-mono); }
+.sample td.status { font-family: inherit; }
+.impact { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line)); background: color-mix(in srgb, var(--accent) 5%, transparent); font-size: 12px; color: var(--text-secondary); }
+.impact strong { color: var(--text-strong); font-weight: 550; }
+.section-title { font-size: 12px; font-weight: 550; color: var(--text-muted); margin: 4px 0 -2px; }
+
+/* 관리 */
+.mgr-list { display: flex; flex-direction: column; }
+.mgr-item { min-height: 50px; padding: 0 18px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
+.mgr-item .grip { color: var(--text-weak); cursor: grab; }
+.mgr-item .nm { font-size: 13px; color: var(--text-strong); }
+.mgr-item .meta { font-size: 11px; color: var(--text-weak); }
+.mgr-item .acts { margin-left: auto; display: flex; gap: 2px; }
+.mgr-item.dragging { background: var(--selected-row); box-shadow: inset 0 2px 0 var(--accent); }
+.lay-ic { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; background: var(--control); color: var(--accent); flex: 0 0 auto; }
+.mgr-note { padding: 12px 18px; font-size: 12px; color: var(--text-weak); line-height: 1.55; background: var(--bg); }
+
+/* 가져오기 */
+.map-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.map-table th { text-align: left; color: var(--text-weak); font-weight: 500; font-size: 11px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.map-table td { padding: 6px 8px; border-bottom: 1px solid var(--row-line); }
+.map-table select { height: 28px; width: 100%; }
+.ok { color: var(--c1); }
+.steps { display: flex; gap: 6px; font-size: 11px; color: var(--text-weak); }
+.steps span { padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); }
+.steps span.on { color: var(--text-strong); border-color: var(--primary-line); background: color-mix(in srgb, var(--primary) 16%, transparent); }
+
+/* ── 모바일 ── */
+.mobile-tabs { display: none; }
+.mobile-bar { display: none; }
+.app.is-mobile .sidebar { display: none; }
+.app.is-mobile .main { width: 100%; }
+.app.is-mobile .topbar { padding: 0 10px; }
+.app.is-mobile .topbar .tabbar, .app.is-mobile .topbar .desk { display: none; }
+.app.is-mobile .mobile-tabs { display: flex; align-items: center; gap: 6px; padding: 7px 10px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+.app.is-mobile .mobile-tabs .mode-switch { flex: 0 0 auto; }
+.app.is-mobile .mobile-tabs .views-switch { max-width: none; overflow: visible; }
+.app.is-mobile .mobile-bar { display: flex; gap: 8px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--sidebar); }
+.app.is-mobile .mobile-bar .primary-btn { flex: 1; justify-content: center; min-height: 38px; }
+.app.is-mobile .mobile-bar .secondary-btn { min-height: 38px; }
+.app.is-mobile .toolbar .search { display: none; }
+.app.is-mobile .toolbar .desk-label { display: none; }
+.app.is-mobile .kcol { width: 82vw; min-width: 280px; max-width: 320px; }
+.app.is-mobile .cal-grid { grid-auto-rows: minmax(64px, 1fr); }
+.app.is-mobile .ev { font-size: 0; height: 6px; padding: 0; border-left: 0; background: var(--sc); border-radius: 3px; }
+.app.is-mobile .gallery { grid-template-columns: 1fr; padding: 10px; }
+.app.is-mobile .overlay { padding: 0; align-items: stretch; }
+.app.is-mobile .dialog { max-height: 100%; border-radius: 0; border: 0; }
+.app.is-mobile .dlg-body { flex-direction: column; }
+.app.is-mobile .pane.left, .app.is-mobile .type-cols { width: 100%; min-width: 0; border-right: 0; border-bottom: 1px solid var(--line); }
+.app.is-mobile .type-cols { flex-direction: row; overflow-x: auto; flex: 0 0 auto; }
+.app.is-mobile .type-col { flex: 0 0 auto; }
+.app.is-mobile .layout-opts { grid-template-columns: repeat(3, 1fr); }
+.app.is-mobile .rules { grid-template-columns: 1fr; }
+.app.is-mobile .filter-row { grid-template-columns: 1fr 1fr; }
+.app.is-mobile .filter-row .conj { text-align: left; }
+.app.is-mobile .mgr-item .acts .desk-act { display: none; }
+
+/* ── 목업 컨트롤 ── */
+.mock-ctl { position: fixed; right: 14px; bottom: 14px; z-index: 100; width: 250px; padding: 10px 12px 12px; border-radius: 10px; border: 1px dashed #6b6f85; background: rgb(20 20 26 / 94%); color: #d8d9e0; font-size: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 10px 40px rgb(0 0 0 / 40%); }
+.mock-ctl.min > :not(.mc-title) { display: none; }
+.mc-title { display: flex; align-items: center; justify-content: space-between; font-weight: 600; color: #fff; }
+.mc-title button { color: #aaa; font-size: 11px; }
+.mock-ctl .grp { display: flex; flex-direction: column; gap: 4px; }
+.mock-ctl .grp > span { color: #8f91a0; font-size: 11px; }
+.mock-ctl .opts { display: flex; flex-wrap: wrap; gap: 4px; }
+.mock-ctl .opts button { height: 24px; padding: 0 8px; border-radius: 5px; border: 1px solid #3a3c48; color: #c8c9d2; font-size: 11px; }
+.mock-ctl .opts button.on { background: #5B63D3; border-color: #6A72E0; color: #fff; }
+</style>
+</head>
+<body>
+<div class="stage"><div class="app" id="app"></div></div>
+
+<div class="mock-ctl" id="mockCtl">
+  <div class="mc-title">목업 시나리오 <button id="mcMin">접기</button></div>
+  <div class="grp"><span>문서</span><div class="opts" data-key="scenario">
+    <button data-v="small">작은 CSV (메모리)</button><button data-v="large">큰 CSV (파일 기반)</button><button data-v="needs-file">원본 재선택 필요</button>
+  </div></div>
+  <div class="grp"><span>조회 상태</span><div class="opts" data-key="load">
+    <button data-v="ready">결과</button><button data-v="loading">로드 중</button><button data-v="empty">빈 결과</button><button data-v="error">실패</button>
+  </div></div>
+  <div class="grp"><span>화면</span><div class="opts" data-key="device">
+    <button data-v="desktop">데스크톱</button><button data-v="mobile">모바일 390</button>
+  </div></div>
+  <div class="grp"><span>테마</span><div class="opts" data-key="theme">
+    <button data-v="dark">다크</button><button data-v="light">라이트</button>
+  </div></div>
+</div>
+
+<script>
+// ───────────── 아이콘 ─────────────
+const P = {
+  table: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>',
+  gallery: '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/>',
+  kanban: '<rect x="3" y="3" width="5" height="14" rx="1.5"/><rect x="10" y="3" width="5" height="9" rx="1.5"/><rect x="17" y="3" width="4" height="18" rx="1.5"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  filter: '<path d="M4 5h16l-6 8v6l-4-2v-4z"/>',
+  sort: '<path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/>',
+  down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  more: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
+  settings: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+  type: '<path d="M4 7V5h16v2M9 19h6M12 5v14"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+  download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  upload: '<path d="M12 20V9M7 14l5-5 5 5M5 4h14"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
+  undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>',
+  save: '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
+  chev: '<path d="M6 9l6 6 6-6"/>',
+  left: '<path d="M15 6l-6 6 6 6"/>',
+  right: '<path d="M9 6l6 6-6 6"/>',
+  logout: '<path d="M15 4h4v16h-4M10 17l5-5-5-5M15 12H3"/>',
+  folder: '<path d="M3 6h6l2 2h10v11H3z"/>',
+  search: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  alert: '<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  check: '<path d="M5 12l5 5 9-10"/>',
+  file: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
+  refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
+  command: '<path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+};
+const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24">${P[n]}</svg>`;
+const LAYOUT = { grid: ['table', '표'], list: ['list', '리스트'], gallery: ['gallery', '갤러리'], kanban: ['kanban', '칸반'], calendar: ['calendar', '캘린더'] };
+
+// ───────────── 샘플 스키마·데이터 ─────────────
+const STATUS = { 접수: 'var(--c0)', 준비중: 'var(--c3)', 배송중: 'var(--c4)', 완료: 'var(--c1)', 취소: 'var(--c2)' };
+const COLS = [
+  { id: 'c_no', name: '주문번호', type: 'text', src: 'inferred', note: '앞자리 0 → 텍스트 유지' },
+  { id: 'c_cust', name: '고객', type: 'text', src: 'inferred' },
+  { id: 'c_status', name: '상태', type: 'select', src: 'user' },
+  { id: 'c_amt', name: '금액', type: 'decimal', src: 'user' },
+  { id: 'c_qty', name: '수량', type: 'integer', src: 'inferred' },
+  { id: 'c_date', name: '주문일', type: 'date', src: 'inferred' },
+  { id: 'c_urgent', name: '긴급', type: 'boolean', src: 'user', note: '0/1 → 자동 확정 안 함' },
+  { id: 'c_tags', name: '태그', type: 'multiSelect', src: 'user' },
+];
+const TYPE_IC = { text: 'Aa', integer: '12', decimal: '1.5', boolean: '☑', date: 'D', datetime: 'DT', select: '◉', multiSelect: '≡' };
+const TYPE_LABEL = { text: '텍스트', integer: '정수', decimal: '소수', boolean: '참/거짓', date: '날짜', datetime: '날짜·시간', select: '단일 선택', multiSelect: '다중 선택' };
+// 셀: 문자열 = 정상, {s:'empty'|'missing'|'null'|'invalid', raw}
+const E = { s: 'empty' }, M = { s: 'missing' };
+const inv = (raw, why) => ({ s: 'invalid', raw, why });
+const ROWS = [
+  [1, '00123', '한서연', '배송중', '1250000', '2', '2026-11-03', '1', '선물;빠른배송'],
+  [2, '00124', '이도윤', '완료', '89000', '1', '2026-11-03', '0', ''],
+  [3, '00125', '박지호', '접수', '432500.50', '3', '2026-11-05', '1', '빠른배송'],
+  [4, '00126', '최유나', '준비중', inv('12,34,5', '천 단위 구분 위치가 올바르지 않음'), '1', '2026-11-06', '0', '선물'],
+  [5, '00127', '정민준', '보류', '56000', '4', '2026-11-09', '0', '재주문'],
+  [6, '00128', '강하은', '취소', '210000', '1', '2026-11-10', '1', ''],
+  [7, '00129', '윤서준', '접수', '78000', E, inv('2026-02-30', '존재하지 않는 날짜'), '0', '선물'],
+  [8, '00130', '임지안', '배송중', '1999000', '1', '2026-11-12', '1', '빠른배송;포장'],
+  [9, '00131', '오예린', '준비중', { s: 'null', raw: 'N/A' }, '2', '2026-11-16', '0', ''],
+  [10, '00132', '신우진', '접수', '34500', '5', '2026-11-16', '0', M],
+  [11, '00133', '한서연', '완료', '650000', '1', '2026-11-18', '0', '재주문'],
+  [12, '00134', '배도현', '배송중', '120000', '2', '2026-11-20', '1', '포장'],
+  [13, '00135', '조아린', '접수', '9800', '1', '2026-11-24', '0', ''],
+  [14, '00136', '서지훈', '준비중', '305000', '3', '2026-11-27', '0', '선물'],
+];
+const VIEWS = [
+  { id: 'v1', name: '진행 중 주문', layout: 'grid' },
+  { id: 'v2', name: '상태 보드', layout: 'kanban' },
+  { id: 'v3', name: '주문 캘린더', layout: 'calendar' },
+  { id: 'v4', name: '고객 카드', layout: 'gallery' },
+  { id: 'v5', name: '주문 목록', layout: 'list' },
+];
+
+// ───────────── 상태 ─────────────
+const S = {
+  scenario: 'small', load: 'ready', device: 'desktop', theme: 'dark',
+  tab: 'v1', menu: null, dialog: null,
+  builder: { name: '진행 중 주문', layout: 'grid', group: 'c_status', date: '', editing: 'v1' },
+  typeCol: 'c_amt', typeDraft: 'decimal', mgrDrag: null,
+};
+const isLarge = () => S.scenario !== 'small';
+const fileName = () => isLarge() ? 'orders_2026_full.csv' : 'orders_2026.csv';
+
+// ───────────── 셀 렌더링 ─────────────
+const fmtNum = (s) => { const [i, f] = s.split('.'); return i.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (f ? '.' + f : ''); };
+function cell(col, v) {
+  if (v && typeof v === 'object') {
+    if (v.s === 'empty') return { html: '<span class="st-empty">빈 값</span>' };
+    if (v.s === 'missing') return { html: '<span class="st-missing">누락</span>' };
+    if (v.s === 'null') return { html: `<span class="st-null" title="결측 표식">${v.raw}</span>` };
+    if (v.s === 'invalid') return { html: `<span class="st-invalid" title="해석 실패: ${v.why}">${v.raw}</span>`, cls: 'cell-invalid' };
+  }
+  switch (col.type) {
+    case 'decimal': return { html: '₩' + fmtNum(v), cls: 'td-num' };
+    case 'integer': return { html: v, cls: 'td-num' };
+    case 'date': return { html: `<span class="mono" style="font-size:12px">${v}</span>` };
+    case 'boolean': return { html: v === '1' ? `<span class="bool on"><span class="box">${ic('check', 'sm')}</span></span>` : '<span class="bool"><span class="box"></span></span>' };
+    case 'select': return { html: STATUS[v] ? `<span class="sel" style="--sc:${STATUS[v]}">${v}</span>` : `<span class="sel unreg" title="선택지 밖 값 (원문 레이블로 표시)">${v}</span>` };
+    case 'multiSelect': return { html: v ? v.split(';').map(t => `<span class="tag">${t}</span>`).join('') : '<span class="st-empty">빈 값</span>' };
+    default: return { html: v, cls: col.id === 'c_no' ? 'mono' : '' };
+  }
+}
+const colById = (id) => COLS.find(c => c.id === id);
+const val = (r, id) => r[COLS.findIndex(c => c.id === id) + 1];
+
+// ───────────── 탭 ─────────────
+function tabsHTML(place) {
+  const views = VIEWS.map(v => `<button role="tab" aria-selected="${S.tab === v.id}" tabindex="${S.tab === v.id ? 0 : -1}" class="${S.tab === v.id ? 'active' : ''}" data-tab="${v.id}">${ic(LAYOUT[v.layout][0])}${v.name}</button>`).join('');
+  return `<div class="tabbar" role="presentation">
+    <div class="mode-switch views-switch" role="tablist" aria-label="사용자 뷰">${views}</div>
+    <button class="add-view" data-act="add-view" title="보기 추가">${ic('plus', 'sm')}<span>보기 추가</span></button>
+    <span class="tab-sep"></span>
+    <div class="mode-switch" role="tablist" aria-label="기본 탭">
+      <button role="tab" aria-selected="${S.tab === 'view'}" class="${S.tab === 'view' ? 'active' : ''}" data-tab="view">보기</button>
+      <button role="tab" aria-selected="${S.tab === 'source'}" class="${S.tab === 'source' ? 'active' : ''}" data-tab="source">원본</button>
+    </div>
+  </div>`;
+}
+
+// ───────────── 셸 ─────────────
+function render() {
+  document.documentElement.dataset.theme = S.theme;
+  const app = document.getElementById('app');
+  app.classList.toggle('is-mobile', S.device === 'mobile');
+  const large = isLarge();
+  app.innerHTML = `
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-logo"></span><span>The Viewer</span></div>
+    <div>
+      <button class="side-cmd">${ic('file')}파일 열기</button>
+      <button class="side-cmd">${ic('folder')}폴더 열기</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <div class="side-heading">열린 파일</div>
+      <div class="doc-row active"><span class="file-badge csv">CSV</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fileName()}</span>${!large ? '<span class="dirty-dot"></span>' : ''}</div>
+      <div class="doc-row"><span class="file-badge md">MD</span><span>notes.md</span></div>
+    </div>
+    <div class="side-bottom">${ic('settings')}설정<span class="mono">1.9.0</span></div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn" style="display:${S.device === 'mobile' ? 'inline-grid' : 'none'}">${ic('command')}</button>
+      <div class="topbar-doc"><span class="file-badge csv">CSV</span><span class="topbar-name">${fileName()}</span>
+        ${!large ? '<span class="pill warn">수정됨</span>' : `<span class="pill" title="파일 기반 CSV: 데이터 수정·Undo·원본 덮어쓰기 없음">${ic('lock', 'sm')}읽기 전용 · 1.24 GB</span>`}
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn desk" ${large ? 'disabled title="파일 기반 CSV는 실행 취소를 지원하지 않습니다"' : 'title="실행 취소"'}>${ic('undo')}</button>
+        <button class="icon-btn desk" ${large ? 'disabled' : ''}>${ic('redo')}</button>
+        <span class="divider desk"></span>
+        ${tabsHTML('desktop')}
+        <button class="icon-btn" data-act="theme">${ic('sun')}</button>
+        <button class="primary-btn desk">${large ? ic('download', 'sm') + '<span>원본 다운로드</span>' : ic('save', 'sm') + '<span>저장</span>'}${ic('chev', 'sm')}</button>
+        <button class="icon-btn desk">${ic('logout')}</button>
+      </div>
+    </header>
+    <div class="mobile-tabs">${tabsHTML('mobile')}</div>
+    <section class="workspace" id="ws">${workspaceHTML()}</section>
+    <nav class="mobile-bar">
+      <button class="secondary-btn" ${large ? 'disabled' : ''}>${ic('undo')}</button>
+      <button class="primary-btn">${large ? ic('download', 'sm') + '원본 다운로드' : ic('save', 'sm') + '저장'}</button>
+    </nav>
+  </div>
+  ${dialogHTML()}`;
+  syncCtl();
+}
+
+// ───────────── 작업 공간 ─────────────
+function workspaceHTML() {
+  if (S.scenario === 'needs-file') return needsFileHTML();
+  if (S.tab === 'source') return sourceHTML();
+  if (S.tab === 'view') return builtinViewHTML();
+  const v = VIEWS.find(x => x.id === S.tab);
+  return viewToolbarHTML(v) + resultHTML(v);
+}
+
+function needsFileHTML() {
+  return `<div class="empty-state">
+    <div class="big-ic">${ic('alert')}</div>
+    <strong>원본 파일에 다시 접근해야 합니다</strong>
+    <p>브라우저를 다시 시작해 <b>orders_2026_full.csv</b>의 임시 파일 참조가 사라졌습니다. 뷰 4개와 컬럼 타입 설정은 그대로 보관되어 있습니다.</p>
+    <p class="muted" style="font-size:12px">빈 파일로 대체하지 않습니다. 같은 파일을 다시 선택하면 크기·수정 시각·부분 지문으로 연결을 확인합니다.</p>
+    <div style="display:flex;gap:8px;margin-top:6px"><button class="primary-btn">${ic('file', 'sm')}파일 다시 선택</button><button class="secondary-btn" data-act="manager">뷰 설정 보기</button></div>
+  </div>`;
+}
+
+function viewToolbarHTML(v) {
+  const chips = {
+    grid: `<span class="chip">${ic('filter', 'sm')}<b>상태</b> 다음 아님 <b>완료, 취소</b><button class="x">${ic('x', 'sm')}</button></span>
+           <span class="chip">${ic('sort', 'sm')}<b>주문일</b> 내림차순<button class="x">${ic('x', 'sm')}</button></span>`,
+    kanban: `<span class="chip">${ic('kanban', 'sm')}그룹 <b>상태</b></span><span class="chip">${ic('sort', 'sm')}<b>금액</b> 내림차순<button class="x">${ic('x', 'sm')}</button></span>`,
+    calendar: `<span class="chip">${ic('calendar', 'sm')}날짜 <b>주문일</b></span><span class="chip">${ic('filter', 'sm')}<b>상태</b> 다음 아님 <b>취소</b><button class="x">${ic('x', 'sm')}</button></span>`,
+    gallery: `<span class="chip">${ic('sort', 'sm')}<b>고객</b> 오름차순<button class="x">${ic('x', 'sm')}</button></span>`,
+    list: `<span class="chip">${ic('list', 'sm')}묶음 <b>주문일</b></span><span class="chip">${ic('sort', 'sm')}<b>주문일</b> 내림차순<button class="x">${ic('x', 'sm')}</button></span><span class="chip">${ic('filter', 'sm')}<b>상태</b> 다음 아님 <b>취소</b><button class="x">${ic('x', 'sm')}</button></span>`,
+  }[v.layout];
+  return `<div class="toolbar">
+    ${chips}
+    <button class="chip ghost">${ic('plus', 'sm')}필터</button>
+    <span class="spacer"></span>
+    <button class="tb-btn" data-act="types">${ic('type')}<span class="desk-label">컬럼 타입</span></button>
+    <button class="tb-btn" data-act="edit-view">${ic('settings')}<span class="desk-label">뷰 설정</span></button>
+    <div class="menu-wrap">
+      <button class="tb-btn icon-only" data-act="view-menu" aria-label="뷰 메뉴">${ic('more')}</button>
+      ${S.menu === 'view' ? `<div class="menu">
+        <button data-act="edit-view">${ic('edit')}뷰 설정 편집</button>
+        <button>${ic('copy')}복제</button>
+        <button>${ic('download')}뷰 다운로드 <span class="muted" style="margin-left:auto;font-size:11px">.json</span></button>
+        <hr>
+        <button data-act="manager">${ic('menu')}보기 관리</button>
+        <button data-act="import">${ic('upload')}뷰 가져오기</button>
+        <hr>
+        <button class="danger-btn">${ic('trash')}뷰 삭제</button>
+        <div class="hint">뷰 설정은 브라우저에 따로 저장됩니다. CSV 수정 상태와 무관합니다.</div>
+      </div>` : ''}
+    </div>
+  </div>`;
+}
+
+function resultHTML(v) {
+  if (S.load === 'loading') return `<div class="grid-wrap">${tableHTML(v, [], { skeleton: 12 })}</div>${statusHTML('loading')}`;
+  if (S.load === 'empty') return `<div class="empty-state"><strong>조건에 맞는 행이 없습니다</strong><p>필터 <b>상태 다음 아님 완료, 취소</b>에 해당하는 결과가 0행입니다. 해석 실패·빈 값 행은 일반 비교에서 제외됩니다.</p><div style="display:flex;gap:8px"><button class="secondary-btn">필터 해제</button><button class="secondary-btn" data-act="edit-view">뷰 설정</button></div></div>${statusHTML('empty')}`;
+  if (S.load === 'error') return `<div class="empty-state"><div class="big-ic">${ic('alert')}</div><strong>조회하지 못했습니다</strong><p>작업 메모리 예산(512 MB)을 넘어 정렬을 중단했습니다. 이전 조건의 결과는 표시하지 않습니다.</p><div style="display:flex;gap:8px"><button class="primary-btn">${ic('refresh', 'sm')}다시 시도</button><button class="secondary-btn">정렬 없이 보기</button></div><p class="muted mono" style="font-size:11px">queryId q_8f2a · 엔진 세대 3</p></div>`;
+  const rows = ROWS.filter(r => !['완료', '취소'].includes(val(r, 'c_status')));
+  if (v.layout === 'grid') return `<div class="grid-wrap">${tableHTML(v, rows.slice().reverse(), { moreRow: isLarge() })}</div>${statusHTML('grid', rows.length)}`;
+  if (v.layout === 'gallery') return galleryHTML() + statusHTML('gallery');
+  if (v.layout === 'list') return listHTML() + statusHTML('list', ROWS.filter(r => val(r, 'c_status') !== '취소').length);
+  if (v.layout === 'kanban') return kanbanHTML() + statusHTML('kanban');
+  if (v.layout === 'calendar') return calendarHTML() + statusHTML('calendar');
+}
+
+function tableHTML(v, rows, opt = {}) {
+  const cols = opt.cols || COLS;
+  const head = `<tr><th class="rn" title="원본 레코드 번호">#</th>${cols.map(c => `<th><div class="th-inner"><button class="th-btn" data-act="types" data-col="${c.id}" title="${TYPE_LABEL[c.type]} · ${c.src === 'user' ? '사용자 지정' : '추천'}"><span class="type-ic">${TYPE_IC[c.type]}</span>${c.name}</button>${c.id === 'c_date' && v && v.layout === 'grid' ? `<span class="th-sort">${ic('down', 'sm')}</span>` : ''}</div></th>`).join('')}</tr>`;
+  let body = '';
+  if (opt.skeleton) {
+    for (let i = 0; i < opt.skeleton; i++) body += `<tr class="loading"><td class="rn"></td>${cols.map((c, j) => `<td><span class="skel" style="width:${40 + ((i * 7 + j * 13) % 50)}px"></span></td>`).join('')}</tr>`;
+  } else {
+    body = rows.map(r => `<tr><td class="rn">${r[0]}</td>${cols.map(c => { const x = cell(c, val(r, c.id)); return `<td class="${x.cls || ''}">${x.html}</td>`; }).join('')}</tr>`).join('');
+    if (opt.moreRow) body += `<tr class="loading"><td class="rn">…</td><td colspan="${cols.length}" class="muted" style="font-size:12px">다음 200행 불러오는 중 · 스크롤 끝에서 이어서 조회합니다</td></tr>`;
+  }
+  return `<table class="qt"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+function statusHTML(kind, n) {
+  const L = isLarge();
+  if (kind === 'loading') return `<div class="statusbar"><span>조회 중… 읽은 범위 4.0 MB / 1.24 GB</span><span class="spacer"></span><button class="link-btn">취소</button></div>`;
+  if (kind === 'empty') return `<div class="statusbar"><span>결과 0행 (${L ? '조회 완료' : '정확'})</span></div>`;
+  const total = L
+    ? `<span>결과 200행 확보 · 다음 페이지 있음</span><span>전체 건수 미확인 <button class="link-btn">건수 세기</button></span>`
+    : `<span>결과 ${n ?? 10}행 / 전체 14행 <span class="muted">(현재 작업본, 정확)</span></span>`;
+  const issues = `<span class="warn">해석 실패 2</span><span>빈 값 1 · 누락 1 · 결측 1</span><span class="muted">${L ? '확보한 행 기준' : '결과 기준'}</span>`;
+  return `<div class="statusbar">${total}<span class="spacer"></span>${issues}</div>`;
+}
+
+function galleryHTML() {
+  const rows = ROWS.filter(r => true).slice().sort((a, b) => String(val(a, 'c_cust')).localeCompare(String(val(b, 'c_cust'))));
+  const cards = rows.slice(0, 11).map(r => {
+    const st = cell(colById('c_status'), val(r, 'c_status')).html;
+    const amt = cell(colById('c_amt'), val(r, 'c_amt'));
+    return `<article class="card">
+      <div class="card-head"><div><div class="card-title">${val(r, 'c_cust')}</div><div class="card-sub">${val(r, 'c_no')} · #${r[0]}</div></div>${st}</div>
+      <dl class="card-fields">
+        <dt>금액</dt><dd class="${amt.cls === 'td-num' ? 'mono' : ''}">${amt.html}</dd>
+        <dt>주문일</dt><dd>${cell(colById('c_date'), val(r, 'c_date')).html}</dd>
+        <dt>긴급</dt><dd>${cell(colById('c_urgent'), val(r, 'c_urgent')).html}</dd>
+      </dl>
+      <div>${cell(colById('c_tags'), val(r, 'c_tags')).html}</div>
+    </article>`;
+  }).join('');
+  return `<div class="gallery">${cards}${isLarge() ? '<div class="load-more-tile">다음 200개 불러오는 중…</div>' : ''}</div>`;
+}
+
+function listHTML() {
+  // 주문일 내림차순, 날짜별 묶음. 해석 실패 날짜는 상태 순서대로 맨 뒤 묶음
+  const rows = ROWS.filter(r => val(r, 'c_status') !== '취소');
+  const groups = new Map();
+  rows.slice().sort((a, b) => {
+    const da = val(a, 'c_date'), db = val(b, 'c_date');
+    const ia = typeof da !== 'string', ib = typeof db !== 'string';
+    if (ia !== ib) return ia ? 1 : -1;
+    return ia ? a[0] - b[0] : (db.localeCompare(da) || a[0] - b[0]);
+  }).forEach(r => { const d = val(r, 'c_date'); const k = typeof d === 'string' ? d : '__invalid'; (groups.get(k) || groups.set(k, []).get(k)).push(r); });
+  const dow = ['일', '월', '화', '수', '목', '금', '토'];
+  const head = (k, n) => k === '__invalid'
+    ? `<div class="list-group-head warn">${ic('alert', 'sm')}주문일 해석 실패<span class="count">${n}</span></div>`
+    : `<div class="list-group-head">${+k.slice(5, 7)}월 ${+k.slice(8)}일 (${dow[(+k.slice(8) - 1) % 7]})${k === '2026-11-16' ? ' · 오늘' : ''}<span class="count">${n}</span></div>`;
+  const item = (r) => {
+    const st = val(r, 'c_status');
+    const amt = cell(colById('c_amt'), val(r, 'c_amt'));
+    const tags = val(r, 'c_tags');
+    return `<div class="list-item ${r[0] === 8 ? 'selected' : ''}">
+      <span class="list-dot" style="--sc:${STATUS[st] || 'var(--text-muted)'}"></span>
+      <div class="list-main">
+        <div class="list-title"><b>${val(r, 'c_cust')}</b><span class="mono">${val(r, 'c_no')} · #${r[0]}</span></div>
+        <div class="list-sub">${cell(colById('c_status'), st).html}<span>수량 ${cell(colById('c_qty'), val(r, 'c_qty')).html}</span>${typeof tags === 'string' && tags ? cell(colById('c_tags'), tags).html : ''}${typeof val(r, 'c_date') !== 'string' ? `<span class="st-invalid">${val(r, 'c_date').raw}</span>` : ''}</div>
+      </div>
+      <div class="list-side"><span class="amt ${amt.cls === 'cell-invalid' ? '' : ''}">${amt.html}</span>${val(r, 'c_urgent') === '1' ? '<span class="urgent">긴급</span>' : ''}</div>
+    </div>`;
+  };
+  let html = '';
+  groups.forEach((rs, k) => { html += head(k, isLarge() && k === '2026-11-27' ? '1+' : rs.length) + rs.map(item).join(''); });
+  html += isLarge() ? '<div class="list-end">다음 200행 불러오는 중… · 날짜 묶음 건수는 확보한 행 기준</div>' : '<div class="list-end">목록 끝</div>';
+  return `<div class="list">${html}</div>`;
+}
+
+function kanbanHTML() {
+  const groups = [...Object.keys(STATUS).filter(k => k !== '취소')];
+  const col = (title, color, rows, opt = {}) => `<div class="kcol ${opt.cls || ''}">
+    <div class="kcol-head">${color ? `<span class="sel" style="--sc:${color}">${title}</span>` : `<span>${title}</span>`}<span class="count">${opt.count ?? rows.length}</span><span class="spacer"></span>${opt.hint ? `<span title="${opt.hint}" class="muted">${ic('info', 'sm')}</span>` : ''}</div>
+    <div class="kcol-body">${rows.map(r => `<div class="kcard"><span class="t">${val(r, 'c_cust')}</span>
+      <div class="row"><span class="mono">${val(r, 'c_no')}</span>${(() => { const a = cell(colById('c_amt'), val(r, 'c_amt')); return `<span class="${a.cls === 'td-num' ? 'mono' : ''}">${a.html}</span>`; })()}</div>
+      <div>${cell(colById('c_tags'), val(r, 'c_tags')).html}</div></div>`).join('')}
+      ${opt.more ? `<button class="kmore">${ic('chev', 'sm')}${opt.more}</button>` : ''}
+    </div></div>`;
+  const by = (k) => ROWS.filter(r => val(r, 'c_status') === k);
+  const L = isLarge();
+  return `<div class="kanban">
+    ${groups.map(g => col(g, STATUS[g], by(g), L ? { count: g === '접수' ? '200+' : by(g).length + '+', more: '이 그룹 더 보기' } : {})).join('')}
+    ${col('선택지 밖 값', null, by('보류'), { cls: 'special', hint: '등록되지 않은 정상 값. 원문 레이블로 표시하며 조회에서 누락하지 않음' })}
+    ${col('빈 값 · 누락', null, [], { cls: 'special', count: 0 })}
+    <div class="kcol addgroup">${L ? '그룹 목록은 표본 기준 후보입니다<br><button class="link-btn" style="margin-top:6px">전체 그룹 확인</button>' : '취소 그룹은 숨김<br><button class="link-btn" style="margin-top:6px">그룹 표시 설정</button>'}</div>
+  </div>`;
+}
+
+function calendarHTML() {
+  // 2026-11: 1일 = 일요일. 월간 화면은 앞뒤 주 포함
+  const days = [];
+  for (let i = 0; i < 35; i++) days.push(i + 1);
+  const byDate = {};
+  ROWS.forEach(r => { const d = val(r, 'c_date'); if (typeof d === 'string' && val(r, 'c_status') !== '취소') (byDate[d] ||= []).push(r); });
+  const dow = ['일', '월', '화', '수', '목', '금', '토'].map(d => `<div class="cal-dow">${d}</div>`).join('');
+  const cells = days.map(n => {
+    const out = n > 30; const dn = out ? n - 30 : n;
+    const key = out ? `2026-12-${String(dn).padStart(2, '0')}` : `2026-11-${String(dn).padStart(2, '0')}`;
+    const items = byDate[key] || [];
+    const shown = items.slice(0, 2).map(r => `<div class="ev" style="--sc:${STATUS[val(r, 'c_status')] || 'var(--text-muted)'}">${val(r, 'c_cust')} · ${val(r, 'c_no')}</div>`).join('');
+    const extra = key === '2026-11-16' ? 3 : (items.length > 2 ? items.length - 2 : 0);
+    return `<div class="cal-day ${out ? 'out' : ''} ${key === '2026-11-16' ? 'today' : ''}"><span class="dn">${dn}</span>${shown}${extra ? `<button class="ev-more">+${extra} 더 보기</button>` : ''}</div>`;
+  }).join('');
+  return `<div class="cal">
+    <div class="cal-head"><button class="icon-btn">${ic('left')}</button><h3>2026년 11월</h3><button class="icon-btn">${ic('right')}</button><button class="secondary-btn" style="min-height:26px;font-size:12px">오늘</button>
+      <span class="spacer"></span><span class="muted" style="font-size:11px">조회 범위 2026-11-01 ~ 2026-12-06 (끝 제외) · 날짜 전용, 시간대 이동 없음</span></div>
+    <div class="cal-grid">${dow}${cells}</div>
+    <div class="banner warn" style="border-top:1px solid var(--line);border-bottom:0">${ic('alert', 'sm')}<span>날짜 해석 실패 1행(#7 <span class="mono">2026-02-30</span>)은 캘린더에 표시되지 않습니다.</span><button class="link-btn" style="margin-left:auto">표로 보기</button></div>
+  </div>`;
+}
+
+function builtinViewHTML() {
+  if (isLarge()) {
+    return `<div class="banner">${ic('lock', 'sm')}<span>큰 CSV는 파일에서 필요한 부분만 읽는 원본 순서 표로 엽니다. 셀 편집·Undo·원본 저장은 지원하지 않습니다.</span></div>
+      <div class="toolbar"><div class="search">${ic('search', 'sm')}<span>검색은 사용자 뷰의 필터로 만듭니다</span></div><span class="spacer"></span><button class="tb-btn" data-act="types">${ic('type')}컬럼 타입</button><button class="tb-btn" data-act="add-view">${ic('plus')}이 표로 보기 추가</button></div>
+      <div class="grid-wrap">${tableHTML(null, ROWS, { moreRow: true })}</div>${statusHTML('grid')}`;
+  }
+  return `<div class="toolbar"><div class="search">${ic('search', 'sm')}<span>검색</span></div><span class="divider"></span>
+      <button class="tb-btn">${ic('plus')}행</button><button class="tb-btn">${ic('plus')}열</button><button class="tb-btn">너비 맞춤</button>
+      <span class="spacer"></span><span class="muted" style="font-size:11px">기존 CSV 편집기 (변경 없음)</span></div>
+    <div class="grid-wrap">${editorTableHTML()}</div>
+    <div class="statusbar"><span>14행 × 8열</span><span>UTF-8 · 쉼표</span><span class="spacer"></span><span>수정됨</span></div>`;
+}
+function editorTableHTML() {
+  const head = `<tr><th class="rn"></th>${COLS.map(c => `<th>${c.name}</th>`).join('')}</tr>`;
+  const raw = (v) => v && typeof v === 'object' ? (v.raw ?? '') : v;
+  const body = ROWS.map(r => `<tr><td class="rn">${r[0]}</td>${COLS.map(c => `<td>${raw(val(r, c.id))}</td>`).join('')}</tr>`).join('');
+  return `<table class="qt"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+function sourceHTML() {
+  const raw = (v) => v && typeof v === 'object' ? (v.s === 'missing' ? null : (v.raw ?? '')) : v;
+  const lines = [COLS.map(c => c.name).join(',')].concat(ROWS.map(r => COLS.map(c => raw(val(r, c.id))).filter(x => x !== null).map(x => /[,;]/.test(x) ? `"${x}"` : x).join(',')));
+  const body = lines.map((l, i) => `<div class="ln"><span>${i + 1}</span><span>${l}</span></div>`).join('');
+  if (isLarge()) return `<div class="range-bar">${ic('file', 'sm')}<span class="mono">0 – 1,048,576 B</span><span class="muted">/ 1.24 GB</span><div class="range-track"><i></i></div><button class="secondary-btn" style="min-height:26px;font-size:12px">위치로 이동</button><span class="spacer"></span><span class="muted">읽기 전용 범위 보기 · 전체 Monaco 모델 없음</span></div><div class="source">${body}<div class="ln"><span>…</span><span class="muted">스크롤하면 다음 1 MiB 범위를 읽습니다</span></div></div>`;
+  return `<div class="source">${body}</div>`;
+}
+
+// ───────────── 다이얼로그 ─────────────
+function dialogHTML() {
+  if (!S.dialog) return '';
+  if (S.dialog === 'builder') return builderHTML();
+  if (S.dialog === 'types') return typesHTML();
+  if (S.dialog === 'manager') return managerHTML();
+  if (S.dialog === 'import') return importHTML();
+  return '';
+}
+
+function builderHTML() {
+  const B = S.builder;
+  const needGroup = B.layout === 'kanban', needDate = B.layout === 'calendar';
+  const dateCols = COLS.filter(c => c.type === 'date' || c.type === 'datetime');
+  const groupCols = COLS.filter(c => c.type === 'select' || c.type === 'boolean');
+  const visible = ['c_no', 'c_cust', 'c_status', 'c_amt', 'c_date', 'c_tags'];
+  const linkField = needGroup ? `<div class="field"><span class="field-label">그룹 컬럼 <span class="req">필수</span></span>
+      <select data-bind="group"><option value="">선택하세요</option>${groupCols.map(c => `<option value="${c.id}" ${B.group === c.id ? 'selected' : ''}>${c.name} · ${TYPE_LABEL[c.type]}</option>`).join('')}</select>
+      ${!B.group ? `<div class="validation">${ic('alert', 'sm')}<span>칸반은 단일 선택 또는 참/거짓 컬럼이 필요합니다.</span></div>` : ''}</div>`
+    : needDate ? `<div class="field"><span class="field-label">날짜 컬럼 <span class="req">필수</span></span>
+      <select data-bind="date"><option value="">선택하세요</option>${dateCols.map(c => `<option value="${c.id}" ${B.date === c.id ? 'selected' : ''}>${c.name} · ${TYPE_LABEL[c.type]}</option>`).join('')}<option disabled>── 날짜 타입 아님 ──</option><option disabled>주문번호 · 텍스트</option></select>
+      ${!B.date ? `<div class="validation">${ic('alert', 'sm')}<span>캘린더는 날짜 또는 날짜·시간 컬럼이 필요합니다. 텍스트 컬럼은 <button class="link-btn" data-act="types">컬럼 타입</button>에서 날짜로 지정한 뒤 선택할 수 있습니다.</span></div>` : ''}</div>`
+    : B.layout === 'gallery' ? `<div class="field"><span class="field-label">카드 제목</span><select><option>고객</option><option>주문번호</option></select></div>`
+    : B.layout === 'list' ? `<div class="field"><span class="field-label">항목 구성</span>
+        <div class="rules">
+          <div class="field"><label>제목</label><select><option>고객</option><option>주문번호</option></select></div>
+          <div class="field"><label>보조 정보</label><select><option>주문번호</option><option>없음</option></select></div>
+          <div class="field"><label>오른쪽 값</label><select><option>금액</option><option>주문일</option><option>없음</option></select></div>
+          <div class="field"><label>색 표시</label><select><option>상태</option><option>없음</option></select></div>
+          <div class="field"><label>묶음 <span class="muted" style="font-weight:400">선택</span></label><select><option>주문일</option><option>상태</option><option>없음</option></select></div>
+        </div>
+        <span class="muted" style="font-size:11px">아래 표시 컬럼은 보조 줄에 칩으로 나열됩니다.</span></div>` : '';
+  const canSave = !(needGroup && !B.group) && !(needDate && !B.date);
+  const pvCols = COLS.filter(c => visible.includes(c.id));
+  const pvRows = ROWS.filter(r => !['완료', '취소'].includes(val(r, 'c_status'))).slice(0, 6);
+  return `<div class="overlay"><div class="dialog" role="dialog" aria-label="뷰 설정">
+    <div class="dlg-head"><h2>${B.editing ? '뷰 설정' : '보기 추가'}</h2><span class="sub">${fileName()}</span><span class="spacer"></span><button class="icon-btn" data-act="close">${ic('x')}</button></div>
+    <div class="dlg-body">
+      <div class="pane left">
+        <div class="field"><label>이름</label><input type="text" value="${B.name}"></div>
+        <div class="field"><span class="field-label">레이아웃</span>
+          <div class="layout-opts">${Object.entries(LAYOUT).map(([k, [icn, lb]]) => `<button class="layout-opt ${B.layout === k ? 'active' : ''}" data-layout="${k}">${ic(icn)}${lb}</button>`).join('')}</div>
+        </div>
+        ${linkField}
+        <div class="field"><span class="field-label">표시 컬럼 <span class="muted" style="font-weight:400">드래그로 순서 변경</span></span>
+          <div class="col-list">${COLS.map(c => { const on = visible.includes(c.id); return `<div class="col-item ${on ? '' : 'off'}"><span class="grip">${ic('grip', 'sm')}</span><span class="cb ${on ? 'on' : ''}">${on ? ic('check', 'sm') : ''}</span><span class="type-ic">${TYPE_IC[c.type]}</span>${c.name}<span class="meta">${!on && c.id === 'c_qty' ? '숨김 · 정렬에 사용 안 함' : !on && c.id === 'c_urgent' ? '숨김 · 필터에 사용' : ''}</span></div>`; }).join('')}</div>
+        </div>
+        <div class="field"><span class="field-label">필터</span>
+          <div class="filter-group">
+            <div class="filter-row"><span class="conj">조건</span><select><option>상태</option></select><select><option>다음 아님</option><option>다음 중 하나</option><option>상태가</option></select><select><option>완료, 취소</option></select><button class="icon-btn" style="width:24px;height:24px">${ic('x', 'sm')}</button></div>
+            <div class="filter-row"><span class="conj"><select style="height:24px;padding:0 4px;font-size:11px"><option>그리고</option><option>또는</option></select></span><select><option>긴급</option></select><select><option>같음</option></select><select><option>참</option><option>거짓</option></select><button class="icon-btn" style="width:24px;height:24px">${ic('x', 'sm')}</button></div>
+            <div style="display:flex;gap:4px"><button class="mini-btn">${ic('plus', 'sm')}조건</button><button class="mini-btn">${ic('plus', 'sm')}조건 그룹</button></div>
+          </div>
+          <span class="muted" style="font-size:11px">해석 실패·빈 값은 일반 비교에서 제외됩니다. 포함하려면 <b>상태가</b> 연산자를 쓰세요.</span>
+        </div>
+        <div class="field"><span class="field-label">정렬</span>
+          <div class="filter-group"><div class="filter-row" style="grid-template-columns:1fr 110px 24px"><select><option>주문일</option></select><select><option>내림차순</option><option>오름차순</option></select><button class="icon-btn" style="width:24px;height:24px">${ic('x', 'sm')}</button></div>
+          <button class="mini-btn" style="align-self:flex-start">${ic('plus', 'sm')}정렬 기준</button></div>
+          <span class="muted" style="font-size:11px">빈 값·누락·실패는 항상 뒤로, 동률은 원본 행 순서.</span>
+        </div>
+      </div>
+      <div class="pane right">
+        <div class="preview-head">${ic(LAYOUT[B.layout][0], 'sm')}<b style="color:var(--text-secondary);font-weight:550">미리보기</b><span class="pill">${isLarge() ? '표본 200행 기준' : '현재 작업본 처음 200행'}</span><span class="spacer"></span><span class="muted">저장 전 결과는 제한된 미리보기입니다</span></div>
+        <div class="preview-box">${B.layout === 'grid' ? tableHTML({ layout: 'grid' }, pvRows, { cols: pvCols }) : `<div style="padding:24px;color:var(--text-weak);font-size:12px;text-align:center">${LAYOUT[B.layout][1]} 미리보기<br><span style="font-size:11px">${canSave ? '연결 컬럼 기준으로 표본을 배치합니다' : '필수 연결 컬럼을 선택하면 표시됩니다'}</span></div>`}</div>
+      </div>
+    </div>
+    <div class="dlg-foot"><span class="note">${B.editing ? '저장하면 이 뷰만 바뀝니다. CSV 데이터와 수정 상태에는 영향이 없습니다.' : '새 뷰는 기존 탭 왼쪽에 추가됩니다.'}</span><span class="spacer"></span>
+      <button class="secondary-btn" data-act="close">취소</button><button class="primary-btn" ${canSave ? '' : 'disabled style="opacity:.5;cursor:not-allowed"'} data-act="close">${B.editing ? '저장' : '추가'}</button></div>
+  </div></div>`;
+}
+
+const SAMPLES = {
+  c_amt: { rec: 'decimal', match: 198, of: 200, eof: false, rows: [['1250000', '₩1,250,000', 'ok'], ['432500.50', '₩432,500.50', 'ok'], ['12,34,5', '천 단위 구분 위치 오류', 'bad'], ['N/A', '결측 표식', 'null'], ['', '빈 값', 'empty'], ['1,999,000', '₩1,999,000', 'ok']] },
+  c_no: { rec: 'text', match: 200, of: 200, eof: false, rows: [['00123', '00123', 'ok'], ['00124', '00124', 'ok']], note: '앞자리 0이 있는 코드는 정수로 자동 확정하지 않습니다. 정수 후보: 200/200' },
+  c_urgent: { rec: 'boolean', match: 200, of: 200, eof: false, rows: [['1', '참', 'ok'], ['0', '거짓', 'ok']], note: '0/1은 정수와 참/거짓 모두 가능해 자동 확정하지 않았습니다. 사용자가 참/거짓으로 지정함' },
+  c_date: { rec: 'date', match: 199, of: 200, eof: false, rows: [['2026-11-03', '2026-11-03', 'ok'], ['2026-02-30', '존재하지 않는 날짜', 'bad']] },
+};
+function typesHTML() {
+  const col = colById(S.typeCol);
+  const sm = SAMPLES[S.typeCol] || { rec: col.type, match: 200, of: 200, eof: false, rows: [] };
+  const draft = S.typeDraft;
+  const changed = draft !== col.type;
+  const status = (s) => ({ ok: `<span class="ok">${ic('check', 'sm')} 해석</span>`, bad: '<span class="st-invalid">해석 실패</span>', null: '<span class="st-null">결측 표식</span>', empty: '<span class="st-empty">빈 값</span>' }[s]);
+  const rules = draft === 'decimal' ? `
+      <div class="field"><label>소수점</label><select><option>. (마침표)</option><option>, (쉼표)</option></select></div>
+      <div class="field"><label>천 단위 구분</label><select><option>, (쉼표) · 위치 검사</option><option>없음</option><option>공백</option></select></div>
+      <div class="field"><label>정밀도 / 소수 자릿수</label><div style="display:flex;gap:6px"><input type="text" value="18" style="width:70px"><input type="text" value="2" style="width:70px"></div><span class="muted" style="font-size:11px">자릿수 초과는 반올림하지 않고 실패</span></div>
+      <div class="field"><label>결측 표식</label><input type="text" value="N/A"></div>
+      <label class="check-line"><span class="cb on">${ic('check', 'sm')}</span>입력의 통화 기호 ₩ 제거</label>
+      <label class="check-line"><span class="cb"></span>입력을 100분율로 변환 (예: 12% → 0.12)</label>
+      <div class="field"><label>기본 표시 <span class="muted" style="font-weight:400">뷰별 재정의 가능</span></label><select><option>통화 ₩ · 천 단위 쉼표</option><option>숫자</option><option>퍼센트 (값 변환 없음)</option></select></div>`
+    : draft === 'date' ? `<div class="field"><label>입력 형식</label><select><option>YYYY-MM-DD</option><option>YYYY/MM/DD</option><option>DD.MM.YYYY</option></select></div><div class="field"><label>결측 표식</label><input type="text" value=""></div>`
+    : draft === 'boolean' ? `<div class="field"><label>참 원문</label><input type="text" value="1, Y, true"></div><div class="field"><label>거짓 원문</label><input type="text" value="0, N, false"></div>`
+    : draft === 'select' || draft === 'multiSelect' ? `<div class="field"><label>선택지 (표본 후보 5개)</label><div>${Object.entries(STATUS).map(([k, c]) => `<span class="sel" style="--sc:${c};margin:0 4px 4px 0">${k}</span>`).join('')}</div></div><label class="check-line"><span class="cb"></span>등록된 선택지만 허용 (미등록 값은 실패)</label>${draft === 'multiSelect' ? '<div class="field"><label>목록 구분자</label><input type="text" value=";"></div>' : ''}`
+    : draft === 'integer' ? `<div class="field"><label>천 단위 구분</label><select><option>없음</option><option>, (쉼표)</option></select></div><div class="field"><label>범위</label><span class="muted" style="font-size:12px">최대 38자리 · 초과 시 실패</span></div>`
+    : `<div class="field"><label>텍스트</label><span class="muted" style="font-size:12px">원문 그대로 보존합니다. trim·대소문자 변경 없음</span></div>`;
+  const types = ['text', 'integer', 'decimal', 'boolean', 'date', 'datetime', 'select', 'multiSelect'];
+  return `<div class="overlay"><div class="dialog" role="dialog" aria-label="컬럼 타입">
+    <div class="dlg-head"><h2>컬럼 타입</h2><span class="sub">파일 공통 설정 · 모든 뷰에 적용</span><span class="spacer"></span><button class="icon-btn" data-act="close">${ic('x')}</button></div>
+    <div class="dlg-body">
+      <div class="type-cols">${COLS.map(c => `<button class="type-col ${c.id === S.typeCol ? 'active' : ''}" data-typecol="${c.id}"><span class="type-ic">${TYPE_IC[c.type]}</span><span><div class="nm">${c.name}</div><div class="ty">${TYPE_LABEL[c.type]}</div></span><span class="src pill ${c.src === 'user' ? 'accent' : ''}">${c.src === 'user' ? '지정' : '추천'}</span></button>`).join('')}</div>
+      <div class="pane right" style="background:var(--panel-raised);gap:14px">
+        <div style="display:flex;align-items:center;gap:8px"><b style="font-size:15px;color:var(--text-strong)">${col.name}</b><span class="muted mono" style="font-size:11px">원래 위치 ${COLS.indexOf(col)} · 헤더 "${col.name}"</span></div>
+        <div class="seg">${types.map(t => `<button class="${draft === t ? 'active' : ''}" data-draft="${t}"><span class="type-ic">${TYPE_IC[t]}</span>${TYPE_LABEL[t]}${sm.rec === t ? '<span class="rec">추천</span>' : ''}</button>`).join('')}</div>
+        <div class="evidence">
+          <span>표본 <b>${sm.of}</b>행 중 <b>${sm.match}</b>개 일치 <span class="meter"><i style="width:${sm.match / sm.of * 100}%"></i></span></span>
+          <span>파일 끝 ${sm.eof ? '확인' : '<b style="color:var(--warning)">미도달</b>'}</span>
+          <span class="muted">처음 200개 레코드 · 최대 8 MiB 표본. 전체 검증 아님</span>
+        </div>
+        ${sm.note ? `<div class="impact" style="border-color:var(--line);background:transparent">${ic('info', 'sm')} ${sm.note}</div>` : ''}
+        <div class="section-title">입력 규칙</div>
+        <div class="rules">${rules}</div>
+        <div class="section-title">원문 → 해석값 미리보기</div>
+        <table class="sample"><thead><tr><th>원문</th><th>해석값</th><th>상태</th></tr></thead><tbody>${sm.rows.map(([a, b, s]) => `<tr><td>${a === '' ? '<span class="st-empty">""</span>' : a}</td><td>${s === 'ok' ? b : `<span class="muted">${b}</span>`}</td><td class="status">${status(s)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">표본 예시 없음</td></tr>'}</tbody></table>
+        ${changed || S.typeCol === 'c_amt' ? `<div class="impact"><strong>${ic('info', 'sm')} 적용하면 영향을 받는 뷰 2개</strong><span>· 진행 중 주문 — 표시 컬럼</span><span>· 상태 보드 — 정렬 기준 (금액 내림차순)</span><span class="muted">적용 후 열린 뷰를 다시 조회합니다. CSV 원문은 바뀌지 않습니다.</span></div>` : ''}
+      </div>
+    </div>
+    <div class="dlg-foot"><span class="note">표본 밖 예외는 타입을 바꾸지 않고 <b>해석 실패</b>로 표시합니다.</span><span class="spacer"></span><button class="secondary-btn" data-act="close">취소</button><button class="primary-btn" data-act="close">적용</button></div>
+  </div></div>`;
+}
+
+function managerHTML() {
+  return `<div class="overlay"><div class="dialog narrow" role="dialog" aria-label="보기 관리">
+    <div class="dlg-head"><h2>보기 관리</h2><span class="sub">${fileName()} · 뷰 ${VIEWS.length}개</span><span class="spacer"></span><button class="icon-btn" data-act="close">${ic('x')}</button></div>
+    <div class="dlg-body" style="flex-direction:column">
+      <div class="mgr-list">${VIEWS.map((v, i) => `<div class="mgr-item ${i === 1 ? 'dragging' : ''}"><span class="grip">${ic('grip')}</span><span class="lay-ic">${ic(LAYOUT[v.layout][0])}</span>
+        <div><div class="nm">${v.name}</div><div class="meta">${LAYOUT[v.layout][1]} · ${['컬럼 6 · 필터 1 · 정렬 1', '그룹 상태 · 정렬 1', '날짜 주문일 · 필터 1', '컬럼 5 · 정렬 1', '묶음 주문일 · 필터 1'][i]} · 11월 ${11 + i}일 수정</div></div>
+        <div class="acts"><button class="icon-btn" title="이름 변경">${ic('edit')}</button><button class="icon-btn desk-act" title="복제">${ic('copy')}</button><button class="icon-btn desk-act" title="뷰 다운로드">${ic('download')}</button><button class="icon-btn danger-btn" title="삭제">${ic('trash')}</button></div></div>`).join('')}
+        <div class="mgr-item"><button class="mini-btn" data-act="add-view">${ic('plus', 'sm')}보기 추가</button></div>
+      </div>
+      <div class="mgr-note">뷰 설정은 이 브라우저에 파일별로 보관되며 CSV 저장·수정 상태와 별개입니다. 같은 파일을 다시 열면 자동으로 연결됩니다. 다른 기기로 옮기려면 JSON으로 내려받으세요. CSV 행 데이터·로컬 경로는 포함되지 않습니다.</div>
+    </div>
+    <div class="dlg-foot"><button class="secondary-btn" data-act="import">${ic('upload', 'sm')}뷰 가져오기</button><button class="secondary-btn">${ic('download', 'sm')}모든 뷰 다운로드</button><span class="spacer"></span><button class="primary-btn" data-act="close">완료</button></div>
+  </div></div>`;
+}
+
+function importHTML() {
+  const map = [['주문번호', '주문번호', 'ok'], ['고객명', '', 'need'], ['상태', '상태', 'ok'], ['금액', '금액', 'type'], ['주문일', '주문일', 'ok']];
+  return `<div class="overlay"><div class="dialog narrow" role="dialog" aria-label="뷰 가져오기">
+    <div class="dlg-head"><h2>뷰 가져오기</h2><span class="sub">orders.views.json</span><span class="spacer"></span><button class="icon-btn" data-act="close">${ic('x')}</button></div>
+    <div class="dlg-body" style="flex-direction:column"><div class="pane" style="display:flex;flex-direction:column;gap:14px">
+      <div class="steps"><span>1 검증</span><span class="on">2 컬럼 연결</span><span>3 충돌 조정</span><span>4 적용</span></div>
+      <div class="evidence"><span>검증 완료 · 스키마 v1</span><span>뷰 <b>3</b>개</span><span>컬럼 <b>5</b>개 참조</span></div>
+      <table class="map-table"><thead><tr><th>가져온 컬럼</th><th>현재 파일 컬럼</th><th></th></tr></thead><tbody>
+      ${map.map(([a, b, s]) => `<tr><td>${a}</td><td><select>${b ? `<option>${b}</option>` : '<option>연결할 컬럼 선택…</option>'}${COLS.map(c => `<option>${c.name}</option>`).join('')}</select></td><td style="width:150px;font-size:11px">${s === 'ok' ? `<span class="ok">${ic('check', 'sm')} 헤더 일치</span>` : s === 'need' ? '<span style="color:var(--warning)">헤더 없음 · 연결 필요</span>' : '<span style="color:var(--warning)">타입 다름</span>'}</td></tr>`).join('')}
+      </tbody></table>
+      <div class="impact"><strong>금액: 가져온 타입 정수 ↔ 현재 타입 소수</strong>
+        <label class="check-line"><span class="cb on" style="border-radius:50%">${ic('check', 'sm')}</span>현재 타입(소수) 유지</label>
+        <label class="check-line"><span class="cb" style="border-radius:50%"></span>공통 스키마를 정수로 변경 — 기존 뷰 2개에 영향</label></div>
+      <span class="muted" style="font-size:12px">같은 ID의 뷰가 이미 있으면 기본으로 새 뷰로 복제합니다. 취소하면 아무것도 바뀌지 않습니다.</span>
+    </div></div>
+    <div class="dlg-foot"><span class="spacer"></span><button class="secondary-btn" data-act="close">취소</button><button class="primary-btn" disabled style="opacity:.5">다음</button></div>
+  </div></div>`;
+}
+
+// ───────────── 이벤트 ─────────────
+document.getElementById('app').addEventListener('click', (e) => {
+  const t = e.target.closest('[data-tab],[data-act],[data-layout],[data-typecol],[data-draft]');
+  if (!t) { if (S.menu) { S.menu = null; render(); } return; }
+  if (t.dataset.tab) { S.tab = t.dataset.tab; S.menu = null; }
+  else if (t.dataset.layout) { S.builder.layout = t.dataset.layout; if (t.dataset.layout === 'kanban') S.builder.group = ''; if (t.dataset.layout === 'calendar') S.builder.date = ''; }
+  else if (t.dataset.typecol) { S.typeCol = t.dataset.typecol; S.typeDraft = colById(S.typeCol).type; }
+  else if (t.dataset.draft) { S.typeDraft = t.dataset.draft; }
+  else {
+    const a = t.dataset.act; S.menu = a === 'view-menu' ? (S.menu ? null : 'view') : null;
+    if (a === 'theme') S.theme = S.theme === 'dark' ? 'light' : 'dark';
+    if (a === 'close') S.dialog = null;
+    if (a === 'add-view') { S.dialog = 'builder'; S.builder = { name: '새 보기', layout: 'calendar', group: '', date: '', editing: null }; }
+    if (a === 'edit-view') { const v = VIEWS.find(x => x.id === S.tab) || VIEWS[0]; S.dialog = 'builder'; S.builder = { name: v.name, layout: v.layout, group: 'c_status', date: 'c_date', editing: v.id }; }
+    if (a === 'types') { S.dialog = 'types'; if (t.dataset.col) { S.typeCol = t.dataset.col; } S.typeDraft = colById(S.typeCol).type; }
+    if (a === 'manager') S.dialog = 'manager';
+    if (a === 'import') S.dialog = 'import';
+  }
+  render();
+});
+document.getElementById('app').addEventListener('change', (e) => {
+  const b = e.target.dataset.bind; if (b) { S.builder[b] = e.target.value; render(); }
+});
+document.getElementById('app').addEventListener('keydown', (e) => {
+  const tab = e.target.closest('[role=tab]'); if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+  const all = [...tab.closest('.tabbar').querySelectorAll('[role=tab]')];
+  let i = all.indexOf(tab);
+  i = e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length;
+  S.tab = all[i].dataset.tab; render();
+  document.querySelector(`.topbar [data-tab="${S.tab}"], .mobile-tabs [data-tab="${S.tab}"]`)?.focus();
+  e.preventDefault();
+});
+document.getElementById('mockCtl').addEventListener('click', (e) => {
+  if (e.target.id === 'mcMin') { e.currentTarget.classList.toggle('min'); e.target.textContent = e.currentTarget.classList.contains('min') ? '펼치기' : '접기'; return; }
+  const b = e.target.closest('button[data-v]'); if (!b) return;
+  S[b.parentElement.dataset.key] = b.dataset.v; S.dialog = null; render();
+});
+function syncCtl() {
+  document.querySelectorAll('.mock-ctl .opts').forEach(o => o.querySelectorAll('button').forEach(b => b.classList.toggle('on', S[o.dataset.key] === b.dataset.v)));
+}
+if (window.innerWidth < 760) S.device = 'mobile';
+render();
+</script>
+</body>
+</html>
