@@ -119,7 +119,7 @@ export class DefaultCsvViewController implements CsvViewController {
   async initialize(): Promise<void> {
     const stored = this.getStored()
     const savedSelection = await this.storage.loadSelection(this.state.documentId).catch(() => null)
-    if (savedSelection?.fileId === stored.record.fileId) this.state = { ...this.state, selection: validSelection(savedSelection.selection, stored.views) ? savedSelection.selection : { kind: 'builtin', mode: 'view' } }
+    if (savedSelection?.fileId === stored.record.fileId && savedSelection.selection.kind === 'builtin') this.state = { ...this.state, selection: validSelection(savedSelection.selection, stored.views) ? savedSelection.selection : { kind: 'builtin', mode: 'view' } }
     await this.replaceSnapshot()
     if (this.source.sample) {
       this.state = { ...this.state, sample: { status: 'loading' } }; this.emit()
@@ -407,7 +407,7 @@ export class DefaultCsvViewController implements CsvViewController {
     const stored = this.getStored()
     return {
       dataset: { documentId: this.state.documentId, fileId: stored.record.fileId, sourceRevision: this.sourceRevision, schemaRevision: stored.record.profile.schemaRevision },
-      queryId, requestId, columnIds: projectColumns(view), filter: view.filter, sort: effectiveSort(view),
+      queryId, requestId, columnIds: projectColumns(view, stored.record.profile.columns.map((column) => column.id)), filter: view.filter, sort: effectiveSort(view),
       scope, cursor, limit: CSV_POLICY.pageSize, maxResultBytes: 2 * 1024 * 1024
     }
   }

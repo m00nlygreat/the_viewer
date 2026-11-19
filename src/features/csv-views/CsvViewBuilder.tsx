@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp, GripVertical } from 'lucide-react'
-import { allowedOperators, filterColumns } from '../../domain/csv-views/query'
+import { allowedOperators, displayColumnIds, filterColumns } from '../../domain/csv-views/query'
+import { resolveDisplay } from '../../domain/csv-views/format'
 import { csvQueryNextStep } from '../../domain/csv-views/errorGuidance'
 import type { CsvColumnDefinition, CsvFilter, CsvSaveResult, CsvStoredProfile, CsvViewDefinition, CsvLayout, CsvCellState, CsvSort } from '../../domain/csv-views/model'
 import type { CsvQueryState } from '../../app/csvViewController'
@@ -58,25 +59,32 @@ export function CsvViewBuilder({ profile, sourceName, initial, mode, preview, so
   const updateCalendarLayout = (patch: Partial<Extract<CsvLayout, { kind: 'calendar' }>>) => {
     if (draft.layout.kind === 'calendar') change({ ...draft, layout: { ...draft.layout, ...patch } })
   }
-  const toggleColumn = (columnId: string, selected: boolean) => change({ ...draft, columnIds: selected ? [...draft.columnIds, columnId] : draft.columnIds.filter((id) => id !== columnId) })
+  const activeDisplayColumnIds = displayColumnIds(draft, available.map((column) => column.id))
+  const toggleColumn = (columnId: string, selected: boolean) => {
+    const next = selected ? [...activeDisplayColumnIds, columnId] : activeDisplayColumnIds.filter((id) => id !== columnId)
+    if (next.length) change({ ...draft, columnIds: next })
+  }
   const moveColumn = (columnId: string, offset: -1 | 1) => {
-    const index = draft.columnIds.indexOf(columnId)
+    const columnIds = activeDisplayColumnIds
+    const index = columnIds.indexOf(columnId)
     const target = index + offset
-    if (index < 0 || target < 0 || target >= draft.columnIds.length) return
-    const columnIds = [...draft.columnIds]
-    ;[columnIds[index], columnIds[target]] = [columnIds[target]!, columnIds[index]!]
-    change({ ...draft, columnIds })
+    if (index < 0 || target < 0 || target >= columnIds.length) return
+    const next = [...columnIds]
+    ;[next[index], next[target]] = [next[target]!, next[index]!]
+    change({ ...draft, columnIds: next })
   }
   const reorderColumn = (columnId: string, targetId: string) => {
-    const from = draft.columnIds.indexOf(columnId)
-    const to = draft.columnIds.indexOf(targetId)
+    const columnIds = activeDisplayColumnIds
+    const from = columnIds.indexOf(columnId)
+    const to = columnIds.indexOf(targetId)
     if (from < 0 || to < 0 || from === to) return
-    const columnIds = [...draft.columnIds]
-    const [moved] = columnIds.splice(from, 1)
-    if (moved) columnIds.splice(to, 0, moved)
-    change({ ...draft, columnIds })
+    const next = [...columnIds]
+    const [moved] = next.splice(from, 1)
+    if (moved) next.splice(to, 0, moved)
+    change({ ...draft, columnIds: next })
   }
   const orderedColumns = [...draft.columnIds.flatMap((id) => { const column = available.find((item) => item.id === id); return column ? [column] : [] }), ...available.filter((column) => !draft.columnIds.includes(column.id))]
+  const hasDisplayColumns = draft.layout.kind === 'grid' || draft.layout.kind === 'gallery'
   const apply = async () => {
     setSaving(true); setConflict(null)
     try { const result = await onApply({ ...draft, updatedAt: new Date().toISOString() }); if (!result.ok && result.reason === 'conflict') setConflict(result.current) }
@@ -95,16 +103,16 @@ export function CsvViewBuilder({ profile, sourceName, initial, mode, preview, so
           <label>오른쪽 값<ColumnSelect columns={available} value={draft.layout.trailingColumnId ?? ''} allowEmpty onChange={(value) => updateListLayout({ trailingColumnId: value || null })} /></label>
           <label>색 표시<ColumnSelect columns={available.filter((column) => column.type === 'select' || column.type === 'boolean')} value={draft.layout.colorColumnId ?? ''} allowEmpty onChange={(value) => updateListLayout({ colorColumnId: value || null })} /></label>
           <label>묶음<ColumnSelect columns={available.filter((column) => column.type !== 'multiSelect')} value={draft.layout.groupColumnId ?? ''} allowEmpty onChange={(value) => updateListLayout({ groupColumnId: value || null })} /></label>
-        </div><ColumnMultiSelect label="배지" columns={available.filter((column) => column.type === 'select' || column.type === 'boolean')} selected={draft.layout.badgeColumnIds ?? []} onChange={(ids) => updateListLayout({ badgeColumnIds: ids })} /><small>제목·보조 정보와 오른쪽 값 아래에 선택한 배지를 표시합니다.</small></fieldset>}
-        {draft.layout.kind === 'gallery' && <fieldset className="csv-view-layout-fields"><legend>카드 구성</legend><div className="csv-view-layout-field-grid"><label>카드 제목<ColumnSelect columns={available} value={draft.layout.titleColumnId} onChange={(value) => updateGalleryLayout({ titleColumnId: value })} /></label><label>보조 정보<ColumnSelect columns={available} value={draft.layout.subtitleColumnId ?? ''} allowEmpty onChange={(value) => updateGalleryLayout({ subtitleColumnId: value || null })} /></label><label>표지 이미지<ColumnSelect columns={available.filter((column) => column.type === 'text' && column.display.as === 'image')} value={draft.layout.coverColumnId ?? ''} allowEmpty onChange={(value) => updateGalleryLayout({ coverColumnId: value || null })} /></label></div><ColumnMultiSelect label="배지" columns={available.filter((column) => column.type === 'select' || column.type === 'boolean')} selected={draft.layout.badgeColumnIds ?? []} onChange={(ids) => updateGalleryLayout({ badgeColumnIds: ids })} /><ColumnMultiSelect label="하단 컬럼" columns={available} selected={draft.layout.footerColumnIds ?? []} onChange={(ids) => updateGalleryLayout({ footerColumnIds: ids })} /></fieldset>}
-        {draft.layout.kind === 'kanban' && <fieldset className="csv-view-layout-fields"><legend>카드 구성</legend><label className="csv-builder-field">그룹 컬럼 <span className="csv-view-required">필수</span><ColumnSelect columns={available.filter((column) => column.type === 'select' || column.type === 'boolean')} value={draft.layout.groupColumnId} onChange={(value) => updateKanbanLayout({ groupColumnId: value })} /></label><div className="csv-view-layout-field-grid"><label>제목<ColumnSelect columns={available} value={draft.layout.titleColumnId ?? ''} allowEmpty onChange={(value) => updateKanbanLayout({ titleColumnId: value || null })} /></label><label>보조 정보<ColumnSelect columns={available} value={draft.layout.subtitleColumnId ?? ''} allowEmpty onChange={(value) => updateKanbanLayout({ subtitleColumnId: value || null })} /></label><label>오른쪽 값<ColumnSelect columns={available} value={draft.layout.trailingColumnId ?? ''} allowEmpty onChange={(value) => updateKanbanLayout({ trailingColumnId: value || null })} /></label></div><ColumnMultiSelect label="하단 컬럼" columns={available} selected={draft.layout.footerColumnIds ?? []} onChange={(ids) => updateKanbanLayout({ footerColumnIds: ids })} /><small>단일 선택 또는 참/거짓 컬럼이 그룹을 만듭니다.</small></fieldset>}
+        </div><RoleColumnEditor label="배지" columns={available.filter((column) => column.type === 'select' || column.type === 'boolean')} selected={draft.layout.badgeColumnIds ?? []} onChange={(ids) => updateListLayout({ badgeColumnIds: ids })} /><small>제목·보조 정보와 오른쪽 값 아래에 선택한 배지를 표시합니다.</small></fieldset>}
+        {draft.layout.kind === 'gallery' && <fieldset className="csv-view-layout-fields"><legend>카드 구성</legend><div className="csv-view-layout-field-grid"><label>카드 제목<ColumnSelect columns={available} value={draft.layout.titleColumnId} onChange={(value) => updateGalleryLayout({ titleColumnId: value })} /></label><label>보조 정보<ColumnSelect columns={available} value={draft.layout.subtitleColumnId ?? ''} allowEmpty onChange={(value) => updateGalleryLayout({ subtitleColumnId: value || null })} /></label><label>표지 이미지<ColumnSelect columns={available.filter((column) => isImageColumn(column, draft.displayOverrides[column.id]))} value={draft.layout.coverColumnId ?? ''} allowEmpty onChange={(value) => updateGalleryLayout({ coverColumnId: value || null })} /></label></div><RoleColumnEditor label="배지" columns={available.filter((column) => column.type === 'select' || column.type === 'boolean')} selected={draft.layout.badgeColumnIds ?? []} onChange={(ids) => updateGalleryLayout({ badgeColumnIds: ids })} /><RoleColumnEditor label="하단 컬럼" columns={available} selected={draft.layout.footerColumnIds ?? []} onChange={(ids) => updateGalleryLayout({ footerColumnIds: ids })} /></fieldset>}
+        {draft.layout.kind === 'kanban' && <fieldset className="csv-view-layout-fields"><legend>카드 구성</legend><label className="csv-builder-field">그룹 컬럼 <span className="csv-view-required">필수</span><ColumnSelect columns={available.filter((column) => column.type === 'select' || column.type === 'boolean')} value={draft.layout.groupColumnId} onChange={(value) => updateKanbanLayout({ groupColumnId: value })} /></label><div className="csv-view-layout-field-grid"><label>제목<ColumnSelect columns={available} value={draft.layout.titleColumnId ?? ''} allowEmpty onChange={(value) => updateKanbanLayout({ titleColumnId: value || null })} /></label><label>보조 정보<ColumnSelect columns={available} value={draft.layout.subtitleColumnId ?? ''} allowEmpty onChange={(value) => updateKanbanLayout({ subtitleColumnId: value || null })} /></label><label>오른쪽 값<ColumnSelect columns={available} value={draft.layout.trailingColumnId ?? ''} allowEmpty onChange={(value) => updateKanbanLayout({ trailingColumnId: value || null })} /></label></div><RoleColumnEditor label="하단 컬럼" columns={available} selected={draft.layout.footerColumnIds ?? []} onChange={(ids) => updateKanbanLayout({ footerColumnIds: ids })} /><small>단일 선택 또는 참/거짓 컬럼이 그룹을 만듭니다.</small></fieldset>}
         {draft.layout.kind === 'calendar' && <fieldset className="csv-view-layout-fields"><legend>캘린더 구성</legend><label className="csv-builder-field">날짜 컬럼 <span className="csv-view-required">필수</span><ColumnSelect columns={available.filter((column) => column.type === 'date' || column.type === 'datetime')} value={draft.layout.dateColumnId} onChange={(value) => updateCalendarLayout({ dateColumnId: value })} /></label><div className="csv-view-layout-field-grid"><label>제목<ColumnSelect columns={available} value={draft.layout.titleColumnId ?? ''} allowEmpty onChange={(value) => updateCalendarLayout({ titleColumnId: value || null })} /></label><label>보조 정보<ColumnSelect columns={available} value={draft.layout.subtitleColumnId ?? ''} allowEmpty onChange={(value) => updateCalendarLayout({ subtitleColumnId: value || null })} /></label><label>색 표시<ColumnSelect columns={available.filter((column) => column.type === 'select' || column.type === 'boolean')} value={draft.layout.colorColumnId ?? ''} allowEmpty onChange={(value) => updateCalendarLayout({ colorColumnId: value || null })} /></label></div><small>날짜가 해석되지 않은 행은 캘린더 아래에서 확인할 수 있습니다.</small></fieldset>}
-        <fieldset className="csv-view-column-options"><legend>표시 컬럼 <small>드래그로 순서를 바꿉니다.</small></legend><div className="csv-view-column-list">{orderedColumns.map((column) => {
-          const selectedIndex = draft.columnIds.indexOf(column.id)
+        {hasDisplayColumns && <fieldset className="csv-view-column-options"><legend>표시 컬럼 <small>드래그로 순서를 바꿉니다.</small></legend><div className="csv-view-column-list">{orderedColumns.map((column) => {
+          const selectedIndex = activeDisplayColumnIds.indexOf(column.id)
           const filterUse = filterColumns(draft.filter).includes(column.id)
           const sortIndex = draft.sort.findIndex((item) => item.columnId === column.id)
-          return <div key={column.id} className={`csv-view-column-row${selectedIndex < 0 ? ' off' : ''}${draggedColumnId === column.id ? ' dragging' : ''}`} draggable={selectedIndex >= 0} onDragStart={(event) => { if (selectedIndex < 0) return; setDraggedColumnId(column.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', column.id) }} onDragOver={(event) => { if (draggedColumnId) event.preventDefault() }} onDrop={(event) => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedColumnId; if (sourceId) reorderColumn(sourceId, column.id); setDraggedColumnId(null) }} onDragEnd={() => setDraggedColumnId(null)}><label><GripVertical className="csv-view-column-grip" size={14} aria-hidden="true" /><input type="checkbox" checked={selectedIndex >= 0} onChange={(event) => toggleColumn(column.id, event.currentTarget.checked)} /><span className="csv-column-type-mark">{column.type === 'integer' || column.type === 'decimal' ? '#' : column.type === 'boolean' ? '✓' : column.type === 'date' || column.type === 'datetime' ? '◷' : 'T'}</span><span className="csv-view-column-name">{column.label}</span><small>{column.type}</small></label>{selectedIndex < 0 && (filterUse || sortIndex >= 0) && <small className="csv-view-column-dependency">숨김 · {filterUse ? '필터' : '정렬'}에 사용</small>}{selectedIndex >= 0 && <div className="csv-view-column-actions"><button type="button" className="icon-button" aria-label={`${column.label} 위로`} disabled={selectedIndex === 0} onClick={() => moveColumn(column.id, -1)}><ChevronUp size={14} /></button><button type="button" className="icon-button" aria-label={`${column.label} 아래로`} disabled={selectedIndex === draft.columnIds.length - 1} onClick={() => moveColumn(column.id, 1)}><ChevronDown size={14} /></button></div>}<button type="button" className="csv-view-column-type" onClick={() => onEditColumnType(column.id)}>타입</button></div>
-        })}</div></fieldset>
+          return <div key={column.id} className={`csv-view-column-row${selectedIndex < 0 ? ' off' : ''}${draggedColumnId === column.id ? ' dragging' : ''}`} draggable={selectedIndex >= 0} onDragStart={(event) => { if (selectedIndex < 0) return; setDraggedColumnId(column.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', column.id) }} onDragOver={(event) => { if (draggedColumnId) event.preventDefault() }} onDrop={(event) => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedColumnId; if (sourceId) reorderColumn(sourceId, column.id); setDraggedColumnId(null) }} onDragEnd={() => setDraggedColumnId(null)}><label><GripVertical className="csv-view-column-grip" size={14} aria-hidden="true" /><input type="checkbox" checked={selectedIndex >= 0} disabled={selectedIndex >= 0 && activeDisplayColumnIds.length === 1} onChange={(event) => toggleColumn(column.id, event.currentTarget.checked)} /><span className="csv-column-type-mark">{column.type === 'integer' || column.type === 'decimal' ? '#' : column.type === 'boolean' ? '✓' : column.type === 'date' || column.type === 'datetime' ? '◷' : 'T'}</span><span className="csv-view-column-name">{column.label}</span><small>{column.type}</small></label>{selectedIndex < 0 && (filterUse || sortIndex >= 0) && <small className="csv-view-column-dependency">숨김 · {filterUse ? '필터' : '정렬'}에 사용</small>}{selectedIndex >= 0 && <div className="csv-view-column-actions"><button type="button" className="icon-button" aria-label={`${column.label} 위로`} disabled={selectedIndex === 0} onClick={() => moveColumn(column.id, -1)}><ChevronUp size={14} /></button><button type="button" className="icon-button" aria-label={`${column.label} 아래로`} disabled={selectedIndex === activeDisplayColumnIds.length - 1} onClick={() => moveColumn(column.id, 1)}><ChevronDown size={14} /></button></div>}<button type="button" className="csv-view-column-type" onClick={() => onEditColumnType(column.id)}>타입</button></div>
+        })}</div></fieldset>}
         <FilterEditor columns={available} draft={draft} onChange={change} />
         <SortEditor columns={available} sort={draft.sort} onChange={(sort) => change({ ...draft, sort })} />
         {conflict && <div className="csv-view-conflict" role="alert"><strong>다른 탭에서 설정이 바뀌었습니다.</strong><span>초안은 유지했습니다. 현재 저장본 revision {conflict.record.profile.profileRevision}</span><button type="button" className="subtle-button" onClick={() => { void apply() }}>현재 저장본에 다시 적용</button></div>}
@@ -123,7 +131,7 @@ function CsvBuilderPreview({ draft, preview, columns, sourceAvailable, fileBacke
       : preview.status === 'error' ? <div className="csv-view-preview-state" role="alert"><span><strong>미리보기를 불러오지 못했습니다</strong><small>{preview.error.message} {csvQueryNextStep(preview.error)}</small></span></div>
         : preview.status === 'loading' ? <div className="csv-view-preview-state" role="status">미리보기 조회 중…</div>
           : preview.status === 'ready' && preview.rows.length === 0 ? <div className="csv-view-preview-state">조건에 맞는 행이 없습니다.</div>
-            : preview.status === 'ready' && draft.layout.kind === 'grid' ? <div className="csv-view-preview-table-wrap"><CsvDataTable className="csv-view-preview-table" columns={draft.columnIds.flatMap((id) => { const column = columnMap.get(id); return column ? [{ id, column, label: draft.displayOverrides[id]?.label ?? column.label }] : [] })} rows={preview.rows.slice(0, 200)} totalRows={preview.rows.length} displayOverrides={draft.displayOverrides} compact /></div>
+            : preview.status === 'ready' && draft.layout.kind === 'grid' ? <div className="csv-view-preview-table-wrap"><CsvDataTable className="csv-view-preview-table" columns={displayColumnIds(draft, columns.map((column) => column.id)).flatMap((id) => { const column = columnMap.get(id); return column ? [{ id, column, label: draft.displayOverrides[id]?.label ?? column.label }] : [] })} rows={preview.rows.slice(0, 200)} totalRows={preview.rows.length} displayOverrides={draft.displayOverrides} compact /></div>
               : preview.status === 'ready' ? <div className="csv-view-preview-layout-wrap"><CsvViewLayoutPreview view={draft} columns={columns} rows={preview.rows.slice(0, 40)} /></div>
                 : <div className="csv-view-preview-state">조건을 설정하면 제한된 결과를 미리 볼 수 있습니다.</div>}
   </div>
@@ -133,8 +141,27 @@ function ColumnSelect({ columns, value, allowEmpty = false, onChange }: { column
   return <select value={value} onChange={(event) => onChange(event.currentTarget.value)}>{allowEmpty && <option value="">없음</option>}{columns.map((column) => <option key={column.id} value={column.id}>{column.label}</option>)}</select>
 }
 
-function ColumnMultiSelect({ label, columns, selected, onChange }: { label: string; columns: CsvColumnDefinition[]; selected: string[]; onChange(ids: string[]): void }) {
-  return <fieldset className="csv-view-role-field"><legend>{label}</legend>{columns.length ? <div className="csv-view-role-options">{columns.map((column) => <label key={column.id}><input type="checkbox" checked={selected.includes(column.id)} onChange={(event) => onChange(event.currentTarget.checked ? [...selected, column.id] : selected.filter((id) => id !== column.id))} />{column.label}</label>)}</div> : <small>연결할 컬럼이 없습니다.</small>}</fieldset>
+function isImageColumn(column: CsvColumnDefinition, override: CsvViewDefinition['displayOverrides'][string] | undefined): boolean {
+  if (column.type !== 'text') return false
+  const display = resolveDisplay(column, override)
+  return 'as' in display && display.as === 'image'
+}
+
+function RoleColumnEditor({ label, columns, selected, onChange }: { label: string; columns: CsvColumnDefinition[]; selected: string[]; onChange(ids: string[]): void }) {
+  const [candidateId, setCandidateId] = useState('')
+  const available = columns.filter((column) => !selected.includes(column.id))
+  const add = () => {
+    if (!candidateId || !available.some((column) => column.id === candidateId)) return
+    onChange([...selected, candidateId])
+    setCandidateId('')
+  }
+  return <fieldset className="csv-view-role-field"><legend>{label}</legend>
+    {selected.length > 0 && <ul className="csv-view-role-selected">{selected.map((id) => {
+      const column = columns.find((item) => item.id === id)
+      return <li key={id}><span title={column?.label ?? id}>{column?.label ?? id}</span><button type="button" className="subtle-button" aria-label={`${column?.label ?? id} ${label} 제거`} onClick={() => onChange(selected.filter((selectedId) => selectedId !== id))}>제거</button></li>
+    })}</ul>}
+    {available.length > 0 ? <div className="csv-view-role-add"><label className="visually-hidden" htmlFor={`role-${label}-column`}>{label} 컬럼 추가</label><select id={`role-${label}-column`} aria-label={`${label} 컬럼 추가`} value={candidateId} onChange={(event) => setCandidateId(event.currentTarget.value)}><option value="">컬럼 선택</option>{available.map((column) => <option key={column.id} value={column.id}>{column.label}</option>)}</select><button type="button" className="subtle-button" onClick={add} disabled={!candidateId}>추가</button></div> : <small>{selected.length ? '추가할 컬럼이 없습니다.' : '연결할 컬럼이 없습니다.'}</small>}
+  </fieldset>
 }
 
 function FilterEditor({ columns, draft, onChange }: { columns: CsvColumnDefinition[]; draft: CsvViewDefinition; onChange(draft: CsvViewDefinition): void }) {

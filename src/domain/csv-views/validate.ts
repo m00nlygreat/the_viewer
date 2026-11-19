@@ -326,6 +326,11 @@ function checkView(input: unknown, columns: ReadonlyMap<string, CsvColumnDefinit
     const value = checkOverride(column, override, `${path}/displayOverrides/${escapePointer(columnId)}`, issues)
     if (value) displayOverrides[columnId] = value
   }
+  if (layout?.kind === 'gallery' && layout.coverColumnId) {
+    const cover = columns.get(layout.coverColumnId)
+    const display = cover?.type === 'text' ? displayOverrides[layout.coverColumnId]?.display ?? cover.display : null
+    if (cover && (cover.type !== 'text' || !display || !('as' in display) || display.as !== 'image')) issues.push(issue(`${path}/layout/coverColumnId`, 'layout-column-type'))
+  }
   if (!layout || issues.length || typeof input.id !== 'string' || typeof input.name !== 'string' || !isIsoDateTime(input.updatedAt) || !Array.isArray(input.columnIds) || !Array.isArray(input.sort)) return { value: null, issues, filledDefaults }
   return { value: { id: input.id, name: input.name, layout, columnIds, filter: (input.filter ?? null) as CsvViewDefinition['filter'], sort, displayOverrides, updatedAt: input.updatedAt }, issues, filledDefaults }
 }
@@ -364,7 +369,7 @@ function checkLayout(input: unknown, columns: ReadonlyMap<string, CsvColumnDefin
       if (input.coverColumnId) {
         reference(input.coverColumnId, `${path}/coverColumnId`)
         const cover = columns.get(input.coverColumnId as string)
-        if (cover && (cover.type !== 'text' || cover.display.as !== 'image')) issues.push(issue(`${path}/coverColumnId`, 'layout-column-type'))
+        if (cover && cover.type !== 'text') issues.push(issue(`${path}/coverColumnId`, 'layout-column-type'))
       }
       return { kind: 'gallery', titleColumnId: input.titleColumnId as string, coverColumnId: input.coverColumnId as string | null, subtitleColumnId: optionalReference(input.subtitleColumnId, `${path}/subtitleColumnId`), badgeColumnIds: columnList(input.badgeColumnIds, `${path}/badgeColumnIds`, ['select', 'boolean']), footerColumnIds: columnList(input.footerColumnIds, `${path}/footerColumnIds`) }
     case 'kanban':

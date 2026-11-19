@@ -2,6 +2,7 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { FORMATS, type CalendarModel, type ContactModel, type CsvModel, type DocumentModel, type DocumentModelByFormat, type EmailAttachment, type EmailModel, type Format, type PersistedViewerDocument, type PersistedViewerDocumentBlobs, type PersistedViewerDocumentPayload, type PersistedViewerDocumentSummary, type ThemePreference, type ViewerDocument } from '../domain/types'
 import { normalizeEmailAttachmentBytes } from '../domain/emailAttachmentBytes'
 import { isFolderPath, type FolderWorkspace } from '../domain/workspace'
+import { isDocumentSourceLocation } from '../domain/sourceLocation'
 import { isStructuredModel } from '../domain/structured/validate'
 import { emptyEnvModel } from '../domain/env/sourcePatch'
 import { isEnvModel } from '../domain/env/validate'
@@ -467,7 +468,7 @@ export function normalizeStoredDocument(value: unknown): ViewerDocument {
   const parseState = stored.parseState === 'ready' || stored.parseState === 'error' || stored.parseState === 'pending' ? stored.parseState : 'pending'
   const diagnostics = Array.isArray(stored.diagnostics) ? stored.diagnostics.filter((item) => item && typeof item.message === 'string' && ['error', 'warning', 'info'].includes(item.severity)) : []
   const mode = stored.mode === 'source' ? 'source' : 'view'
-  const document = { ...stored, format, model }
+  const document = { ...stored, format, model, sourceLocation: isDocumentSourceLocation(stored.sourceLocation) ? stored.sourceLocation : undefined }
   delete document.sourceBytes
   delete document.schemaVersion
   return {

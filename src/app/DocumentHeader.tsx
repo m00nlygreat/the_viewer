@@ -1,5 +1,6 @@
 import { ChevronDown, Command, Download, FileText, FolderOpen, LogOut, Moon, Redo2, Save, Settings2, Share2, Sun, Undo2 } from 'lucide-react'
 import type { FileBackedCsvDocument, ViewerDocument } from '../domain/types'
+import { displaySourceUrl } from '../domain/sourceLocation'
 import { safeDisplayFileName } from './displayName'
 
 interface HeaderProps {
@@ -28,10 +29,21 @@ export function DocumentHeader(props: HeaderProps) {
   const badge = plainText ? 'TXT' : unsupported ? '?' : document?.format.toUpperCase()
   const canUndo = document ? ('capabilities' in document ? document.capabilities.canUndo : !unsupported) : false
   const readOnlyCsv = Boolean(document && 'storageKind' in document && document.storageKind === 'file-csv')
+  const sourceLocation = document ? getSourceLocationLabel(document) : null
   return <>
   <header className="topbar">
     <button className="mobile-menu icon-button" aria-label="열린 파일" onClick={onOpenCommands}><span className="visually-hidden">열린 파일</span><Command size={17} /></button>
-    <div className="topbar-document"><span className="topbar-file-icon">{document ? <span className={`file-badge format-${document.format}`}>{badge}</span> : <FileText size={16} />}</span><span className="topbar-name">{document ? safeDisplayFileName(document.name) : '작업 공간'}</span>{document?.isDirty && <span className="modified-pill">수정됨</span>}{document && 'parentId' in document && document.parentId && <span className="parent-tag">첨부에서 열림</span>}</div>
+    <div className="topbar-document">
+      <span className="topbar-file-icon">{document ? <span className={`file-badge format-${document.format}`}>{badge}</span> : <FileText size={16} />}</span>
+      <div className="topbar-document-meta">
+        <div className="topbar-title-line">
+          <span className="topbar-name">{document ? safeDisplayFileName(document.name) : '작업 공간'}</span>
+          {sourceLocation && <span className="topbar-source-location" title={sourceLocation}>{sourceLocation}</span>}
+          {document?.isDirty && <span className="modified-pill">수정됨</span>}
+          {document && 'parentId' in document && document.parentId && <span className="parent-tag">첨부에서 열림</span>}
+        </div>
+      </div>
+    </div>
     <div className="topbar-actions">
       {document ? <>
         <button className="mobile-folder-browse icon-button" aria-label="폴더 탐색" title="폴더 탐색" onClick={onBrowseFolder}><FolderOpen size={16} /></button>
@@ -54,6 +66,14 @@ export function DocumentHeader(props: HeaderProps) {
   </header>
   {csvWorkspace && <div id="csv-view-tabs-mobile-slot" className="mobile-csv-tabs-slot" />}
   </>
+}
+
+function getSourceLocationLabel(document: ViewerDocument | FileBackedCsvDocument): string | null {
+  if ('parentId' in document && document.parentId) return null
+  const source = 'sourceLocation' in document ? document.sourceLocation : undefined
+  if (source?.kind === 'url') return displaySourceUrl(source.url)
+  if (document.folderRef?.path) return document.folderRef.path
+  return null
 }
 
 export function DocumentActionBar({ document, saveLabel, onModeChange, onUndo, onRedo, onSave }: Pick<HeaderProps, 'document' | 'saveLabel' | 'onModeChange' | 'onUndo' | 'onRedo' | 'onSave'>) {

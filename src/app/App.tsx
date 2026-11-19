@@ -34,6 +34,7 @@ import type { ParsedFile } from '../domain/formatParsing'
 import { parseTextWithWorker, parseWithWorker } from '../domain/workerClient'
 import { hasFatalDiagnostics } from '../domain/parseDiagnostics'
 import { isStructuredFormat, type StructuredFormat } from '../domain/structured/model'
+import { isSourceUrl } from '../domain/sourceLocation'
 import { isBlockEditorFormat } from '../domain/blockDocuments'
 import type { EnvModel } from '../domain/env/model'
 import { isStructuredViewerDocument, matchDocumentModel, replaceDocumentModel } from '../domain/documentModel'
@@ -204,6 +205,7 @@ export function App() {
         ...payload,
         mode: latest.mode,
         folderRef: latest.folderRef,
+        sourceLocation: latest.sourceLocation,
         sourceFileHandle: latest.sourceFileHandle,
         fileSource: latest.fileSource,
         parentId: latest.parentId,
@@ -549,11 +551,13 @@ export function App() {
           : await makeFileDocumentFromBytes(file.name, file.type, bytes, undefined, { transferInputBytes: true })
         if (workspaceOperations.current.locked) return deferRemaining(index)
         if (forcedFormat && document.format !== forcedFormat) throw new Error(`선택한 형식 ${forcedFormat.toUpperCase()}과 파일 내용이 다릅니다.`)
+        const sourceLocation = origin ? { kind: 'shared' as const } : folderRef ? undefined : { kind: 'local-file' as const }
         const openedDocument: ViewerDocument = {
           ...document,
           ...(sourceFile instanceof File ? { sourceLastModified: sourceFile.lastModified } : {}),
           ...(file.fileHandle ? { sourceFileHandle: file.fileHandle } : {}),
           ...(folderRef ? { folderRef } : {}),
+          ...(sourceLocation ? { sourceLocation } : {}),
           ...(origin ? { ...origin } : {})
         }
         documentStore.upsert(openedDocument)
@@ -674,7 +678,16 @@ export function App() {
             const document = await makeDocumentFromBytes(received.file.name, received.file.type, received.file.bytes)
             if (workspaceOperations.current.locked) { queueRelayRoute(route); return }
             if (document.format !== received.kind) throw new Error('전달된 파일 형식 정보와 실제 파일 내용이 다릅니다.')
-            imported = { ...document, id: route.ticketId, relayTicketId: route.ticketId, ...(received.source === 'file-url' ? { fileSource: 'file-url' as const } : {}) }
+            const sourceLocation = isSourceUrl(received.sourceUrl)
+              ? { kind: 'url' as const, url: received.sourceUrl }
+              : received.source === 'file-url' ? { kind: 'local-file' as const } : undefined
+            imported = {
+              ...document,
+              id: route.ticketId,
+              relayTicketId: route.ticketId,
+              ...(received.source === 'file-url' ? { fileSource: 'file-url' as const } : {}),
+              ...(sourceLocation ? { sourceLocation } : {})
+            }
           }
           if (workspaceOperations.current.locked) { queueRelayRoute(route); return }
           if (recoveryEnabled) await recoveryWriteQueue.current.enqueue(imported.id, () => saveDocument(imported!))

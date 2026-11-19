@@ -18,7 +18,7 @@ describe('parseCell', () => {
   })
 
   it('checks decimal grouping and scale without rounding', () => {
-    const decimal = column('decimal', ['12.345'])
+    const decimal = column('decimal', ['12.345']) as Extract<CsvColumnDefinition, { type: 'decimal' }>
     expect(parseCell(decimal, '12.345')).toMatchObject({ state: 'value', value: '12.345' })
     expect(parseCell(decimal, '12.3456')).toMatchObject({ state: 'invalid', code: 'scale' })
     decimal.parse.thousandsSeparator = ','
@@ -30,7 +30,7 @@ describe('parseCell', () => {
     const date = column('date')
     expect(parseCell(date, '2024-02-29')).toMatchObject({ state: 'value', value: '2024-02-29' })
     expect(parseCell(date, '2023-02-29')).toMatchObject({ state: 'invalid', code: 'date' })
-    const datetime = column('datetime')
+    const datetime = column('datetime') as Extract<CsvColumnDefinition, { type: 'datetime' }>
     expect(parseCell(datetime, '2026-11-16T09:30:00+09:00')).toMatchObject({ state: 'value', value: '2026-11-16T00:30:00.000Z' })
     expect(parseCell(datetime, '2026-11-16T09:30:00')).toMatchObject({ state: 'invalid', code: 'offset-required' })
     datetime.parse.allowTwelveHour = true

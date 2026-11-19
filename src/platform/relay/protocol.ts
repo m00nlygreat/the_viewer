@@ -1,5 +1,6 @@
 import { FORMATS, type Format } from '../fileTypes'
 import { DESKTOP_FILE_LIMIT, MOBILE_FILE_LIMIT, maxInputFileBytes } from '../../domain/inputPolicy'
+import { isSourceUrl } from '../../domain/sourceLocation'
 
 export const PROTOCOL_VERSION = 1
 export const PORT_NAME = 'the-viewer-relay-v1'
@@ -18,7 +19,7 @@ export type RelayKind = Format | 'workspace-snapshot'
 export type RelaySource = 'file-url'
 
 export interface HelloMessage { type: 'HELLO'; version: number; ticketId: string }
-export interface MetaMessage { type: 'META'; version: number; ticketId: string; kind: RelayKind; source?: RelaySource; name: string; mimeType: string; byteLength: number; chunkCount: number }
+export interface MetaMessage { type: 'META'; version: number; ticketId: string; kind: RelayKind; source?: RelaySource; sourceUrl?: string; name: string; mimeType: string; byteLength: number; chunkCount: number }
 export interface ReadMessage { type: 'READ'; ticketId: string; sequence: number }
 export interface ChunkMessage { type: 'CHUNK'; ticketId: string; sequence: number; base64: string }
 export interface CommitMessage { type: 'COMMIT'; ticketId: string }
@@ -96,6 +97,7 @@ export function isRelayMessage(value: unknown): value is RelayMessage {
     case 'HELLO': return Number.isInteger(value.version) && typeof value.version === 'number'
     case 'META': return typeof value.version === 'number' && Number.isInteger(value.version) && isRelayKind(value.kind) &&
       (value.source === undefined || value.source === 'file-url') &&
+      (value.sourceUrl === undefined || isSourceUrl(value.sourceUrl)) &&
       typeof value.name === 'string' && value.name.length > 0 && value.name.length <= 255 &&
       typeof value.mimeType === 'string' && value.mimeType.length <= 128 &&
       Number.isSafeInteger(value.byteLength) && typeof value.byteLength === 'number' && value.byteLength >= 0 &&

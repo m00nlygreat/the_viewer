@@ -1,6 +1,7 @@
 import { ensureAutoOpenRules } from './autoOpen'
 import { assertTicketAvailable, commitTicket, purgeExpiredTickets, readCompletedTicket, readTicket, RelayStoreError, type CompletedRelayTicket, type RelayTicket } from './relayStore'
 import { bytesToBase64, isRelayMessage, isSupportedProtocolVersion, isTicketId, isTrustedPwaSender, PORT_NAME, PROTOCOL_VERSION, CHUNK_BYTES, type RelayErrorCode } from '../relay/protocol'
+import { isSourceUrl } from '../../domain/sourceLocation'
 
 const MENU_ID = 'open-with-the-viewer'
 const CLEANUP_ALARM = 'the-viewer-relay-expiry-cleanup'
@@ -125,6 +126,7 @@ function handleRelayPort(port: chrome.runtime.Port): void {
           port.postMessage({
             type: 'META', version: PROTOCOL_VERSION, ticketId: next.id, kind: next.kind,
             ...(next.source ? { source: next.source } : {}),
+            ...(isSourceUrl(next.sourceUrl) ? { sourceUrl: next.sourceUrl } : {}),
             name: next.name, mimeType: next.mimeType, byteLength: next.byteLength,
             chunkCount: Math.ceil(next.byteLength / CHUNK_BYTES)
           })

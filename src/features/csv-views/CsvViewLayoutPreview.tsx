@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { encodeGroupKey } from '../../domain/csv-views/query'
+import { displayColumnIds, encodeGroupKey } from '../../domain/csv-views/query'
 import type { CsvCell, CsvColumnDefinition, CsvQueryRow, CsvViewDefinition } from '../../domain/csv-views/model'
 import { CsvCellDisplay } from './CsvCellDisplay'
 import { CsvGalleryView } from './CsvGalleryView'
@@ -17,11 +17,12 @@ const previewPage = {
 
 export function CsvViewLayoutPreview({ view, columns, rows }: { view: CsvViewDefinition; columns: CsvColumnDefinition[]; rows: CsvQueryRow[] }) {
   const columnMap = useMemo(() => new Map(columns.map((column) => [column.id, column])), [columns])
+  const displayIds = displayColumnIds(view, columns.map((column) => column.id))
   if (view.layout.kind === 'list') {
-    return <CsvListView layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={rows} {...previewPage} />
+    return <CsvListView layout={view.layout} columns={columnMap} columnIds={displayIds} displayOverrides={view.displayOverrides} rows={rows} {...previewPage} />
   }
   if (view.layout.kind === 'gallery') {
-    return <CsvGalleryView layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={rows} {...previewPage} />
+    return <CsvGalleryView layout={view.layout} columns={columnMap} columnIds={displayIds} displayOverrides={view.displayOverrides} rows={rows} {...previewPage} />
   }
   if (view.layout.kind === 'kanban') return <KanbanPreview layout={view.layout} displayOverrides={view.displayOverrides} columns={columnMap} rows={rows} />
   if (view.layout.kind === 'calendar') return <CalendarPreview layout={view.layout} displayOverrides={view.displayOverrides} columns={columnMap} rows={rows} />

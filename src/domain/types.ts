@@ -7,6 +7,10 @@ export { FORMATS, FORMAT_MIME, FORMAT_MIME_ALIASES, GENERIC_FILE_MIME_TYPES, FOR
 export type { Format } from './fileFormats'
 export type EditorMode = 'view' | 'source'
 export type ThemePreference = 'system' | 'light' | 'dark'
+export type DocumentSourceLocation =
+  | { kind: 'url'; url: string }
+  | { kind: 'local-file' }
+  | { kind: 'shared' }
 
 export interface ParseDiagnostic {
   severity: 'error' | 'warning' | 'info'
@@ -131,6 +135,8 @@ interface ViewerDocumentFields {
   lastEditedAt: number
   /** Original local file's modification time, when it was available at selection. */
   sourceLastModified?: number
+  /** The file's original URL or how it entered the workspace, when known. */
+  sourceLocation?: DocumentSourceLocation
   parentId?: string
   /** Membership in the currently selected folder, independent of email attachment ownership. */
   folderRef?: FolderDocumentRef

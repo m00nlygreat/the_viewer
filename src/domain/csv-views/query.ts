@@ -25,8 +25,19 @@ export function evaluateFilter(filter: CsvFilter, columns: ReadonlyMap<string, C
   return evaluateTruth(filter, columns, cellOf) === true
 }
 
-export function projectColumns(view: CsvViewDefinition): string[] {
-  const result = new Set(view.columnIds)
+export function displayColumnIds(view: CsvViewDefinition, sourceColumnIds: string[]): string[] {
+  if (view.layout.kind !== 'grid' && view.layout.kind !== 'gallery') return []
+  return view.columnIds.length ? view.columnIds : sourceColumnIds
+}
+
+export function asCalendarTableView(view: CsvViewDefinition, sourceColumnIds: string[]): CsvViewDefinition {
+  const columnIds = view.columnIds.length ? [...view.columnIds] : [...sourceColumnIds]
+  if (view.layout.kind === 'calendar' && !columnIds.includes(view.layout.dateColumnId)) columnIds.push(view.layout.dateColumnId)
+  return { ...view, columnIds, layout: { kind: 'grid' } }
+}
+
+export function projectColumns(view: CsvViewDefinition, sourceColumnIds: string[] = []): string[] {
+  const result = new Set(view.layout.kind === 'grid' || view.layout.kind === 'gallery' ? displayColumnIds(view, sourceColumnIds) : [])
   for (const columnId of filterColumns(view.filter)) result.add(columnId)
   for (const item of effectiveSort(view)) result.add(item.columnId)
   const layout = view.layout

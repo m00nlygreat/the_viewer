@@ -18,6 +18,7 @@ import { CsvViewBuilder } from './CsvViewBuilder'
 import { CsvViewHost } from './CsvViewHost'
 import { CsvViewManager } from './CsvViewManager'
 import { CsvViewTabs } from './CsvViewTabs'
+import { asCalendarTableView } from '../../domain/csv-views/query'
 import type { CsvViewSelection as Selection } from '../../domain/csv-views/model'
 
 type CsvDocument = Extract<ViewerDocument, { format: 'csv' }> | FileBackedCsvDocument
@@ -200,8 +201,9 @@ export function CsvViewWorkspace({ document, defaultContent, onModeChange, onErr
     else setImportMessage(result.reason === 'storage' ? result.error.message : result.reason === 'invalid' ? result.issues.map((issue) => issue.detail ?? issue.code).join(' · ') : '다른 탭에서 설정이 변경되었습니다.')
   }
   const showCalendarTable = (view: CsvViewDefinition) => {
-    const tableView: CsvViewDefinition = { ...view, layout: { kind: 'grid' } }
-    setCalendarTableView(view)
+    const sourceColumnIds = stored?.record.profile.columns.map((column) => column.id) ?? []
+    const tableView = asCalendarTableView(view, sourceColumnIds)
+    setCalendarTableView(tableView)
     controller?.previewDraft(tableView)
   }
   const returnToCalendar = () => {
@@ -227,7 +229,7 @@ export function CsvViewWorkspace({ document, defaultContent, onModeChange, onErr
     ? `${document.id}:${document.fileId}:${document.sourceRevision}:${stored.record.profile.schemaRevision}` : null
   const selectedQuery = state.query
   const editorSample = sample ?? (document.format === 'csv' && 'model' in document ? memorySample(document) : null)
-  const temporaryTableView = calendarTableView && selectedView?.id === calendarTableView.id ? { ...calendarTableView, layout: { kind: 'grid' as const } } : null
+  const temporaryTableView = calendarTableView && selectedView?.id === calendarTableView.id ? calendarTableView : null
   return <div className="csv-view-workspace">
     <input ref={importInput} className="visually-hidden" type="file" accept="application/json,.json" aria-label="뷰 설정 파일 선택" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readImport(file); event.currentTarget.value = '' }} />
     {tabTargets.desktop && createPortal(<CsvViewTabs views={views} selection={state.selection} canAddView={state.link.status === 'linked'} placement="desktop" onSelect={select} onAddView={addView} />, tabTargets.desktop)}

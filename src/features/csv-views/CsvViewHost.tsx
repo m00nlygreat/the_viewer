@@ -9,6 +9,7 @@ import { CsvKanbanView } from './CsvKanbanView'
 import { CsvCalendarView } from './CsvCalendarView'
 import type { CsvSample } from '../../domain/csv-views/model'
 import type { CsvViewController } from '../../app/csvViewController'
+import { displayColumnIds } from '../../domain/csv-views/query'
 import { ArrowDown, ArrowDownUp, ArrowUp, Copy, Download, Filter, LockKeyhole, MoreHorizontal, Plus, Search, Settings2, Trash2, Type, Upload, X } from 'lucide-react'
 
 export interface CsvViewHostProps {
@@ -46,6 +47,7 @@ export function CsvViewHost({ view, columns, query, onLoadMore, onRetry, onEditV
   const [countError, setCountError] = useState('')
   const countRun = useRef(0)
   const columnMap = new Map(columns.map((column) => [column.id, column]))
+  const displayIds = displayColumnIds(view, columns.map((column) => column.id))
   const scoped = view.layout.kind === 'kanban' || view.layout.kind === 'calendar'
   const filterKey = JSON.stringify(view.filter)
   useEffect(() => { countRun.current += 1; setExactCount(null); setCountError(''); setCounting(false) }, [view.id, filterKey, view.layout.kind])
@@ -90,16 +92,16 @@ export function CsvViewHost({ view, columns, query, onLoadMore, onRetry, onEditV
     {view.layout.kind === 'kanban' && <CsvKanbanView view={view as CsvViewDefinition & { layout: Extract<CsvViewDefinition['layout'], { kind: 'kanban' }> }} columns={columns} sample={sample} controller={controller} onEditView={onEditView} />}
     {view.layout.kind === 'calendar' && <CsvCalendarView view={view as CsvViewDefinition & { layout: Extract<CsvViewDefinition['layout'], { kind: 'calendar' }> }} columns={columns} sample={sample} controller={controller} cacheToken={cacheToken} onShowTable={onShowTable} onEditView={onEditView} />}
     {!scoped && query.status === 'loading' && <>
-      {view.layout.kind === 'grid' ? <div className="csv-view-loading-grid" role="status" aria-label="CSV 결과 조회 중"><CsvDataTable columns={view.columnIds.flatMap((id) => { const column = columnMap.get(id); return column ? [{ id, column, label: view.displayOverrides[id]?.label ?? column.label }] : [] })} rows={[]} displayOverrides={view.displayOverrides} loadingRows={10} /></div> : <div className="csv-view-state" role="status">조회 중…</div>}
+      {view.layout.kind === 'grid' ? <div className="csv-view-loading-grid" role="status" aria-label="CSV 결과 조회 중"><CsvDataTable columns={displayIds.flatMap((id) => { const column = columnMap.get(id); return column ? [{ id, column, label: view.displayOverrides[id]?.label ?? column.label }] : [] })} rows={[]} displayOverrides={view.displayOverrides} loadingRows={10} /></div> : <div className="csv-view-state" role="status">조회 중…</div>}
       <footer className="csv-view-statusbar" role="status"><span>조회 중…</span><span className="csv-view-status-spacer" />표본과 원본 크기에 따라 시간이 걸릴 수 있습니다.</footer>
     </>}
     {!scoped && query.status === 'error' && <div className="csv-view-state" role="alert"><p>{query.error.message}</p><small>{csvQueryNextStep(query.error)}</small><div><button type="button" className="secondary-button" onClick={onRetry}>다시 조회</button><button type="button" className="subtle-button" onClick={onEditView}>조건 수정</button></div></div>}
     {!scoped && query.status === 'idle' && <div className="csv-view-state" role="status">조회 조건을 준비하고 있습니다.</div>}
     {!scoped && query.status === 'ready' && query.rows.length === 0 && <div className="csv-view-empty-state" role="status"><strong>조건에 맞는 행이 없습니다</strong><p>{view.filter ? `현재 필터: ${filterSummary(view.filter, columnMap)}. ` : '현재 조건에는 '}해석 실패와 빈 값은 일반 비교에서 제외됩니다.</p><div>{editable && view.filter && <button type="button" className="secondary-button" onClick={() => onChangeView({ ...view, filter: null, updatedAt: new Date().toISOString() })}>필터 해제</button>}<button type="button" className="secondary-button" onClick={onEditView}>{editable ? '뷰 설정' : '보기 추가'}</button></div></div>}
     {!scoped && query.status === 'ready' && query.rows.length > 0 && <>
-      {view.layout.kind === 'grid' && <CsvQueryTable key={query.queryId} layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} sort={view.sort} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} onAdjustQuery={onEditView} onEditColumnType={onEditColumnType} />}
+      {view.layout.kind === 'grid' && <CsvQueryTable key={query.queryId} layout={view.layout} columns={columnMap} columnIds={displayIds} displayOverrides={view.displayOverrides} rows={query.rows} sort={view.sort} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} onAdjustQuery={onEditView} onEditColumnType={onEditColumnType} />}
       {view.layout.kind === 'list' && <CsvListView layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} onAdjustQuery={onEditView} />}
-      {view.layout.kind === 'gallery' && <CsvGalleryView layout={view.layout} columns={columnMap} columnIds={view.columnIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} onAdjustQuery={onEditView} />}
+      {view.layout.kind === 'gallery' && <CsvGalleryView layout={view.layout} columns={columnMap} columnIds={displayIds} displayOverrides={view.displayOverrides} rows={query.rows} hasMore={query.hasMore} loadingMore={query.loadingMore} loadMoreError={query.loadMoreError} onLoadMore={onLoadMore} onRetryLoadMore={onRetry} onAdjustQuery={onEditView} />}
     </>}
     {query.status === 'loading' && <footer className="csv-view-statusbar" role="status"><span>조회 중…</span><span className="csv-view-status-spacer" /><button type="button" className="csv-view-status-action" onClick={() => controller.cancel()}>취소</button></footer>}
     {query.status === 'ready' && <footer className="csv-view-statusbar" role="status"><span>{resultLabel(query, sample, exactCount)}</span>{view.layout.kind === 'grid' && <QueryStateSummary rows={query.rows} scope={query.total.status === 'exact' || sample?.reachedEof ? '결과 기준' : '확보 행 기준'} />}{query.diagnostics.length > 0 && <span className="csv-view-status-warning">진단 {query.diagnostics.length}개 · {diagnosticLabel(query.diagnostics[0]!.code)}</span>}{countError && <span className="csv-view-status-warning" title={countError}>{countError}</span>}<span className="csv-view-status-spacer" />{query.loadingMore ? <><span>추가 행 불러오는 중…</span><button type="button" className="csv-view-status-action" onClick={() => controller.cancel()}>취소</button></> : <button type="button" className="csv-view-status-action" onClick={() => { if (counting) controller.cancel(); else void countRows() }}>{counting ? '건수 계산 취소' : exactCount ? '건수 다시 세기' : '건수 세기'}</button>}</footer>}

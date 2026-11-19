@@ -14,7 +14,7 @@ export { parseRelayRoute } from '../relay/protocol'
 export type { RelayRoute } from '../relay/protocol'
 
 export interface RelayProgress { receivedBytes: number; totalBytes: number }
-export interface ReceivedExtensionFile { ticketId: string; kind: MetaMessage['kind']; source?: MetaMessage['source']; file: PickedBytesFile }
+export interface ReceivedExtensionFile { ticketId: string; kind: MetaMessage['kind']; source?: MetaMessage['source']; sourceUrl?: string; file: PickedBytesFile }
 export interface ReceiveOptions { extensionId: string; ticketId: string; onProgress?: (progress: RelayProgress) => void }
 const TIMEOUT_MS = 30_000
 const receiving = new Map<string, Promise<ReceivedExtensionFile>>()
@@ -109,7 +109,7 @@ async function receiveOnce({ extensionId, ticketId, onProgress }: ReceiveOptions
       throw new RelayTransferError('SIZE_LIMIT', '복원한 파일 크기가 원본과 다릅니다.')
     }
     connectedPorts.set(ticketId, port)
-    return { ticketId, kind: response.kind, source: response.source, file: { name: response.name, type: response.mimeType, bytes } }
+    return { ticketId, kind: response.kind, source: response.source, sourceUrl: response.sourceUrl, file: { name: response.name, type: response.mimeType, bytes } }
   } catch (error) {
     try { port.disconnect() } catch { /* Already closed. */ }
     throw normalizeError(error)

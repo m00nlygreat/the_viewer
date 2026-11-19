@@ -27,7 +27,7 @@ export function CsvViewTabs({ views, selection, canAddView, placement, onSelect,
   return <div className={`csv-view-tab-row csv-view-tab-row-${placement}`}>
     <div className="csv-view-tab-list" role="tablist" aria-label="사용자 CSV 보기" onKeyDown={(event) => handleKey(event, customIds, selectedView ?? customIds[0] ?? '', (id) => onSelect({ kind: 'custom', viewId: id }))}>
       {views.map((view) => {
-        return <button key={view.id} id={`csv-view-${view.id}-tab`} data-csv-view-tab={view.id} role="tab" aria-controls="csv-view-panel" aria-selected={selectedView === view.id} tabIndex={selectedView === view.id ? 0 : -1} className={selectedView === view.id ? 'active' : ''} onClick={() => onSelect({ kind: 'custom', viewId: view.id })} title={`${view.name} · ${view.layout}`}><CsvMockupIcon name={view.layout} size={13} />{view.name}</button>
+        return <button key={view.id} id={`csv-view-${view.id}-tab`} data-csv-view-tab={view.id} role="tab" aria-controls="csv-view-panel" aria-selected={selectedView === view.id} tabIndex={selectedView === view.id ? 0 : -1} className={selectedView === view.id ? 'active' : ''} onClick={() => onSelect({ kind: 'custom', viewId: view.id })} title={`${view.name} · ${view.layout}`}><CsvMockupIcon name={view.layout} size={13} /><span className="csv-view-tab-label">{view.name}</span></button>
       })}
     </div>
     <button type="button" className="csv-view-add" onClick={onAddView} disabled={!canAddView} title={canAddView ? '보기 추가' : '파일 설정을 준비 중입니다.'}><CsvMockupIcon name="plus" size={13} />보기 추가</button>
